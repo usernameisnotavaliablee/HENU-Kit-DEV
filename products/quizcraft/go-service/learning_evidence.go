@@ -80,8 +80,8 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
         JOIN quizcraft_banks b ON b.id=c.bank_id AND b.active_version_id=c.bank_version_id
         JOIN quizcraft_bank_versions bv ON bv.bank_id=b.id AND bv.id=b.active_version_id AND bv.sealed_at IS NOT NULL
         JOIN quizcraft_learning_report_preferences p ON p.bank_id=b.id AND p.user_id=$2
-        WHERE l.bank_id=$1 AND l.enabled AND c.status='approved' AND p.enabled AND p.external_analysis_consent`,
-		bankID, userID).Scan(&result.ContentVersionID, &result.BankVersionID, &result.ContentSHA256, &raw, &result.Goal, &chaptersJSON, &result.PreferenceRevision)
+        WHERE l.bank_id=$1 AND l.enabled AND c.status='approved' AND p.enabled AND p.external_analysis_consent AND p.consent_version=$3`,
+		bankID, userID, learningConsentVersion).Scan(&result.ContentVersionID, &result.BankVersionID, &result.ContentSHA256, &raw, &result.Goal, &chaptersJSON, &result.PreferenceRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LearningEvidenceSnapshot{}, ErrLearningUnavailable
 	}
