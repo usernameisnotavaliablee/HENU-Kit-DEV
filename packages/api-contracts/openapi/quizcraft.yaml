@@ -430,7 +430,7 @@ paths:
       }
     }
   }
-  /api/v1/portal/practice/banks/{bank_id}/learning-reports/{report_id}/practice-sessions: {
+  /api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions: {
     "post": {
       "x-internal": true,
       "tags": [

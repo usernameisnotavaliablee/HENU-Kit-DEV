@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-用户手工恢复检查点 `6eda2bd7`，当前分支 `codex/learning-feedback`。工具权限已恢复，不再受历史审批适配器阻塞。000012 学习报告迁移、运行验证与指定数据库回归通过；本阶段独立提交，提交 SHA 以 git log 为准。代码生成、仓储/模型/后台任务、会员/UI、人工审核及发布验收仍待完成；功能保持默认关闭。后续每次大操作包含 HANDOFF 并单独 commit；不改 AGENTS.md，不 push。
+用户手工恢复检查点 `6eda2bd7`，当前分支 `codex/learning-feedback`。工具权限已恢复，不再受历史审批适配器阻塞。000012 学习报告迁移、运行验证与指定数据库回归通过；本阶段独立提交，提交 SHA 以 git log 为准。七个学习报告操作的 Go/TypeScript 生成同步及契约验证已完成；仓储/模型/后台任务、会员/UI、人工审核及发布验收仍待完成；功能保持默认关闭。后续每次大操作包含 HANDOFF 并单独 commit；不改 AGENTS.md，不 push。
 
 ## 执行记录（只追加）
 
@@ -122,3 +122,13 @@
 - 尚未执行完整 `go test ./...`、race、并发清除/发布竞态及产品 E2E。数据库约束不替代证据语义校验、实时会员校验或人工审核。
 - 提交范围仅本阶段六文件；主题 `feat(quizcraft): add guarded learning report persistence`。交接脚本首次解析失败后已修正并补入同一阶段本地提交；以最终 git log 为准。下一步同步权威契约生成物并验证漂移，再实现证据/内容校验、仓储、worker、Gateway 与 Portal。
 - Standards/Spec：本地复核通过；独立审查未完成。Public-ready Copy: not applicable。ADR-0047 仍为 Proposed，真实标签/讲解审核、资料授权、模型评测及发布批准未完成。
+
+### 2026-09-30 / 12 — 同步学习报告契约生成产物
+
+- 前阶段提交 `b31864cf` 已核验；本阶段使用现有 `generate-contract.sh` 与锁定版本生成器，不手改生成代码。新增 LearningReports 必需域、七个操作的路由常量、Go 类型及 TypeScript 服务/模型。
+- 新增契约回归先因七个生成路由常量缺失失败，再修改生成器使其通过；断言独立域、服务身份与签名同时必需、必填 actor、依赖故障、周期 1–30 整天、同意字段、禁止 JSON 伪造身份及最多三项结论。
+- Redocly 发现新任务/练习路径存在歧义，已将未发布的练习入口改为 `/api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions`；操作 ID 不变，未上线接口无兼容迁移。后续 Gateway/Portal 必须使用此路径。
+- 验证：指定学习报告契约两项及原导入契约测试通过（0.578s）；Go 根包及生成契约编译通过；重复生成 100 文件逐字节一致；TypeScript 5.2.2 对生成客户端独立 noEmit 检查通过。Redocly 2.39.0 lint 通过，仅三项原有 health/readiness/legacy-ranking 的 4XX 告警，无新增告警。`git diff --check` 通过。
+- 未运行完整前端构建、全量后端回归或端到端测试。客户端生成不代表路由已实现。
+- 下一步实现严格的版本化内容包校验和真实作答证据聚合，再接仓储、模型、任务与会员界面。真实资料权利/标签/讲解审核、独立审查和发布授权仍未完成，功能保持关闭。
+- Standards/Spec：本地检查通过；独立三轴审查未完成。Public-ready Copy: not applicable。单独本地提交，不包含 AGENTS.md，不 push。

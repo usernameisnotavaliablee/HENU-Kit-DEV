@@ -38,24 +38,31 @@ func main() {
 			}
 		}
 	}
-	for _, domain := range []string{"Practice", "Favorites", "Ranking", "Feedback", "Workshop"} {
+	for _, domain := range []string{"Practice", "Favorites", "Ranking", "Feedback", "Workshop", "LearningReports"} {
 		if !domains[domain] {
 			fail(fmt.Errorf("required QuizCraft domain %s is missing", domain))
 		}
 	}
 	required := map[string]string{
-		"ListBanksRoute":            "listPracticeBanks",
-		"PersonalStatsRoute":        "getPersonalPracticeStats",
-		"CreateSessionRoute":        "createPracticeSession",
-		"SubmitAnswerRoute":         "submitPracticeAnswer",
-		"CreatePortalSessionRoute":  "createPortalPracticeSession",
-		"SubmitPortalAnswerRoute":   "submitPortalPracticeAnswer",
-		"ListFavoritesRoute":        "listFavoriteQuestions",
-		"OverallRankingRoute":       "getOverallRanking",
-		"CreateFeedbackRoute":       "createQuestionFeedback",
-		"ListFeedbackStatusesRoute": "listQuestionFeedbackStatuses",
-		"FeedbackStatusRoute":       "getQuestionFeedbackStatus",
-		"WorkshopImportRoute":       "importWorkshopBank",
+		"GetLearningReportPreferencesRoute":    "getPortalLearningReportPreferences",
+		"UpdateLearningReportPreferencesRoute": "updatePortalLearningReportPreferences",
+		"RequestLearningReportRoute":           "requestPortalLearningReport",
+		"ClearLearningReportsRoute":            "clearPortalLearningReports",
+		"LatestLearningReportRoute":            "getPortalLatestLearningReport",
+		"LearningReportTaskRoute":              "getPortalLearningReportTask",
+		"LearningReportPracticeSessionRoute":   "createPortalLearningReportPracticeSession",
+		"ListBanksRoute":                       "listPracticeBanks",
+		"PersonalStatsRoute":                   "getPersonalPracticeStats",
+		"CreateSessionRoute":                   "createPracticeSession",
+		"SubmitAnswerRoute":                    "submitPracticeAnswer",
+		"CreatePortalSessionRoute":             "createPortalPracticeSession",
+		"SubmitPortalAnswerRoute":              "submitPortalPracticeAnswer",
+		"ListFavoritesRoute":                   "listFavoriteQuestions",
+		"OverallRankingRoute":                  "getOverallRanking",
+		"CreateFeedbackRoute":                  "createQuestionFeedback",
+		"ListFeedbackStatusesRoute":            "listQuestionFeedbackStatuses",
+		"FeedbackStatusRoute":                  "getQuestionFeedbackStatus",
+		"WorkshopImportRoute":                  "importWorkshopBank",
 	}
 	keys := make([]string, 0, len(required))
 	for constant, operationID := range required {
