@@ -111,7 +111,7 @@ func validateLearningContent(document LearningContentDocument, published map[uui
 	}
 	sources := make(map[string]bool, len(document.Sources))
 	for i, source := range document.Sources {
-		if !learningContentIDPattern.MatchString(source.ID) || sources[source.ID] || !learningText(source.Title, 240) || source.Repository != learningReviewRepository || !learningHex(source.Commit, 40) || !learningHex(source.SHA256, 64) || !learningSourcePath(source.Path) || !learningText(source.Locator, 1000) || !learningText(source.UsageBasis, 2000) {
+		if !learningContentIDPattern.MatchString(source.ID) || sources[source.ID] || !learningText(source.Title, 240) || source.Repository != learningReviewRepository || !learningHex(source.Commit, 40) || !learningHex(source.SHA256, 64) || !learningSourcePath(source.Path) || !learningText(source.Locator, 1000) || !learningText(source.Path+" · "+source.Locator, 500) || !learningText(source.UsageBasis, 2000) {
 			return fmt.Errorf("sources[%d]: missing immutable provenance or usage basis", i)
 		}
 		sources[source.ID] = true

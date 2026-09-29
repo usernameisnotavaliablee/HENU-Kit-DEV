@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	quizcraft "henukit.dev/quizcraft"
@@ -119,6 +120,44 @@ func TestLearningEvidenceUsesRealScopedAttemptsAndStableFingerprints(t *testing.
 	submit(outsider, 0)
 	submit(user, 1)
 	first, latest := snapshot(firstCutoff), snapshot(time.Now())
+	var contentJSON []byte
+	if err := pool.QueryRow(ctx, `SELECT document FROM quizcraft_learning_content_versions WHERE id=$1`, contentID).Scan(&contentJSON); err != nil {
+		t.Fatal(err)
+	}
+	var reviewed quizcraft.LearningContentDocument
+	if err := json.Unmarshal(contentJSON, &reviewed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quizcraft.BuildLearningModelInput(latest, reviewed); err != nil {
+		t.Fatalf("real snapshot to model: %v", err)
+	}
+	decision := quizcraft.LearningModelDecision{PrimaryTagID: "math", Findings: []quizcraft.LearningModelFinding{{TagID: "math", Status: "supported", EvidenceIDs: []string{latest.Evidence[0].EvidenceId}, PossibleReason: "可能还需要用不同题目确认表现。"}}}
+	resultJSON, _ := json.Marshal(decision)
+	if _, err := quizcraft.ValidateLearningModelDecision(resultJSON, latest, reviewed); err == nil {
+		t.Fatal("real repeated question was treated as strong independent evidence")
+	}
+	decision.Findings[0].Status = "tentative"
+	resultJSON, _ = json.Marshal(decision)
+	reportResult, err := quizcraft.ComposeLearningReport(latest, reviewed, resultJSON, uuid.New(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reportResult.Status != "insufficient_evidence" || reportResult.NextStep.Kind != "diagnostic" {
+		t.Fatalf("real report overclaimed: %+v", reportResult)
+	}
+	schema, err := openapi3.NewLoader().LoadFromFile("../../../../packages/api-contracts/openapi/quizcraft.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(reportResult)
+	var response any
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Components.Schemas["LearningReport"].Value.VisitJSON(response); err != nil {
+		t.Fatalf("composed report violates published contract: %v", err)
+	}
+
 	for _, stat := range first.Statistics {
 		if stat.TagId == "math" && (stat.AttemptCount != 1 || stat.FirstCorrectCount != 0 || stat.RepeatAttemptCount != 0) {
 			t.Fatalf("historical cutoff = %+v", stat)
@@ -137,6 +176,26 @@ func TestLearningEvidenceUsesRealScopedAttemptsAndStableFingerprints(t *testing.
 	}
 	if len(latest.Evidence) != 2 || latest.InputSHA256 == first.InputSHA256 || latest.InputSHA256 != snapshot(time.Now()).InputSHA256 {
 		t.Fatal("evidence or deterministic fingerprint incorrect")
+	}
+	// Simulate an anomalous legacy row; the standard importer rejects this shape.
+	var single quizcraft.ImportedQuestion
+	for _, q := range bank.Questions {
+		if q.SourceQuestionID == "q0001" {
+			single = q
+		}
+	}
+	legacySession := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_practice_sessions(id,bank_id,bank_version_id,user_id,actor_key,mode) VALUES($1,$2,$3,$4,'user:'||$4::uuid::text,'random')`, legacySession, bank.BankID, bank.BankVersionID, user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_practice_session_questions(session_id,bank_id,bank_version_id,question_id,question_version_id,position) VALUES($1,$2,$3,$4,$5,1)`, legacySession, bank.BankID, bank.BankVersionID, single.QuestionID, single.QuestionVersionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_practice_attempts(id,session_id,bank_id,bank_version_id,question_id,question_version_id,user_id,submitted_answer,correct,expected_answer,response_body) VALUES($1,$2,$3,$4,$5,$6,$7,'0',false,'null','{}')`, uuid.New(), legacySession, bank.BankID, bank.BankVersionID, single.QuestionID, single.QuestionVersionID, user); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot(time.Now()).InputSHA256 != latest.InputSHA256 {
+		t.Fatal("unscorable legacy attempt changed assessed evidence")
 	}
 	for _, e := range latest.Evidence {
 		if e.SubmittedAt.After(latest.Cutoff) || e.QuestionId != latest.Evidence[0].QuestionId {

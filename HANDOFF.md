@@ -10,7 +10,7 @@
 
 ## 当前状态
 
-用户手工恢复检查点 `6eda2bd7`，当前分支 `codex/learning-feedback`。工具权限已恢复，不再受历史审批适配器阻塞。000012 学习报告迁移、运行验证与指定数据库回归通过；本阶段独立提交，提交 SHA 以 git log 为准。七个学习报告操作的 Go/TypeScript 生成同步及契约验证已完成；内容包严格校验与真实作答证据聚合已完成；仓储/模型/后台任务、会员/UI、人工审核及发布验收仍待完成；功能保持默认关闭。后续每次大操作包含 HANDOFF 并单独 commit；不改 AGENTS.md，不 push。
+用户手工恢复检查点 `6eda2bd7`，当前分支 `codex/learning-feedback`。工具权限已恢复，不再受历史审批适配器阻塞。000012 学习报告迁移、运行验证与指定数据库回归通过；本阶段独立提交，提交 SHA 以 git log 为准。七个学习报告操作的 Go/TypeScript 生成同步及契约验证已完成；内容包、真实证据、模型输入/输出校验及报告组合已完成；运行仓储/真实模型调用/后台任务、会员/UI、人工审核及发布验收仍待完成；功能保持默认关闭。后续每次大操作包含 HANDOFF 并单独 commit；不改 AGENTS.md，不 push。
 
 ## 执行记录（只追加）
 
@@ -151,3 +151,14 @@
 - 全量 `QUIZCRAFT_TEST_DATABASE_URL=本地隔离数据库 go test -race ./...` 已执行：根包、备份/迁移 CLI 与整个 `./tests` 集成包通过（集成包 10.029s）；唯一失败为未修改的 `cmd/reconcile` 容器测试因 `rootless Docker not found` panic。该测试硬编码 Testcontainers，无本地数据库覆盖入口；未跳过或改写它。不能声称全量通过。日志 `.cache/learning-feedback-go-tests.log`。
 - `go vet ./...` 通过；最终字段收紧后指定学习反馈根包/集成包 race 回归再次通过。后续完整 CI 仍需可用 Docker，产品 E2E、真实模型及人工评测未完成。
 - 下一步实现受限模型输入、结构/数字/引用验证和审核讲解/已有题组合；然后任务仓储、调度、网关会员与 Portal。功能仍默认关闭。Standards/Spec 本地复核通过，独立审查未完成；Public-ready Copy: not applicable。独立 commit，不含 AGENTS.md，不 push。
+
+### 2026-09-30 / 15 — 模型白名单、结论校验与可信报告组合
+
+- 以 `62ef6fc4` 干净工作区继续。新增 `learning_analysis.go`、`learning_report.go` 和针对性测试；快照 v2 增加样本题型/选项和每标签最多五道现有候选题。无新依赖，闭合答案复用旧评分归一化，不更改旧判分语义。
+- 外发对象单独构造，去除身份/数据库实体 UUID/时间/完整历史；自由用户答案默认扣留。模型仅推断、排序和引用，统计和数字观察由服务器生成；拒绝越界引用、错版本、篡改摘要、模型自报统计、过强证据状态和未知练习题。
+- 报告复用审核包讲解，既有题诊断/练习、内容缺口和冷启动都有明确分支；零历史不需要模型。单题重做不冒充新增独立证据。来源定位长度与 OpenAPI 对齐，异常历史 null 标准答案不参与评价。标准导入本来拒绝缺答案，未声称发现现网数据污染。
+- TDD：测试先因实现缺失失败，再实现通过。定向学习反馈 race 最终通过（根包 1.488s、集成包 2.586s）；真实 HTTP 作答→快照→模型白名单→报告组合通过，最终 JSON 经 OpenAPI schema 校验；供应商响应为显式合成测试数据，未调用真实模型。
+- 首次完整根包/集成包重跑因复用持久测试库，出现旧固定 ID/幂等键夹具冲突；未修改或跳过测试、未清理原库。随后新建专用空白库，按 TestMain 两遍应用原始 up 迁移，`go test -race . ./tests -count=1` 通过（1.522s / 7.124s），结束仅删除本次新建库。日志 `.cache/learning-feedback-fresh-race.log` / `learning-feedback-fresh-migrations.log`。后续完整重跑必须同样用新库；原 `quizcraft_test` 仅用于隔离型定向测试。
+- `go vet ./...`、`git diff --check` 通过。历史全量 `cmd/reconcile` Docker 环境缺口未解除，不称所有 Go 包的运行验收通过。
+- 仅结构/引用校验不保证语义正确。支持性阈值、推断文案、源内容权利和真实模型评测尚未经人工批准；ADR 仍 Proposed，功能关闭。Public-ready Copy：本地检查克制表达、缺口、可跳过及不承诺提分；独立文案/语义审查未完成。Standards/Spec 本地复核通过，独立审查未完成。
+- 下一步：运行仓储（偏好代次、自动周期、手动不重置、输入/版本去重、清除失效、租约），再实际供应商适配与 worker、会员网关、Portal 和人工发布验收。本阶段独立 commit，包含 HANDOFF，不包含 AGENTS.md，不 push。

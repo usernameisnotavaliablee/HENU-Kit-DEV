@@ -59,6 +59,7 @@ func TestLearningContentRejectsInvalidBindingsAndSources(t *testing.T) {
 		"mutable source reference":     func(d *LearningContentDocument) { d.Sources[0].Commit = "main" },
 		"missing source hash":          func(d *LearningContentDocument) { d.Sources[0].SHA256 = "" },
 		"path traversal":               func(d *LearningContentDocument) { d.Sources[0].Path = "course/../private.md" },
+		"unreportable source locator":  func(d *LearningContentDocument) { d.Sources[0].Locator = strings.Repeat("界", 500) },
 		"missing rights basis":         func(d *LearningContentDocument) { d.Sources[0].UsageBasis = "" },
 		"missing lesson source":        func(d *LearningContentDocument) { d.Lessons[0].SourceIDs = nil },
 		"unknown lesson source":        func(d *LearningContentDocument) { d.Lessons[0].SourceIDs = []string{"invented"} },

@@ -31,7 +31,16 @@ type LearningEvidenceSnapshot struct {
 	Cutoff             time.Time                          `json:"cutoff"`
 	Statistics         []contract.LearningReportStatistic `json:"statistics"`
 	Evidence           []contract.LearningReportEvidence  `json:"evidence"`
+	QuestionContexts   []LearningQuestionContext          `json:"question_contexts"`
+	PracticeCandidates map[string][]uuid.UUID             `json:"practice_candidates"`
 	InputSHA256        string                             `json:"input_sha256"`
+}
+
+type LearningQuestionContext struct {
+	QuestionID        uuid.UUID `json:"question_id"`
+	QuestionVersionID uuid.UUID `json:"question_version_id"`
+	Kind              string    `json:"kind"`
+	Options           []string  `json:"options"`
 }
 
 type learningQuestionEvidence struct {
@@ -39,6 +48,8 @@ type learningQuestionEvidence struct {
 	VersionID  uuid.UUID
 	ChapterID  string
 	Question   string
+	Kind       string
+	Options    []string
 	TagIDs     []string
 	Attempts   int64
 	Correct    int64
@@ -50,7 +61,9 @@ type learningQuestionEvidence struct {
 // Authentication and live lifetime entitlement remain caller responsibilities.
 // No model call is made here and no transaction may outlive this method.
 func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid.UUID, cutoff time.Time) (LearningEvidenceSnapshot, error) {
-	result := LearningEvidenceSnapshot{SchemaVersion: "learning-evidence-v1", BankID: bankID, Cutoff: cutoff.UTC(), ChapterIDs: []string{}, Statistics: []contract.LearningReportStatistic{}, Evidence: []contract.LearningReportEvidence{}}
+	result := LearningEvidenceSnapshot{SchemaVersion: "learning-evidence-v2", BankID: bankID, Cutoff: cutoff.UTC(), ChapterIDs: []string{}, Statistics: []contract.LearningReportStatistic{}, Evidence: []contract.LearningReportEvidence{}}
+	result.QuestionContexts = []LearningQuestionContext{}
+	result.PracticeCandidates = map[string][]uuid.UUID{}
 	if userID == uuid.Nil || bankID == uuid.Nil || cutoff.IsZero() {
 		return LearningEvidenceSnapshot{}, ErrLearningUnavailable
 	}
@@ -86,7 +99,7 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 	}
 	sort.Strings(result.ChapterIDs)
 
-	rows, err := tx.Query(ctx, `SELECT q.question_id,q.id,q.chapter_id,q.content FROM quizcraft_bank_version_questions m JOIN quizcraft_question_versions q ON q.bank_id=m.bank_id AND q.question_id=m.question_id AND q.id=m.question_version_id WHERE m.bank_id=$1 AND m.bank_version_id=$2 ORDER BY q.question_id`, bankID, result.BankVersionID)
+	rows, err := tx.Query(ctx, `SELECT q.question_id,q.id,q.chapter_id,q.content,q.type,COALESCE(q.options,'[]'::jsonb) FROM quizcraft_bank_version_questions m JOIN quizcraft_question_versions q ON q.bank_id=m.bank_id AND q.question_id=m.question_id AND q.id=m.question_version_id WHERE m.bank_id=$1 AND m.bank_version_id=$2 ORDER BY q.question_id`, bankID, result.BankVersionID)
 	if err != nil {
 		return LearningEvidenceSnapshot{}, err
 	}
@@ -94,7 +107,7 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 	members, knownChapters := map[uuid.UUID]uuid.UUID{}, map[string]bool{}
 	for rows.Next() {
 		var q learningQuestionEvidence
-		if err := rows.Scan(&q.QuestionID, &q.VersionID, &q.ChapterID, &q.Question); err != nil {
+		if err := rows.Scan(&q.QuestionID, &q.VersionID, &q.ChapterID, &q.Question, &q.Kind, &q.Options); err != nil {
 			rows.Close()
 			return LearningEvidenceSnapshot{}, err
 		}
@@ -206,6 +219,7 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 	}
 	sort.Slice(result.Statistics, func(i, j int) bool { return result.Statistics[i].TagId < result.Statistics[j].TagId })
 	result.Evidence = selectLearningEvidence(facts, result.Statistics)
+	addLearningPracticeContext(&result, facts)
 	// Wall-clock cutoff alone must not create new work. Include every scoped
 	// question's aggregate, not just the limited displayed sample. The final
 	// job key must additionally bind the configured model/prompt/policy versions.
@@ -294,7 +308,7 @@ WITH ranked AS (
     FROM quizcraft_practice_attempts a
     JOIN quizcraft_bank_version_questions m ON m.bank_id=a.bank_id AND m.question_id=a.question_id
       AND m.question_version_id=a.question_version_id AND m.bank_version_id=$3
-    WHERE a.user_id=$1 AND a.bank_id=$2 AND a.submitted_at<=$4 AND a.question_id=ANY($5::uuid[])
+    WHERE a.user_id=$1 AND a.bank_id=$2 AND a.submitted_at<=$4 AND a.question_id=ANY($5::uuid[]) AND a.expected_answer<>'null'::jsonb
 )
 SELECT question_id,count(*),count(*) FILTER (WHERE correct),
     max(id::text) FILTER (WHERE first_no=1),max(submitted_at) FILTER (WHERE first_no=1),bool_or(correct) FILTER (WHERE first_no=1),
@@ -302,3 +316,37 @@ SELECT question_id,count(*),count(*) FILTER (WHERE correct),
     max(id::text) FILTER (WHERE latest_no=1),max(submitted_at) FILTER (WHERE latest_no=1),bool_or(correct) FILTER (WHERE latest_no=1),
     (jsonb_agg(submitted_answer) FILTER (WHERE latest_no=1))->0,(jsonb_agg(expected_answer) FILTER (WHERE latest_no=1))->0
 FROM ranked GROUP BY question_id ORDER BY question_id`
+
+// Candidates remain internal: the model cannot choose arbitrary question IDs.
+func addLearningPracticeContext(snapshot *LearningEvidenceSnapshot, facts []learningQuestionEvidence) {
+	sampled := map[uuid.UUID]bool{}
+	for _, sample := range snapshot.Evidence {
+		sampled[sample.QuestionId] = true
+	}
+	for _, q := range facts {
+		if sampled[q.QuestionID] {
+			snapshot.QuestionContexts = append(snapshot.QuestionContexts, LearningQuestionContext{QuestionID: q.QuestionID, QuestionVersionID: q.VersionID, Kind: q.Kind, Options: q.Options})
+		}
+	}
+	candidates := append([]learningQuestionEvidence{}, facts...)
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if (a.Attempts == 0) != (b.Attempts == 0) {
+			return a.Attempts == 0
+		}
+		if a.Latest.Correct != b.Latest.Correct {
+			return !a.Latest.Correct
+		}
+		if a.Attempts != b.Attempts {
+			return a.Attempts < b.Attempts
+		}
+		return a.QuestionID.String() < b.QuestionID.String()
+	})
+	for _, q := range candidates {
+		for _, tag := range q.TagIDs {
+			if len(snapshot.PracticeCandidates[tag]) < 5 {
+				snapshot.PracticeCandidates[tag] = append(snapshot.PracticeCandidates[tag], q.QuestionID)
+			}
+		}
+	}
+}
