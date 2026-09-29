@@ -5,14 +5,12 @@
 - 工作区：`/Users/mac/Documents/HENU-Kit-DEV`。日期：2026-09-29。
 - 先读根 `AGENTS.md`、`PLAN.md`，再读本文件最新记录。每次大操作追加做了什么、验证证据、下一步、阻塞。
 - 目标是落实完整计划并开始实施；不得把文档完成或少量单测通过写成产品全部完成。
-- 保留原有 `AGENTS.md` 未提交修改；禁止未获授权的 commit/push、生产变更及伪造人工审核。
+- 不修改或提交原有 `AGENTS.md`；恢复点中的用户提交保留不动。每次大操作更新本文件并单独本地 commit；不 push、不做生产变更、不伪造人工审核。
 - `ask-matt` 技能不存在，已报告；不声称执行成功。Ponytail/Caveman 生效：复用现有能力，不建多余框架。
 
 ## 当前状态
 
-**实施阻塞，目标未完成。** Git 提交前置条件连续三个 goal turn 未解除；停止自动空转，等待审批服务恢复。
-
-P0 文档已落盘；P1 盘点/审核规则已建立、人工门禁未过；P2 契约已写，生成产物待同步。路由未接线、数据库未迁移、未部署。用户要求每次大操作独立提交；Git 写入被审批服务异常阻塞，尚无新 commit；先恢复提交，详情见记录 06。
+用户手工恢复检查点 `6eda2bd7`，当前分支 `codex/learning-feedback`。工具权限已恢复，不再受历史审批适配器阻塞。000012 学习报告迁移、运行验证与指定数据库回归通过；本阶段独立提交，提交 SHA 以 git log 为准。代码生成、仓储/模型/后台任务、会员/UI、人工审核及发布验收仍待完成；功能保持默认关闭。后续每次大操作包含 HANDOFF 并单独 commit；不改 AGENTS.md，不 push。
 
 ## 执行记录（只追加）
 
@@ -86,3 +84,41 @@ P0 文档已落盘；P1 盘点/审核规则已建立、人工门禁未过；P2 �
 - 不能绕过已拒绝操作；也不能在用户要求每次大操作提交的前提下继续堆未提交实现。可做的交接和分阶段提交准备已完成，无其他能解除该前置条件的安全操作。
 - 满足 blocked 条件；目标不得标 complete。暂停自动推进，保留全部当前改动，不重置、不清理、不替用户提交原有 AGENTS.md。
 - 恢复条件：修复审批服务的 structured text.format 错误，恢复 Git 写权限；重新核验现场，先按记录 06 完成独立阶段提交，再继续 P2–P5。Go 缓存/工具链审批与人工内容审核仍是后续未完成项。
+
+### 2026-09-29 / 09 — 从手工检查点恢复，新增持久化基础
+
+- 恢复证据：`git branch --show-current` 为 codex/learning-feedback，HEAD 为 6eda2bd7，开始时工作区和暂存区干净。手工检查点包含之前工作（包括用户已提交的 AGENTS.md）；不重写该提交，后续不修改/暂存 AGENTS.md。
+- 本次大操作：新增 000012 up/down 迁移，6 张 QuizCraft 自有表：审核内容版本、发布指针、审核事件、用户偏好、持久化任务、派生报告。旧评分、作答与 mastery 不改。
+- 保护：默认关闭/每 7 天/1–30 天约束；显式同意及代次；内容审核后不可变；租约、同意代次、题库/内容版本联合校验；短事务锁住发布输入，不在模型调用期间持锁。撤销后重新开启不能复活旧代次任务。
+- 测试先写：新增数据库用例覆盖默认值、周期/同意限制、跨用户/跨题库、错误/过期租约、关闭目录、内容撤回、回滚后题目保留和再应用；同步旧 baseline adoption 对 000012 的计数预期。
+- 实际验证：新 Go 文件 gofmt 解析/格式检查通过；`git diff --check` 通过；既有 Python 学习反馈辅助检查 8 项通过。
+- 未验证：没有 Go 模块缓存，系统 Go 1.26.5 与项目要求 1.26.6 不同，PATH 无 Docker/psql；此前缓存/工具链审批拒绝尚未解除。未重试被拒绝操作、未绕缓存权限、未执行真实 PostgreSQL/Go 测试；不能称这次迁移已通过运行验收或 TDD 红绿闭环。
+- 提交主题：`feat(quizcraft): add guarded learning report persistence`。本阶段是否成功提交以实际 git log 为准，不把写文件视为 commit。
+- 下一步：先完成本阶段独立 commit；获准测试环境后运行迁移/权限并发/回滚集成测试。然后实现证据快照与内容校验、报告任务仓储；同步标准契约生成产物，再接模型/worker/Gateway/Portal。
+- 审查状态：Standards/Spec 仅本地静态自查，独立安全审查未完成；Public-ready Copy: not applicable（本阶段无用户可见界面文案）。功能仍未启用。
+
+### 2026-09-29 / 10 — 数据层提交失败（恢复后第 1 次阻塞）
+
+- 已按本次明确授权尝试本地提交，主题 `feat(quizcraft): add guarded learning report persistence`；请求只含本阶段六个文件，不含 AGENTS.md，不 push。
+- require_escalated 再次在创建进程前失败：`oai-basispoints does not implement structured text.format output; omit the format or use type=text`。手工恢复检查点恢复了 Git 状态，但没有修复工具审批适配器。
+- 未执行 git add/commit，禁止通过换命令入口、写 Git 索引/对象或更改审批配置绕过拒绝。没有新提交；不能将本阶段写成已交付或已验证上线。
+- 待提交范围：
+  - HANDOFF.md
+  - docs/development/quizcraft-learning-feedback-spec.md
+  - products/quizcraft/go-service/db/migrations/000012_learning_reports.up.sql
+  - products/quizcraft/go-service/db/migrations/000012_learning_reports.down.sql
+  - products/quizcraft/go-service/tests/learning_reports_migration_test.go
+  - products/quizcraft/go-service/tests/migration_artifacts_test.go
+- 恢复方式：修复审批适配器，或用户在自己的终端仅提交上述六文件并提供 SHA；不要使用 git add -A，不要推送。恢复后核验提交再开始下一次大操作。
+- 验证边界不变：仅 gofmt、差异检查和原有 8 项辅助测试通过；PostgreSQL 回归、Go 编译/集成、并发恢复和生成产物同步仍未完成。数据库发布约束不代替后续证据内容校验或实时会员校验。
+- 本次是用户恢复后的第 1 个连续阻塞 turn，不沿用上一轮阻塞计数；停止新增大操作，但不将完整目标标为完成。
+
+### 2026-09-29 / 11 — 恢复验证并交付持久化基础
+
+- 权限恢复；记录 06–10 的审批失败仅为历史，不再构成执行阻塞。沿用用户恢复点与分支，不改写用户历史、不提交 AGENTS.md、不 push。
+- 完成六张学习反馈自有表及撤销同意、审核版本、租约、发布、删除隔离保护；新增任务输入不可变约束，禁止改代次/snapshot 复活旧任务。发布时仅短事务锁定可撤销输入，模型调用不得持长事务。
+- Go 按 go.mod 自动取得 1.26.6，未降低版本。Homebrew PostgreSQL 16.15 使用工作区 `.cache/learning-feedback-postgres` 隔离集群，仅监听 `127.0.0.1:55432`；未启动系统服务，无生产数据。测试 URL：`postgres://quizcraft@127.0.0.1:55432/quizcraft_test?sslmode=disable`。本机 trust 仅用于隔离测试，禁止用于部署。
+- 已执行：全部 up 迁移及 000012 重应用；回滚式 SQL 事务核验保护与级联清除。`go -C products/quizcraft/go-service test .` 通过。指定测试 `QUIZCRAFT_TEST_DATABASE_URL=上述URL go -C products/quizcraft/go-service test ./tests -run 'TestLearningReport|TestVersionedMigrationArtifacts' -count=1` 再次通过（2.062s）；覆盖 9 个顶层测试，含 5 个 baseline 子测试。`git diff --check` 通过。
+- 尚未执行完整 `go test ./...`、race、并发清除/发布竞态及产品 E2E。数据库约束不替代证据语义校验、实时会员校验或人工审核。
+- 提交范围仅本阶段六文件；主题 `feat(quizcraft): add guarded learning report persistence`。交接脚本首次解析失败后已修正并补入同一阶段本地提交；以最终 git log 为准。下一步同步权威契约生成物并验证漂移，再实现证据/内容校验、仓储、worker、Gateway 与 Portal。
+- Standards/Spec：本地复核通过；独立审查未完成。Public-ready Copy: not applicable。ADR-0047 仍为 Proposed，真实标签/讲解审核、资料授权、模型评测及发布批准未完成。
