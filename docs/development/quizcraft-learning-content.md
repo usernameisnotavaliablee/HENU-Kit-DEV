@@ -33,3 +33,16 @@ python3 products/quizcraft/scripts/learning_feedback_inventory.py --check
 ```
 
 盘点不授予发布许可。真实资料核验、标签、讲解和人工审核记录尚未完成。
+
+## 已实现的内容包格式与边界
+
+`products/quizcraft/go-service/learning_content.go` 提供 `ParseLearningContent`，输入只能是一个 JSON 草稿，最多 4 MiB；调用方必须从当前已发布题库版本加载权威题目成员映射，不接受客户端自报范围。
+
+- 顶层：`schema_version: 1`、`tags`、`questions`、`sources`、`lessons`；未知字段（包括 `status` / `reviewed_by`）拒绝。
+- 标签：稳定 `id`、`kind: knowledge | ability`、`name`、`definition`；最多 300 个。
+- 题目：`question_id`、`question_version_id`、`tag_ids`；最多 10000 题，须匹配当前发布版本，不能重号或引用不存在的标签。
+- 来源：`id`、`title`、固定 `repository`、40 位 commit、仓库内 `path`、文件 `sha256`、`locator`、`usage_basis`；最多 1000 项。分支名与路径穿越不能作为可追溯来源。
+- 讲解：`id`、`title`、`body`、`tag_ids`、`source_ids`；最多 300 条，正文最多 10000 字符；每条引用 1–16 个有效且不重复的标签/来源。
+- 没有讲解可保留空列表并记录缺口；不能从题目解析或即时生成内容兜底。结构检查只确认声明齐全，不验证来源实际存在、版权许可或语义正确。
+
+摘要基于规范化 JSON，排版差异不产生新摘要。解析成功仅代表可保存草稿；发布仍须服务端审核记录、当前版本、目录门禁及独立人工验收。测试中的资料/讲解均为合成样本，不可当作真实审核内容。
