@@ -1,58 +1,49 @@
-# Repository agent guidance
+# Repository Guidelines
 
-## Agent skills
+## 项目结构与模块边界
 
-### Engineering workflow (mandatory): Ask Matt first, always
+- `apps/portal` 是 Next.js 公共站，`apps/console` 是 Vue 管理端；`apps/web`、`apps/study-legacy-admin` 属于旧 Study 链路。
+- `services/` 存放独立 Go 服务；`products/quizcraft/` 包含刷题前端、Python 后端和 Go 服务。QuizCraft 是唯一刷题产品。
+- `packages/api-contracts`、`packages/design-tokens` 分别维护共享契约与设计变量；`infra/`、`scripts/` 管理部署和工具。
+- 前端源码在各应用 `src/`，测试分布于源码旁及 `tests/`；静态资源见 `apps/portal/public/`、`products/quizcraft/assets/`。
+- 先读 `CONTEXT-MAP.md` 与 `docs/README.md`；`legacy/`、`archive/` 仅供历史参考，不新增业务代码。
 
-**Every engineering task starts by consulting the `ask-matt` router
-(`~/.agents/skills/ask-matt/SKILL.md`) and follows the flow it routes to.**
-Do not improvise an alternative workflow. The canonical flow:
+## 构建、测试与本地开发
 
-- **Main flow: idea → ship**
-  1. `/grill-with-docs` — sharpen the idea by interview (stateful: retains what
-     it learns in `CONTEXT.md` + ADRs). Start here when we have a codebase.
-  2. Branch: a question needs a runnable answer (state, business logic, UI)?
-     Detour through `/prototype`, bridged by `/handoff` in both directions.
-  3. Branch: multi-session build?
-     - Yes → `/to-spec`, then `/to-tickets` (each ticket declares blocking
-       edges), then `/implement` per ticket, clearing context between tickets,
-       working blockers-first.
-     - No → `/implement` in the current context.
-- **`/implement` always drives `/tdd` internally** — one red-green slice at a
-  time — and closes out with **`/code-review`** (Standards + Spec two-axis
-  review of the diff, plus the Public-ready Copy third axis below) **before
-  committing**. Reach for `/tdd` alone for a concrete behaviour test-first
-  without a full spec; `/code-review` alone to review any branch or PR against
-  a fixed point.
-- **On-ramps**: incoming bugs/requests → `/triage` (only for issues we did not
-  create; never triage tickets `/to-tickets` produced). Hard bugs → `/diagnosing-bugs`
-  (tight feedback loop first, regression test after). Huge/foggy efforts →
-  `/wayfinder` (produces decisions, hands off to `/to-spec` — never loop
-  straight into `/implement` unless the effort is genuinely small).
-- **Codebase health**: run `/improve-codebase-architecture` opportunistically.
-- **Context hygiene**: keep grilling → spec → tickets in one unbroken context
-  window; each `/implement` starts fresh from its ticket. Stay inside the smart
-  zone; if a session approaches it before `/to-tickets`, `/handoff` to a fresh
-  thread instead of pushing on degraded. `/handoff` forks (new session);
-  `/compact` continues (same session) — use `/compact` only at intentional
-  phase breaks, never mid-phase.
-- **Vocabulary underneath**: `/domain-modeling` for domain language and ADRs;
-  `/codebase-design` for module shape.
-- **Precondition**: `/setup-matt-pocock-skills` before the first flow (tracker,
-  triage labels, doc layout).
+使用根 `package.json` 指定的 pnpm 11.9.0；完整环境需要 Docker Compose。以下命令从仓库根执行：
 
-### Review prompt baseline
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | 按锁文件安装依赖 |
+| `cp .env.henukit.example .env.henukit` | 首次创建本地配置；勿覆盖已有配置 |
+| `pnpm run dev:henukit` | 启动推荐完整栈，入口端口 8088 |
+| `pnpm --filter @henukit/portal dev` | 单独启动 Portal 开发服务 |
+| `pnpm run lint` | 运行默认前端静态检查 |
+| `pnpm run build` | 构建 Portal、Console、QuizCraft 前端 |
+| `pnpm test` | 运行根脚本定义的默认测试组合 |
+| `pnpm --filter @henukit/portal test` | 补跑 Portal API/逻辑测试 |
+| `go -C services/library test ./...` | 测试指定 Go 模块；按改动替换目录 |
 
-For every Standards / Spec review, also inspect added or changed user-visible copy for **Public-ready Copy**. Report only evidence-backed findings: copy must not expose placeholders, test/debug/internal details, unsupported claims, or unintended visible environment URLs/accounts; errors must tell the user what happened and what they can do; wording must fit the product's tone. Report this as a third axis, not a substitute for Standards or Spec. If the diff has no user-visible copy, explicitly report `Public-ready Copy: not applicable`.
+`pnpm dev` 是兼容 Study 栈，不是推荐完整栈。
 
-### Issue tracker
+## 编码风格与命名
 
-Issues and PRDs are tracked in GitHub Issues for `jry21223/HENU-Kit-DEV`. See `docs/agents/issue-tracker.md`.
+沿用相邻文件：TypeScript/Vue 通常使用两空格缩进、双引号、分号；组件采用 PascalCase，函数与变量采用 camelCase。Portal 文件多用 kebab-case，Vue 组件遵循已有文件名。Go 使用 `gofmt`，文件名采用 snake_case。Portal/QuizCraft 使用 ESLint；Console 的 lint 是 `vue-tsc --noEmit`，不要假定存在统一格式化命令。
 
-### Triage labels
+## 测试要求
 
-Use the canonical labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+使用 Vitest、Node test runner、Playwright、Go testing，以及 QuizCraft 的 Pytest。沿用 `*.test.ts`、`*.test.mjs`、`*.spec.ts`、`*_test.go`、`test_*.py` 命名。根 `pnpm test` 不涵盖 Portal 全套、Go 或 Python 测试，必须补跑受影响模块检查。
 
-### Domain docs
+Bug 修复补回归；覆盖失败、权限、并发与重试路径。共享契约修改验证消费方。具体验收遵循 `docs/development/testing-acceptance-spec.md` 与模块 CI，不擅设统一覆盖率数字；集成测试按模块要求准备 PostgreSQL/Redis。
 
-This is a multi-context Monorepo. Start from `CONTEXT-MAP.md`, then read relevant context glossaries and ADRs. See `docs/agents/domain.md`.
+## 提交与 Pull Request
+
+提交遵循历史中的 `type(scope): description`，如 `fix(portal): restore account navigation`；常用类型有 feat、fix、test、docs、refactor、chore。禁止直接 push main，一个 PR 只解决一个问题。
+
+关联 Issue，按 `.github/pull_request_template.md` 填写背景、范围、非目标、实际验证结果、风险、发布及回滚。前端改动附桌面和移动端截图；安全关键改动附当前 SHA 的 Standards/Spec 审查及失败路径证据。
+
+## 安全与代理协作
+
+不提交密钥、Token、Cookie、真实学生数据或 `资料库/` 内容；不跨服务直连数据库。数据库迁移遵循 expand → migrate → contract。
+
+保留工程入口约定：先咨询 `~/.agents/skills/ask-matt/SKILL.md`，缺失时明确报告。已有代码从 `/grill-with-docs` 开始；多会话经 `/to-spec`、`/to-tickets` 后按依赖逐票 `/implement`。实现遵循 TDD，提交前执行 Standards、Spec、Public-ready Copy 三轴审查；无可见文案改动注明 `Public-ready Copy: not applicable`。Issue、标签、领域规则见 `docs/agents/`；遵守更具体的目录级 `AGENTS.md`。

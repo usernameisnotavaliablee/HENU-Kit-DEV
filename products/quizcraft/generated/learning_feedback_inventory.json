@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "scope": "Local candidates only; not production or human approval evidence.",
+  "candidates": [
+    {
+      "source_file": "computer_fundamentals.json",
+      "source_sha256": "112e9e0e3adbcc42410c52971e9cab89f6e976bcf46b1e8b32cc3030bb6cff0c",
+      "question_count": 556,
+      "declared_question_count": 556,
+      "answer_forms": {
+        "blank": 289,
+        "judge": 267
+      },
+      "chapter_count": 13,
+      "question_fields": [
+        "analysis",
+        "answer",
+        "chapter",
+        "chapter_id",
+        "content",
+        "id",
+        "number",
+        "options",
+        "stats",
+        "type"
+      ],
+      "duplicate_question_ids": [],
+      "missing_fields": {},
+      "ready_for_learning_feedback": false,
+      "blockers": [
+        "human_taxonomy_review_pending",
+        "approved_lessons_missing",
+        "source_usage_review_pending",
+        "production_mapping_unverified"
+      ]
+    },
+    {
+      "source_file": "java_bank_analyzed_reviewed.json",
+      "source_sha256": "46aff3216caf4ced6753ec1463689244f119e44078d69dd888e3e87720b96c42",
+      "question_count": 148,
+      "declared_question_count": 148,
+      "answer_forms": {
+        "single": 148
+      },
+      "chapter_count": 1,
+      "question_fields": [
+        "analysis",
+        "answer",
+        "chapter",
+        "chapter_id",
+        "content",
+        "id",
+        "number",
+        "options",
+        "stats",
+        "type"
+      ],
+      "duplicate_question_ids": [],
+      "missing_fields": {},
+      "ready_for_learning_feedback": false,
+      "blockers": [
+        "human_taxonomy_review_pending",
+        "approved_lessons_missing",
+        "source_usage_review_pending",
+        "production_mapping_unverified"
+      ]
+    },
+    {
+      "source_file": "web_bank_analyzed.json",
+      "source_sha256": "e12c49df1c2f9f6489987b98dc1c95df115637717b46cb0cd54b475bafaf688f",
+      "question_count": 119,
+      "declared_question_count": 119,
+      "answer_forms": {
+        "judge": 43,
+        "multi": 13,
+        "single": 63
+      },
+      "chapter_count": 6,
+      "question_fields": [
+        "analysis",
+        "answer",
+        "chapter",
+        "chapter_id",
+        "content",
+        "id",
+        "number",
+        "options",
+        "stats",
+        "type"
+      ],
+      "duplicate_question_ids": [],
+      "missing_fields": {},
+      "ready_for_learning_feedback": false,
+      "blockers": [
+        "human_taxonomy_review_pending",
+        "approved_lessons_missing",
+        "source_usage_review_pending",
+        "production_mapping_unverified"
+      ]
+    },
+    {
+      "source_file": "software_engineering_process_tests.json",
+      "source_sha256": "7b07980408f31fcb2a3f1fbbf5ba74075355f92894a663cd13ec166d59e18594",
+      "question_count": 90,
+      "declared_question_count": 90,
+      "answer_forms": {
+        "judge": 40,
+        "multi": 10,
+        "single": 40
+      },
+      "chapter_count": 2,
+      "question_fields": [
+        "analysis",
+        "answer",
+        "chapter",
+        "chapter_id",
+        "content",
+        "id",
+        "number",
+        "options",
+        "stats",
+        "type"
+      ],
+      "duplicate_question_ids": [],
+      "missing_fields": {},
+      "ready_for_learning_feedback": false,
+      "blockers": [
+        "human_taxonomy_review_pending",
+        "approved_lessons_missing",
+        "source_usage_review_pending",
+        "production_mapping_unverified"
+      ]
+    }
+  ]
+}
