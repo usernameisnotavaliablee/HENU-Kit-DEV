@@ -173,3 +173,10 @@
 - 学习反馈定向 race 通过（1.516s / 2.828s）；新建空白库、按 TestMain 两遍应用 up 迁移后，完整 `go test -race . ./tests -count=1` 通过（1.626s / 7.475s）。临时库已删除，原测试库未清空。日志 `.cache/learning-feedback-preferences-race.log` 与 `learning-feedback-preferences-migrations.log`。`go vet ./...`、差异检查通过；旧 reconcile 的 Docker 运行缺口仍在。
 - 下一步仍为运行任务仓储：输入/模型/提示词版本去重、手动不重置周期、租约与恢复、发布/清除并发；然后供应商、worker、网关会员、Portal。入库前还要补内部单答案/快照大小上限和大课程零历史边界测试：外发 128 KiB 上限不等于内部快照内存/持久化上限，不能据此宣布资源门禁完成。
 - Standards/Spec 本地复核通过，独立审查未完成；Public-ready Copy: not applicable（本阶段不新增用户文案）。真实人工内容/模型评测与发布批准未完成，功能关闭。独立 commit，包含 HANDOFF，不包含 AGENTS.md，不 push。
+
+### 2026-10-01 / 17 — 模型切换前检查点（测试仍红）
+
+- 用户要求立即用指定 message 提交一次，然后继续实施。本检查点仅收录 `learning_resources_test.go` 与本交接；不碰 AGENTS.md，不 push。
+- 两项新增回归先红：300 标签合法课程冷启动被 128 KiB **模型外发**上限误拦；过大用户自由答案从模型输入扣留，但仍可能留在内部快照/报告。`go test . -run 'TestLearning(ReportLargeCourseColdStart|SnapshotRejectsOversizedAnswerBeforeWithholding)$' -count=1` 失败两项，记录在 `.cache/learning-feedback-resource-red.log`（本地忽略文件）。**此 commit 不是测试通过的交付**。
+- 下一步：修内部答案和快照字节边界、分离无历史报告验证与外发上限；补 SQL/DB 验证及既有测试，单独写 HANDOFF 并提交。后续再接任务去重/租约。不声称真实会员/模型或人工审核已完成。
+- Standards/Spec：只保存明确失败测试，尚不能验收。Public-ready Copy: not applicable。
