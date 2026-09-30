@@ -230,3 +230,10 @@
 - TDD：server 配置测试先因缺方法编译失败，实现后定向及完整 `go test -race ./cmd/server -count=1` 通过。用合成 HTTP 服务端验证启用配置的客户端可执行真实签名调用；未声称两服务实际部署互通。全新临时空白 PostgreSQL 库按 TestMain 两遍运行全部 up 迁移后，QuizCraft `go test -race . ./tests ./cmd/server -count=1` 通过（1.753s / 9.624s / 1.176s），仅删除本次库；QuizCraft/Account Portfolio `go vet ./...`、Account Portfolio 根包及 server `go test -race` 通过。日志 `.cache/learning-feedback-config-*`。
 - 两份 compose 文件由 Ruby Psych 解析成功，AST 校验 Account Portfolio 与 QuizCraft 收到相同、默认空值的身份/密钥；本机没有 Docker，未运行 `docker compose config` 或容器联调，也未复核已有 reconcile 的 Docker 专项测试。差异检查通过。配置尚无报告 HTTP 路由或 worker 消费方，**不构成已生效的会员门禁**；功能仍默认关闭。
 - Standards/Spec 本地复核：拒绝缺项与凭据复用，未碰现有作答 API、旧鉴权或学生数据。Public-ready Copy: not applicable（仅开发/运维文档）。下一步在服务端任务执行与 HTTP 入口分别接实时权益、隔离模型供应商适配；再接 Gateway/Portal。人工内容审核、模型评测和生产发布批准依旧是硬门禁。不提交 AGENTS.md，不 push。
+
+### 25 — 单次任务的实时会员校验与模型前后门禁
+
+- 上阶段可选双端配置提交 `a11aea3c`。新增尚未由任何常驻进程启动的 `ProcessNextLearningReport`：只有传入独立签名 Account Portfolio 客户端和明确的模型适配器才认领任务；认领后校验版本与当前会员，非会员取消任务，权益依赖故障暂停；有历史作答时仅构造既有白名单模型输入，拒绝畸形结论，模型完成后再次检查权益，发布方法内部再做一次实时检查与短事务快照/同意/内容复核。零历史不调用模型。取消、暂停和失败写入遵循偏好→任务锁及当前租约 Token，不在外部网络调用期间持有 DB 事务。
+- TDD：新增真实 PostgreSQL 测试先因方法缺失编译失败；第一次实测发现测试夹具课程键含空格、查询引用不存在的列，按已有真实作答夹具修正后通过。覆盖：缺模型适配器不认领、撤销/服务故障不调用模型也不发布、零历史跳过模型仍二次校验、模型中途撤销取消、假引用被拒、合法结论经第三次会员校验仅发布一次。测试使用合成 Account Portfolio HTTP 与模型函数，未调用真实供应商/人工审核内容。
+- 新建全新空白 PostgreSQL 库，两遍执行所有 up 迁移后完整 `go -C products/quizcraft/go-service test -race . ./tests ./cmd/server -count=1` 通过（1.674s / 10.717s / 1.458s）；`go vet ./...` 和差异检查通过，仅删除本次临时库。日志 `.cache/learning-feedback-runner-*`。历史 reconcile 仍因缺 Docker 未运行，不宣称全模块/端到端通过。
+- Standards/Spec 本地复核：模型只能收到已限定输入，版本变化/会员撤销不可自动复活旧任务；服务故障不放行。Public-ready Copy: not applicable。**未接真实模型 API、后台 worker 循环、HTTP/Gateway/Portal，功能仍默认关闭**，不能把测试函数当成生产可用服务。下一步：封闭供应商配置/超时/响应适配及后台任务调度，再实现前后端会员入口和人工内容评测/发布审批。不提交 AGENTS.md，不 push。

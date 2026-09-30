@@ -225,11 +225,12 @@ func (s *Service) RenewLearningLease(ctx context.Context, lease LearningJobLease
 	return until, nil
 }
 
-// FailLearningLease is the only normal retry path: <=3 actual lease grants.
-// Terminal/paused work must be explicitly requeued after its cooldown.
+// FailLearningLease handles bounded provider retries and permanent revocation
+// or policy/content changes under the current lease token. Paused work may be
+// explicitly requeued after its cooldown; cancelled work is never revived.
 func (s *Service) FailLearningLease(ctx context.Context, lease LearningJobLease, reason string) (string, error) {
 	switch reason {
-	case "provider_error", "provider_timeout", "invalid_model_result", "entitlement_unavailable", "worker_error":
+	case "provider_error", "provider_timeout", "invalid_model_result", "entitlement_unavailable", "entitlement_revoked", "policy_changed", "content_changed", "worker_error":
 	default:
 		return "", ErrLearningInvalidJob
 	}
@@ -258,7 +259,9 @@ func (s *Service) FailLearningLease(ctx context.Context, lease LearningJobLease,
 	if reason == "entitlement_unavailable" {
 		next, delay = "paused", 5
 	}
-	if attempts >= learningMaxAutomaticAttempts {
+	if reason == "entitlement_revoked" || reason == "policy_changed" || reason == "content_changed" {
+		next, delay = "cancelled", 0
+	} else if attempts >= learningMaxAutomaticAttempts {
 		next, delay = "failed", 5
 	}
 	_, err = tx.Exec(ctx, `UPDATE quizcraft_learning_report_jobs SET status=$2,lease_token=NULL,lease_until=NULL,
