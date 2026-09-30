@@ -180,3 +180,11 @@
 - 两项新增回归先红：300 标签合法课程冷启动被 128 KiB **模型外发**上限误拦；过大用户自由答案从模型输入扣留，但仍可能留在内部快照/报告。`go test . -run 'TestLearning(ReportLargeCourseColdStart|SnapshotRejectsOversizedAnswerBeforeWithholding)$' -count=1` 失败两项，记录在 `.cache/learning-feedback-resource-red.log`（本地忽略文件）。**此 commit 不是测试通过的交付**。
 - 下一步：修内部答案和快照字节边界、分离无历史报告验证与外发上限；补 SQL/DB 验证及既有测试，单独写 HANDOFF 并提交。后续再接任务去重/租约。不声称真实会员/模型或人工审核已完成。
 - Standards/Spec：只保存明确失败测试，尚不能验收。Public-ready Copy: not applicable。
+
+### 2026-10-01 / 18 — 答案与内部快照资源边界、冷启动解耦
+
+- 上阶段检查点 `626e3a80` 按用户指定 message 已提交，保留了明确的红测试。本阶段修复并补齐 DB 回归：读作答聚合时不返回任何原始答案，先在 SQL 检查首答/最近答案 JSON 的字节数；仅为选出的最多 24 条证据在同一只读事务二次获取答案，超过 4 KiB 直接报错而非截断。旧原始作答不改。
+- 课程题干/选项读入总量上限 16 MiB，入库前/模型分析前/报告组合前内部快照 JSON 上限 1 MiB。稳定指纹按全部相关题目的不可变 ID、版本、首答/最近时间/正确性与聚合构造，不再序列化非样本原始答案；单纯墙钟前移仍不创建新证据。
+- 合法 300 标签的大课程零历史仍校验摘要与内部快照，但跳过模型请求的 128 KiB 门禁、直接给已有诊断题；**有证据的模型输入上限仍是 128 KiB**。报告组合仍不发布、不接入真实模型。
+- TDD：前一检查点两项失败测试，新增内部序列化上限与真实 PG 大答案失败测试；定向学习反馈 `go test -race . ./tests -run '^TestLearning' -count=1` 通过（根包 1.622s / 集成 3.117s）。新建临时空白数据库、两遍执行所有 up 迁移后完整 `go test -race . ./tests -count=1` 通过（1.403s / 7.766s），只删除该临时库。`go vet ./...`、`git diff --check` 通过。日志位于工作区 `.cache/learning-feedback-resources-*`。本机缺 Docker 的旧 reconcile 测试仍未跑通，不能声称所有 Go 包全绿。
+- Standards/Spec 本地复核：不传未经白名单的快照，不把过大答案伪装成可用证据；资源限额是安全门禁，真实用户数据容量/性能和教育评测仍待校准。Public-ready Copy: not applicable（本阶段无新用户可见文案）。下一步：偏好锁顺序下入队/去重、手动与自动周期、租约/过期恢复及清除并发；再接 HTTP/会员、供应商/worker 和 UI/人工审核。当前仍默认关闭；不含 AGENTS.md、不 push。

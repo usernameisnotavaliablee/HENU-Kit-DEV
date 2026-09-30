@@ -55,6 +55,13 @@ type LearningModelFinding struct {
 }
 
 func BuildLearningModelInput(snapshot LearningEvidenceSnapshot, document LearningContentDocument) (LearningModelInput, error) {
+	return buildLearningModelInput(snapshot, document, true)
+}
+
+func buildLearningModelInput(snapshot LearningEvidenceSnapshot, document LearningContentDocument, providerPayload bool) (LearningModelInput, error) {
+	if err := validateLearningSnapshotSize(snapshot); err != nil {
+		return LearningModelInput{}, err
+	}
 	fail := func(message string) (LearningModelInput, error) { return LearningModelInput{}, errors.New(message) }
 	if snapshot.SchemaVersion != "learning-evidence-v2" || snapshot.BankID == uuid.Nil || snapshot.BankVersionID == uuid.Nil || snapshot.ContentVersionID == uuid.Nil || snapshot.PreferenceRevision < 1 || snapshot.Cutoff.IsZero() {
 		return fail("invalid or obsolete learning snapshot")
@@ -156,7 +163,7 @@ func BuildLearningModelInput(snapshot LearningEvidenceSnapshot, document Learnin
 	if err != nil {
 		return LearningModelInput{}, err
 	}
-	if len(raw) > learningModelInputMaxBytes {
+	if providerPayload && len(raw) > learningModelInputMaxBytes {
 		return fail("learning model input exceeds 128 KiB; do not silently truncate evidence")
 	}
 	return input, nil

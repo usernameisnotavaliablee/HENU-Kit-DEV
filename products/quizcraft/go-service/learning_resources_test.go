@@ -58,3 +58,18 @@ func TestLearningSnapshotRejectsOversizedAnswerBeforeWithholding(t *testing.T) {
 		t.Fatal("report must not retain the oversized raw answer")
 	}
 }
+
+func TestLearningSnapshotRejectsOversizedSerializedState(t *testing.T) {
+	doc, snapshot, _ := learningAnalysisFixture(t)
+	snapshot.QuestionContexts[0].Options = []string{strings.Repeat("x", 2<<20)}
+	if _, err := BuildLearningModelInput(snapshot, doc); err == nil {
+		t.Fatal("internal snapshot must be bounded even when no raw answer is present")
+	}
+	snapshot.Evidence = nil
+	snapshot.QuestionContexts = nil
+	snapshot.Statistics = []contract.LearningReportStatistic{{TagId: "loops", TagKind: "knowledge", Label: "循环"}}
+	snapshot.ChapterIDs = []string{strings.Repeat("x", 2<<20)}
+	if _, err := ComposeLearningReport(snapshot, doc, nil, uuid.New(), time.Now()); err == nil {
+		t.Fatal("cold-start snapshot must also respect the internal size bound")
+	}
+}

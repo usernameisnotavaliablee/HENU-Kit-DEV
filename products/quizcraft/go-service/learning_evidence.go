@@ -13,7 +13,12 @@ import (
 	"henukit.dev/quizcraft/internal/contract"
 )
 
-const learningEvidenceLimit = 24
+const (
+	learningEvidenceLimit       = 24
+	learningAnswerMaxBytes      = 4 << 10
+	learningSnapshotMaxBytes    = 1 << 20
+	learningQuestionSetMaxBytes = 16 << 20
+)
 
 var ErrLearningUnavailable = errors.New("learning feedback is not enabled for the owner and published course")
 
@@ -43,6 +48,21 @@ type LearningQuestionContext struct {
 	Options           []string  `json:"options"`
 }
 
+// Compact identities and aggregates bind the whole scoped history without
+// persisting unsampled raw answers, question text or option sets in the hash.
+type learningFactFingerprint struct {
+	QuestionID    uuid.UUID
+	VersionID     uuid.UUID
+	Attempts      int64
+	Correct       int64
+	FirstID       string
+	LatestID      string
+	FirstAt       time.Time
+	LatestAt      time.Time
+	FirstCorrect  bool
+	LatestCorrect bool
+}
+
 type learningQuestionEvidence struct {
 	QuestionID uuid.UUID
 	VersionID  uuid.UUID
@@ -55,6 +75,8 @@ type learningQuestionEvidence struct {
 	Correct    int64
 	First      contract.LearningReportEvidence
 	Latest     contract.LearningReportEvidence
+	FirstID    string
+	LatestID   string
 }
 
 // BuildLearningEvidence reads immutable answer facts for one opted-in owner.
@@ -104,12 +126,21 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 		return LearningEvidenceSnapshot{}, err
 	}
 	allQuestions := map[uuid.UUID]learningQuestionEvidence{}
+	questionBytes := 0
 	members, knownChapters := map[uuid.UUID]uuid.UUID{}, map[string]bool{}
 	for rows.Next() {
 		var q learningQuestionEvidence
 		if err := rows.Scan(&q.QuestionID, &q.VersionID, &q.ChapterID, &q.Question, &q.Kind, &q.Options); err != nil {
 			rows.Close()
 			return LearningEvidenceSnapshot{}, err
+		}
+		questionBytes += len(q.Question)
+		for _, option := range q.Options {
+			questionBytes += len(option)
+		}
+		if len(allQuestions) >= 10000 || questionBytes > learningQuestionSetMaxBytes {
+			rows.Close()
+			return LearningEvidenceSnapshot{}, errors.New("learning question set exceeds resource bounds")
 		}
 		allQuestions[q.QuestionID], members[q.QuestionID], knownChapters[q.ChapterID] = q, q.VersionID, true
 	}
@@ -148,7 +179,7 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 		}
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i].String() < ids[j].String() })
-	rows, err = tx.Query(ctx, learningEvidenceFactsSQL, userID, bankID, result.BankVersionID, result.Cutoff, ids)
+	rows, err = tx.Query(ctx, learningEvidenceFactsSQL, userID, bankID, result.BankVersionID, result.Cutoff, ids, learningAnswerMaxBytes)
 	if err != nil {
 		return LearningEvidenceSnapshot{}, err
 	}
@@ -157,10 +188,14 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 		var attempts, correct int64
 		var firstID, latestID string
 		var first, latest contract.LearningReportEvidence
-		var firstAnswer, firstExpected, latestAnswer, latestExpected json.RawMessage
-		if err := rows.Scan(&id, &attempts, &correct, &firstID, &first.SubmittedAt, &first.Correct, &firstAnswer, &firstExpected, &latestID, &latest.SubmittedAt, &latest.Correct, &latestAnswer, &latestExpected); err != nil {
+		var oversized bool
+		if err := rows.Scan(&id, &attempts, &correct, &firstID, &first.SubmittedAt, &first.Correct, &latestID, &latest.SubmittedAt, &latest.Correct, &oversized); err != nil {
 			rows.Close()
 			return LearningEvidenceSnapshot{}, err
+		}
+		if oversized {
+			rows.Close()
+			return LearningEvidenceSnapshot{}, errors.New("learning answer exceeds 4096 bytes")
 		}
 		q, ok := questions[id]
 		if !ok {
@@ -171,8 +206,8 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 		first.QuestionId, latest.QuestionId = q.QuestionID, q.QuestionID
 		first.QuestionVersionId, latest.QuestionVersionId = q.VersionID, q.VersionID
 		first.Question, latest.Question = q.Question, q.Question
-		first.SubmittedAnswer, first.ExpectedAnswer, latest.SubmittedAnswer, latest.ExpectedAnswer = firstAnswer, firstExpected, latestAnswer, latestExpected
 		q.Attempts, q.Correct, q.First, q.Latest = attempts, correct, first, latest
+		q.FirstID, q.LatestID = firstID, latestID
 		questions[id] = q
 	}
 	err = rows.Err()
@@ -180,10 +215,6 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 	if err != nil {
 		return LearningEvidenceSnapshot{}, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return LearningEvidenceSnapshot{}, err
-	}
-
 	stats := map[string]contract.LearningReportStatistic{}
 	for _, tag := range document.Tags {
 		if len(chapters) != 0 && !scopedTags[tag.ID] {
@@ -220,15 +251,30 @@ func (s *Service) BuildLearningEvidence(ctx context.Context, userID, bankID uuid
 	sort.Slice(result.Statistics, func(i, j int) bool { return result.Statistics[i].TagId < result.Statistics[j].TagId })
 	result.Evidence = selectLearningEvidence(facts, result.Statistics)
 	addLearningPracticeContext(&result, facts)
+	if err := loadLearningSampleAnswers(ctx, tx, userID, bankID, &result, facts); err != nil {
+		return LearningEvidenceSnapshot{}, err
+	}
+	if err := validateLearningSnapshotSize(result); err != nil {
+		return LearningEvidenceSnapshot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return LearningEvidenceSnapshot{}, err
+	}
 	// Wall-clock cutoff alone must not create new work. Include every scoped
 	// question's aggregate, not just the limited displayed sample. The final
 	// job key must additionally bind the configured model/prompt/policy versions.
 	fingerprint := result
 	fingerprint.Cutoff = time.Time{}
+	// Only immutable ids, timestamps, correctness and aggregates bind unsampled
+	// history. Never hash or serialize every user's raw answer into the job key.
+	compact := make([]learningFactFingerprint, 0, len(facts))
+	for _, q := range facts {
+		compact = append(compact, learningFactFingerprint{q.QuestionID, q.VersionID, q.Attempts, q.Correct, q.FirstID, q.LatestID, q.First.SubmittedAt, q.Latest.SubmittedAt, q.First.Correct, q.Latest.Correct})
+	}
 	canonical, err := json.Marshal(struct {
 		Snapshot LearningEvidenceSnapshot
-		Facts    []learningQuestionEvidence
-	}{fingerprint, facts})
+		Facts    []learningFactFingerprint
+	}{fingerprint, compact})
 	if err != nil {
 		return LearningEvidenceSnapshot{}, err
 	}
@@ -302,7 +348,9 @@ func selectLearningEvidence(facts []learningQuestionEvidence, stats []contract.L
 // must not erase valid history for an unchanged question. Ties use immutable ID.
 const learningEvidenceFactsSQL = `
 WITH ranked AS (
-    SELECT a.question_id,a.id,a.correct,a.submitted_at,a.submitted_answer,a.expected_answer,
+    SELECT a.question_id,a.id,a.correct,a.submitted_at,
+      octet_length(a.submitted_answer::text) AS submitted_bytes,
+      octet_length(a.expected_answer::text) AS expected_bytes,
       row_number() OVER (PARTITION BY a.question_id ORDER BY a.submitted_at,a.id) AS first_no,
       row_number() OVER (PARTITION BY a.question_id ORDER BY a.submitted_at DESC,a.id DESC) AS latest_no
     FROM quizcraft_practice_attempts a
@@ -312,10 +360,96 @@ WITH ranked AS (
 )
 SELECT question_id,count(*),count(*) FILTER (WHERE correct),
     max(id::text) FILTER (WHERE first_no=1),max(submitted_at) FILTER (WHERE first_no=1),bool_or(correct) FILTER (WHERE first_no=1),
-    (jsonb_agg(submitted_answer) FILTER (WHERE first_no=1))->0,(jsonb_agg(expected_answer) FILTER (WHERE first_no=1))->0,
     max(id::text) FILTER (WHERE latest_no=1),max(submitted_at) FILTER (WHERE latest_no=1),bool_or(correct) FILTER (WHERE latest_no=1),
-    (jsonb_agg(submitted_answer) FILTER (WHERE latest_no=1))->0,(jsonb_agg(expected_answer) FILTER (WHERE latest_no=1))->0
+    bool_or(submitted_bytes>$6 OR expected_bytes>$6) FILTER (WHERE first_no=1 OR latest_no=1)
 FROM ranked GROUP BY question_id ORDER BY question_id`
+
+// Fetch only the <=24 sampled answers. CASE keeps oversized values server-side;
+// NULL results fail closed rather than silently turning truncated text into evidence.
+func loadLearningSampleAnswers(ctx context.Context, tx pgx.Tx, userID, bankID uuid.UUID, result *LearningEvidenceSnapshot, facts []learningQuestionEvidence) error {
+	if len(result.Evidence) == 0 {
+		return nil
+	}
+	requested := map[uuid.UUID]*contract.LearningReportEvidence{}
+	sampleByEvidence := map[string]*contract.LearningReportEvidence{}
+	for i := range result.Evidence {
+		sampleByEvidence[result.Evidence[i].EvidenceId] = &result.Evidence[i]
+	}
+	for _, q := range facts {
+		if sample := sampleByEvidence[q.First.EvidenceId]; sample != nil {
+			id, err := uuid.Parse(q.FirstID)
+			if err != nil {
+				return err
+			}
+			requested[id] = sample
+		}
+		if sample := sampleByEvidence[q.Latest.EvidenceId]; sample != nil {
+			id, err := uuid.Parse(q.LatestID)
+			if err != nil {
+				return err
+			}
+			requested[id] = sample
+		}
+	}
+	ids := make([]uuid.UUID, 0, len(requested))
+	for id := range requested {
+		ids = append(ids, id)
+	}
+	rows, err := tx.Query(ctx, `SELECT id,
+        CASE WHEN octet_length(submitted_answer::text)<=$2 THEN submitted_answer END,
+        CASE WHEN octet_length(expected_answer::text)<=$2 THEN expected_answer END
+        FROM quizcraft_practice_attempts WHERE id=ANY($1::uuid[]) AND user_id=$3 AND bank_id=$4`, ids, learningAnswerMaxBytes, userID, bankID)
+	if err != nil {
+		return err
+	}
+	count := 0
+	for rows.Next() {
+		var id uuid.UUID
+		var submitted, expected json.RawMessage
+		if err := rows.Scan(&id, &submitted, &expected); err != nil {
+			rows.Close()
+			return err
+		}
+		sample := requested[id]
+		if sample == nil || len(submitted) == 0 || len(expected) == 0 || len(submitted) > learningAnswerMaxBytes || len(expected) > learningAnswerMaxBytes {
+			rows.Close()
+			return errors.New("learning answer exceeds 4096 bytes or is unavailable")
+		}
+		sample.SubmittedAnswer, sample.ExpectedAnswer = submitted, expected
+		count++
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if count != len(requested) {
+		return errors.New("learning sampled answer missing")
+	}
+	return nil
+}
+
+func validateLearningSnapshotSize(snapshot LearningEvidenceSnapshot) error {
+	for _, evidence := range snapshot.Evidence {
+		for _, answer := range []any{evidence.SubmittedAnswer, evidence.ExpectedAnswer} {
+			encoded, err := json.Marshal(answer)
+			if err != nil {
+				return err
+			}
+			if len(encoded) > learningAnswerMaxBytes {
+				return errors.New("learning answer exceeds 4096 bytes")
+			}
+		}
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	if len(raw) > learningSnapshotMaxBytes {
+		return errors.New("learning snapshot exceeds 1 MiB")
+	}
+	return nil
+}
 
 // Candidates remain internal: the model cannot choose arbitrary question IDs.
 func addLearningPracticeContext(snapshot *LearningEvidenceSnapshot, facts []learningQuestionEvidence) {

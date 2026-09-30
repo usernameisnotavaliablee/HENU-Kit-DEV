@@ -15,7 +15,7 @@ func ComposeLearningReport(snapshot LearningEvidenceSnapshot, document LearningC
 	if reportID == uuid.Nil || createdAt.IsZero() {
 		return contract.LearningReport{}, errors.New("report identity and creation time required")
 	}
-	if _, err := BuildLearningModelInput(snapshot, document); err != nil {
+	if _, err := buildLearningModelInput(snapshot, document, len(snapshot.Evidence) != 0); err != nil {
 		return contract.LearningReport{}, err
 	}
 	report := contract.LearningReport{ReportId: reportID, BankId: snapshot.BankID, ContentVersionId: snapshot.ContentVersionID, Goal: contract.LearningReportGoal(snapshot.Goal), Status: "insufficient_evidence", EvidenceUntil: snapshot.Cutoff, CreatedAt: createdAt.UTC(), Statistics: append([]contract.LearningReportStatistic{}, snapshot.Statistics...), Evidence: append([]contract.LearningReportEvidence{}, snapshot.Evidence...), Findings: []contract.LearningReportFinding{}, NextStep: contract.LearningReportAction{Kind: "no_action", Reason: "当前作答证据不足，暂不判断薄弱点。"}}

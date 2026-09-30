@@ -259,3 +259,44 @@ func TestLearningEvidenceUsesRealScopedAttemptsAndStableFingerprints(t *testing.
 		t.Fatal("revoked consent accepted")
 	}
 }
+
+func TestLearningEvidenceNeverFetchesOversizedHistoricAnswers(t *testing.T) {
+	ctx := context.Background()
+	pool := isolatedArtifactDatabase(t)
+	if _, err := quizcraft.ApplyVersionedMigrations(ctx, pool, "../db/migrations"); err != nil {
+		t.Fatal(err)
+	}
+	bank := importPracticeBank(t, pool, "learning-answer-bound")
+	installLearningTestContent(t, pool, bank)
+	user := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_learning_report_preferences(user_id,bank_id,enabled,external_analysis_consent,consent_version,next_due_at) VALUES($1,$2,true,true,'v1',now()+interval '7 days')`, user, bank.BankID); err != nil {
+		t.Fatal(err)
+	}
+	var single quizcraft.ImportedQuestion
+	for _, q := range bank.Questions {
+		if q.SourceQuestionID == "q0001" {
+			single = q
+		}
+	}
+	if single.QuestionID == "" {
+		t.Fatal("missing test question")
+	}
+	session := uuid.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_practice_sessions(id,bank_id,bank_version_id,user_id,actor_key,mode) VALUES($1,$2,$3,$4,'user:'||$4::uuid::text,'random')`, session, bank.BankID, bank.BankVersionID, user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_practice_session_questions(session_id,bank_id,bank_version_id,question_id,question_version_id,position) VALUES($1,$2,$3,$4,$5,1)`, session, bank.BankID, bank.BankVersionID, single.QuestionID, single.QuestionVersionID); err != nil {
+		t.Fatal(err)
+	}
+	answer, _ := json.Marshal(strings.Repeat("private", 1<<18))
+	if _, err := pool.Exec(ctx, `INSERT INTO quizcraft_practice_attempts(id,session_id,bank_id,bank_version_id,question_id,question_version_id,user_id,submitted_answer,correct,expected_answer,response_body) VALUES($1,$2,$3,$4,$5,$6,$7,$8,false,'1','{}')`, uuid.New(), session, bank.BankID, bank.BankVersionID, single.QuestionID, single.QuestionVersionID, user, answer); err != nil {
+		t.Fatal(err)
+	}
+	service, err := quizcraft.New(quizcraft.Config{Database: pool, AllowTestBootstrapActivation: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BuildLearningEvidence(ctx, user, uuid.MustParse(bank.BankID), time.Now()); err == nil {
+		t.Fatal("oversized saved answer must fail closed, not return or truncate private content")
+	}
+}
