@@ -216,3 +216,10 @@
 - 按权威 `packages/api-contracts/openapi/account-portfolio.yaml` 扩展路由/响应，经仓库 `cmd/contractgen` 重新生成 Go 路由常量，两次生成 SHA 一致；Redocly 2.39.0 lint 通过。新增真实签名+PG 测试覆盖未初始化、Console 授权/撤销实时可见、凭据隔离、签名 actor 不匹配、防重放、最小回包、无效/复用配置。
 - TDD：配置字段缺失测试先红。全新空白 Account Portfolio 专用测试库运行 `go test -race ./... -count=1` 最终通过（根包 1.332s、server 1.286s、集成 3.840s；其他命令包无测试），只删除本次库；`go vet ./...`、差异检查通过。首次完整验证发现 Chi 对未匹配的多余路径直接 404（未进入鉴权），测试改为要求 404 不泄露资源，重新用新空库全绿。日志 `.cache/learning-feedback-entitlement-*`，npm 缓存留工作区 `.cache/`。
 - Standards/Spec 本地复核：不借用 Gateway Owner 凭据、不通过 QuizCraft 凭据读取积分/订单/Console；签名 actor 只能由后续安全 QuizCraft 服务端绑定真实 job owner。Public-ready Copy: not applicable。下一步：QuizCraft 内部签名客户端及 Account Portfolio 服务端/worker 双端配置，实时权益校验再接 HTTP/Portal；真实性能与人工发布门禁仍缺。此提交不含 AGENTS.md，不 push。
+
+### 23 — QuizCraft 独立签名权益客户端
+
+- 已确认用户指定 message 的检查点 `626e3a80` 已在本分支；前阶段 Account Portfolio 契约提交 `d159b3f4`。本阶段新增 QuizCraft 内部只读客户端：独立 client/key/secret、与真实 owner 绑定的六字段 HMAC、随机 nonce、3 秒超时、禁止重定向、不缓存权益、拒绝非 200/畸形及超限响应；没有引入 Portal/Console 凭据或直接读外部数据库。
+- TDD：新增媒体类型回归先红（`application/json-forged` 被前缀匹配误接收），改为严格解析后，定向 `go test -race . -run '^TestLearningEntitlementClient' -count=1` 通过（1.480s）。覆盖撤销后下一次请求失权、伪造配置/响应、重定向、超时、owner 签名。测试用合成 HTTP 服务端验证协议，**未**证明已联通真实部署。
+- 新建并仅删除本次临时空白 PostgreSQL 库，按 TestMain 两遍应用所有 up 迁移；`go -C products/quizcraft/go-service test -race . ./tests -count=1` 通过（1.459s / 9.655s）；`go -C products/quizcraft/go-service vet ./...` 通过。日志 `.cache/learning-feedback-client-*`；旧 reconcile 包仍需 Docker，未宣称所有命令包完整运行验收。提交前仅暂存本阶段两份 Go 文件与 HANDOFF，`AGENTS.md` 不动；不 push。
+- Standards/Spec 本地复核：真实服务端尚未配置这份独立密钥或接入 worker/HTTP，客户端不能因存在而视为会员门禁已启用。Public-ready Copy: not applicable。下一步配置 Account Portfolio 和 QuizCraft 双端独立凭据、联通真实 HTTP 会员调用，并在生成/发布/读取边界 fail closed；随后才接供应商/worker 与 Portal。人工内容审核、真实模型评测和发布批准仍未完成，功能保持关闭。
