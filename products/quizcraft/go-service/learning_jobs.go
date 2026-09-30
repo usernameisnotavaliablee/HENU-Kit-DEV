@@ -173,7 +173,7 @@ func (s *Service) QueueLearningReport(ctx context.Context, userID, bankID uuid.U
 	}
 	if task.Status == "ready" {
 		var reportID uuid.UUID
-		if err := tx.QueryRow(ctx, `SELECT id FROM quizcraft_learning_reports WHERE job_id=$1 AND status='ready'`, task.TaskId).Scan(&reportID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM quizcraft_learning_reports WHERE job_id=$1 AND status<>'stale'`, task.TaskId).Scan(&reportID); err != nil {
 			return empty, false, fmt.Errorf("ready learning report missing: %w", err)
 		}
 		task.ReportId = &reportID

@@ -202,3 +202,10 @@
 - 候选任务先无锁读取，再按偏好→任务加锁并**重新检查**资格和 run_after，防止两个 worker 同时看见过期任务后绕过退避；恢复时先清旧 Token，退避后最多自动发放 3 次租约。快照异常、内容撤回、同意失效分别置 failed/cancelled，不把异常任务交给模型。续期要求有效 Token、内容与同意仍有效，不缩短原期限；失败写入拒绝伪造、过期、被清除或被新租约替换的 Token。权益依赖错误置 paused，不自动向模型重试。
 - TDD：接口缺失测试先红；覆盖并发同任务仅一租约、伪造/晚写拒绝、重启式过期恢复、退避、3 次上限、清除后旧 Token 失效、撤回内容与伪造快照、权益依赖暂停后显式重排。定向 `go test -race . ./tests -run '^TestLearning(Leases|Lease|Queue)' -count=1` 通过（根包 1.398s、集成 2.448s）。新建临时空库、两遍 up 迁移后完整 `go test -race . ./tests -count=1` 通过（1.395s / 8.538s），仅删除该临时库；`go vet ./...` 与差异检查通过。日志 `.cache/learning-feedback-leases-*`。旧 reconcile 包仍受 Docker 环境限制，不称全 Go 包运行通过。
 - Standards/Spec 本地复核：只交付仓储，不伪称外部权益重检/实际模型调用或安全发布完成；人工内容审核与评测仍缺。Public-ready Copy: not applicable。下一步：服务端报告发布接口，短事务复核租约/同意/内容，模型调用在事务外；然后实时会员网关/worker/前端与真实人工发布验收。此提交不含 AGENTS.md，不 push。
+
+### 21 — 报告幂等发布、实时检查入口与清除竞争保护
+
+- 上阶段 `eb4454a4` 已提交。新增内部 `PublishLearningReport`：要求非空会员权益检查回调；在事务前调用，错误/拒绝 fail closed。短事务内先锁偏好再锁任务，复核同意代次、租约唯一 Token/期限、当前审核内容和题库、持久快照/版本指纹，仅从数据库快照及已审核内容组合报告；报告 INSERT 与 job 置 ready 一起提交。不持 DB 长事务调用外部服务或模型。只允许同一仍有效租约、同意及会员重取既有报告，stale 不返回。
+- 修正已就绪 `insufficient_evidence` 报告的任务复用读取条件；它是有效冷启动报告，不可误当缺失而重复生成。合成模型假引用拒绝，非零真实作答无模型决策不得发布。权益检查器目前**只是必须提供的接口**，尚未接真实 Account Portfolio；生产不可用测试合成回调顶替。
+- TDD：发布方法缺失先红；新增真实 PostgreSQL 测试覆盖无会员/权益依赖错误、伪造 Token/版本、冷启动幂等与 OpenAPI 校验、真实作答无决策或假引用、慢权益检查期间的清除不受 DB 锁阻塞、发布/清除并发后无复活、撤回内容拒绝。定向 race 通过（根包 1.212s / 集成 3.226s）。新建临时空库、所有 up 迁移两遍后完整 `go test -race . ./tests -count=1` 通过（1.501s / 9.302s），只删除临时库；`go vet ./...` 与差异检查通过。日志 `.cache/learning-feedback-publish-*`。旧 reconcile Docker 缺口仍在。
+- Standards/Spec 本地复核：模型结果无法绕过证据/内容复核；发布通过不代表真实内容审核、会员服务或模型评测完成。Public-ready Copy: not applicable（本阶段无新增界面文案）。下一步：真实权益客户端及 HTTP/worker 边界，自动调度与供应商适配，后续 Portal/管理审核/E2E/人工发布门禁。功能继续关闭；不含 AGENTS.md、不 push。
