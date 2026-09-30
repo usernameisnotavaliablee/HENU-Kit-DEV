@@ -223,3 +223,10 @@
 - TDD：新增媒体类型回归先红（`application/json-forged` 被前缀匹配误接收），改为严格解析后，定向 `go test -race . -run '^TestLearningEntitlementClient' -count=1` 通过（1.480s）。覆盖撤销后下一次请求失权、伪造配置/响应、重定向、超时、owner 签名。测试用合成 HTTP 服务端验证协议，**未**证明已联通真实部署。
 - 新建并仅删除本次临时空白 PostgreSQL 库，按 TestMain 两遍应用所有 up 迁移；`go -C products/quizcraft/go-service test -race . ./tests -count=1` 通过（1.459s / 9.655s）；`go -C products/quizcraft/go-service vet ./...` 通过。日志 `.cache/learning-feedback-client-*`；旧 reconcile 包仍需 Docker，未宣称所有命令包完整运行验收。提交前仅暂存本阶段两份 Go 文件与 HANDOFF，`AGENTS.md` 不动；不 push。
 - Standards/Spec 本地复核：真实服务端尚未配置这份独立密钥或接入 worker/HTTP，客户端不能因存在而视为会员门禁已启用。Public-ready Copy: not applicable。下一步配置 Account Portfolio 和 QuizCraft 双端独立凭据、联通真实 HTTP 会员调用，并在生成/发布/读取边界 fail closed；随后才接供应商/worker 与 Portal。人工内容审核、真实模型评测和发布批准仍未完成，功能保持关闭。
+
+### 24 — 双端独立权益凭据的运行时接线（保持暗态）
+
+- 上阶段签名客户端 `f99bd5ea` 已独立提交。QuizCraft Go server 在启动时读取四项 `QUIZCRAFT_LEARNING_ENTITLEMENT_*` 配置：全空不创建客户端，缺项、占位密钥、与旧会话/Portal/Console 链路复用凭据或不可信 HTTP 地址均拒绝启动；合法配置注入 Practice HTTP 供后续受控路由使用。Account Portfolio 已有可选、与 Portal/Console 隔离的凭据验证，本阶段在开发及 prebuilt compose 中把同一组可选值同时映射到双方，示例均留空；**没有**生成或部署生产密钥。
+- TDD：server 配置测试先因缺方法编译失败，实现后定向及完整 `go test -race ./cmd/server -count=1` 通过。用合成 HTTP 服务端验证启用配置的客户端可执行真实签名调用；未声称两服务实际部署互通。全新临时空白 PostgreSQL 库按 TestMain 两遍运行全部 up 迁移后，QuizCraft `go test -race . ./tests ./cmd/server -count=1` 通过（1.753s / 9.624s / 1.176s），仅删除本次库；QuizCraft/Account Portfolio `go vet ./...`、Account Portfolio 根包及 server `go test -race` 通过。日志 `.cache/learning-feedback-config-*`。
+- 两份 compose 文件由 Ruby Psych 解析成功，AST 校验 Account Portfolio 与 QuizCraft 收到相同、默认空值的身份/密钥；本机没有 Docker，未运行 `docker compose config` 或容器联调，也未复核已有 reconcile 的 Docker 专项测试。差异检查通过。配置尚无报告 HTTP 路由或 worker 消费方，**不构成已生效的会员门禁**；功能仍默认关闭。
+- Standards/Spec 本地复核：拒绝缺项与凭据复用，未碰现有作答 API、旧鉴权或学生数据。Public-ready Copy: not applicable（仅开发/运维文档）。下一步在服务端任务执行与 HTTP 入口分别接实时权益、隔离模型供应商适配；再接 Gateway/Portal。人工内容审核、模型评测和生产发布批准依旧是硬门禁。不提交 AGENTS.md，不 push。

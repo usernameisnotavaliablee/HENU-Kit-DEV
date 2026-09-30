@@ -37,3 +37,16 @@ The browser cutover verifier exercises real guest practice, answer submission, c
 ## Operational claims
 
 Keep these states separate: candidate build, CI result, merge SHA, deployed SHA, and production user journey. `/healthz`, `/readyz`, HTTP 200, or a single redirect are not acceptance evidence for practice or authentication.
+
+## Learning entitlement caller (dark)
+
+QuizCraft's optional `QUIZCRAFT_LEARNING_ENTITLEMENT_URL`, `_CLIENT_ID`,
+`_KEY_ID` and `_SECRET` must be set together. The URL is the private Account
+Portfolio origin; its dedicated credential must match the service's
+`ACCOUNT_PORTFOLIO_QUIZCRAFT_*` settings, not a Portal/Console or QuizCraft
+command credential. The compose example wires the shared values into both
+services with empty defaults. Partial, placeholder or reused QuizCraft
+credentials prevent startup. This only prepares a signed, uncached internal
+caller: it does **not** expose report routes, start a model worker, or enable
+learning feedback. Until those gates are implemented and reviewed, leave the
+settings empty.

@@ -34,6 +34,8 @@ func main() {
 		fail(fmt.Errorf("unknown QuizCraft command"))
 	}
 	authSecret := requiredEnv("QUIZCRAFT_AUTH_HMAC_SECRET")
+	entitlement, err := learningEntitlementFromEnv()
+	fail(err)
 	address := os.Getenv("QUIZCRAFT_HTTP_ADDR")
 	if address == "" {
 		address = ":8080"
@@ -53,6 +55,7 @@ func main() {
 	handler, err := quizcraft.NewPracticeHTTP(quizcraft.PracticeHTTPConfig{
 		Database:              pool,
 		AuthHMACSecret:        []byte(authSecret),
+		LearningEntitlement:   entitlement,
 		LegacyBaseURL:         os.Getenv("QUIZCRAFT_LEGACY_BASE_URL"),
 		LegacyCompareSecret:   os.Getenv("QUIZCRAFT_LEGACY_COMPARE_SECRET"),
 		SummaryClientID:       os.Getenv("QUIZCRAFT_SUMMARY_CLIENT_ID"),
