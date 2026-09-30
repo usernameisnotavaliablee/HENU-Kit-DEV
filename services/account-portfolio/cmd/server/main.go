@@ -27,6 +27,9 @@ func main() {
 	consoleClientID := os.Getenv("ACCOUNT_PORTFOLIO_CONSOLE_CLIENT_ID")
 	consoleKeyID := os.Getenv("ACCOUNT_PORTFOLIO_CONSOLE_KEY_ID")
 	consoleSecret := os.Getenv("ACCOUNT_PORTFOLIO_CONSOLE_SECRET")
+	quizCraftClientID := os.Getenv("ACCOUNT_PORTFOLIO_QUIZCRAFT_CLIENT_ID")
+	quizCraftKeyID := os.Getenv("ACCOUNT_PORTFOLIO_QUIZCRAFT_KEY_ID")
+	quizCraftSecret := os.Getenv("ACCOUNT_PORTFOLIO_QUIZCRAFT_SECRET")
 	pointCursorKey, err := pointCursorKeyFromEnv()
 	if err != nil {
 		log.Fatal(err)
@@ -37,6 +40,13 @@ func main() {
 	consoleConfigured := consoleClientID != "" || consoleKeyID != "" || consoleSecret != ""
 	if consoleConfigured && (consoleClientID == "" || consoleKeyID == "" || consoleSecret == "") {
 		log.Fatal("Account Portfolio Console caller configuration is incomplete")
+	}
+	quizCraftConfigured := quizCraftClientID != "" || quizCraftKeyID != "" || quizCraftSecret != ""
+	if quizCraftConfigured && (quizCraftClientID == "" || quizCraftKeyID == "" || quizCraftSecret == "") {
+		log.Fatal("Account Portfolio QuizCraft caller configuration is incomplete")
+	}
+	if quizCraftConfigured && os.Getenv("ACCOUNT_PORTFOLIO_REQUIRE_STRONG_SECRET") == "1" && isPlaceholderSecret(quizCraftSecret) {
+		log.Fatal("Account Portfolio QuizCraft service secret is a deployment placeholder")
 	}
 	if os.Getenv("ACCOUNT_PORTFOLIO_REQUIRE_STRONG_SECRET") == "1" && isPlaceholderSecret(secret) {
 		log.Fatal("Account Portfolio service secret is a deployment placeholder")
@@ -53,6 +63,11 @@ func main() {
 		consoleKeys = map[string]string{consoleKeyID: consoleSecret}
 	}
 
+	var quizCraftKeys map[string]string
+	if quizCraftConfigured {
+		quizCraftKeys = map[string]string{quizCraftKeyID: quizCraftSecret}
+	}
+
 	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
 		log.Fatal(err)
@@ -62,13 +77,15 @@ func main() {
 		log.Fatal(err)
 	}
 	handler, err := accountportfolio.New(accountportfolio.Config{
-		Database:        pool,
-		ClientID:        clientID,
-		Keys:            map[string]string{keyID: secret},
-		ConsoleClientID: consoleClientID,
-		ConsoleKeys:     consoleKeys,
-		PointCursorKey:  pointCursorKey,
-		PaymentProvider: paymentProvider,
+		Database:          pool,
+		ClientID:          clientID,
+		Keys:              map[string]string{keyID: secret},
+		ConsoleClientID:   consoleClientID,
+		ConsoleKeys:       consoleKeys,
+		QuizCraftClientID: quizCraftClientID,
+		QuizCraftKeys:     quizCraftKeys,
+		PointCursorKey:    pointCursorKey,
+		PaymentProvider:   paymentProvider,
 	})
 	if err != nil {
 		log.Fatal(err)

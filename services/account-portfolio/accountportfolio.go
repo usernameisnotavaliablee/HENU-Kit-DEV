@@ -40,11 +40,13 @@ const maxPublicPointValue int64 = 9_007_199_254_740_991
 // Config contains only private service-to-service configuration. Browser
 // clients always go through Portal Gateway and never receive these values.
 type Config struct {
-	Database        *pgxpool.Pool
-	ClientID        string
-	Keys            map[string]string
-	ConsoleClientID string
-	ConsoleKeys     map[string]string
+	Database          *pgxpool.Pool
+	ClientID          string
+	Keys              map[string]string
+	ConsoleClientID   string
+	ConsoleKeys       map[string]string
+	QuizCraftClientID string
+	QuizCraftKeys     map[string]string
 	// PaymentProvider is nil in every production configuration until the
 	// separately authorized provider Spike supplies a real implementation.
 	PaymentProvider PaymentProvider
@@ -56,13 +58,14 @@ type Config struct {
 }
 
 type service struct {
-	database        *pgxpool.Pool
-	clientID        string
-	consoleClientID string
-	clientKeys      map[string]map[string]string
-	paymentProvider PaymentProvider
-	pointCursors    *pointCursorCodec
-	now             func() time.Time
+	database          *pgxpool.Pool
+	clientID          string
+	consoleClientID   string
+	quizCraftClientID string
+	clientKeys        map[string]map[string]string
+	paymentProvider   PaymentProvider
+	pointCursors      *pointCursorCodec
+	now               func() time.Time
 }
 
 type actor struct {
@@ -160,12 +163,17 @@ func New(config Config) (http.Handler, error) {
 	if err != nil {
 		return nil, errors.New("account portfolio point cursor encryption key is invalid")
 	}
-	if pointCursorKeyReusesServiceSecret(config.PointCursorKey, config.Keys, config.ConsoleKeys) {
+	if pointCursorKeyReusesServiceSecret(config.PointCursorKey, config.Keys, config.ConsoleKeys, config.QuizCraftKeys) {
 		return nil, errors.New("account portfolio point cursor encryption key must be independent from service credentials")
 	}
 	consoleConfigured := strings.TrimSpace(config.ConsoleClientID) != "" || len(config.ConsoleKeys) != 0
 	if consoleConfigured && (strings.TrimSpace(config.ConsoleClientID) == "" || config.ConsoleClientID == config.ClientID || !validClientKeys(config.ConsoleKeys) || sharedServiceSecret(config.Keys, config.ConsoleKeys)) {
 		return nil, errors.New("account portfolio Console service credentials are invalid")
+	}
+	quizCraftConfigured := strings.TrimSpace(config.QuizCraftClientID) != "" || len(config.QuizCraftKeys) != 0
+	if quizCraftConfigured && (strings.TrimSpace(config.QuizCraftClientID) == "" || config.QuizCraftClientID == config.ClientID || config.QuizCraftClientID == config.ConsoleClientID ||
+		!validClientKeys(config.QuizCraftKeys) || sharedServiceSecret(config.Keys, config.QuizCraftKeys) || sharedServiceSecret(config.ConsoleKeys, config.QuizCraftKeys)) {
+		return nil, errors.New("account portfolio QuizCraft service credentials are invalid")
 	}
 	if config.PaymentProvider != nil && !validPaymentProviderName(config.PaymentProvider.Name()) {
 		return nil, errors.New("account portfolio payment provider is invalid")
@@ -178,7 +186,10 @@ func New(config Config) (http.Handler, error) {
 	if consoleConfigured {
 		clientKeys[config.ConsoleClientID] = config.ConsoleKeys
 	}
-	h := &service{database: config.Database, clientID: config.ClientID, consoleClientID: config.ConsoleClientID, clientKeys: clientKeys, paymentProvider: config.PaymentProvider, pointCursors: pointCursors, now: now}
+	if quizCraftConfigured {
+		clientKeys[config.QuizCraftClientID] = config.QuizCraftKeys
+	}
+	h := &service{database: config.Database, clientID: config.ClientID, consoleClientID: config.ConsoleClientID, quizCraftClientID: config.QuizCraftClientID, clientKeys: clientKeys, paymentProvider: config.PaymentProvider, pointCursors: pointCursors, now: now}
 	router := chi.NewRouter()
 	router.Use(h.requestContext)
 	router.Get(contract.HealthRoute, h.health)
@@ -188,6 +199,7 @@ func New(config Config) (http.Handler, error) {
 		protected.Get(contract.SummaryRoute, h.summary)
 		protected.Get(contract.PointsRoute, h.points)
 		protected.Get(contract.MembershipRoute, h.membership)
+		protected.Get(contract.QuizCraftEntitlementRoute, h.quizCraftEntitlement)
 		protected.Get(contract.NotificationsRoute, h.notifications)
 		protected.Post(contract.NotificationReadRoute, h.markNotificationRead)
 		protected.Get(contract.TicketsRoute, h.tickets)
@@ -364,6 +376,43 @@ func (h *service) membership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Lifetime = data.Plan == "lifetime"
+	writeData(w, r, http.StatusOK, data)
+}
+
+// quizCraftEntitlement is deliberately not an owner read: a background job
+// has a persisted user ID, not a Portal Session. This dedicated credential
+// can only read that ID's current plan bit; missing users are not initialized.
+func (h *service) quizCraftEntitlement(w http.ResponseWriter, r *http.Request) {
+	caller := authenticatedActor(r)
+	if h.quizCraftClientID == "" || caller.clientID != h.quizCraftClientID {
+		writeError(w, r, http.StatusForbidden, "ACCESS_DENIED", "QuizCraft entitlement requires its dedicated service credential")
+		return
+	}
+	target, err := uuid.Parse(chi.URLParam(r, "user_id"))
+	if err != nil || target == uuid.Nil {
+		writeError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "entitlement user ID is invalid")
+		return
+	}
+	actorID, _ := uuid.Parse(caller.userID)
+	if actorID != target {
+		writeError(w, r, http.StatusForbidden, "ACCESS_DENIED", "entitlement target must match the signed job owner")
+		return
+	}
+	var plan string
+	data := struct {
+		Lifetime bool `json:"lifetime"`
+		Version  int  `json:"version"`
+	}{}
+	err = h.database.QueryRow(r.Context(), `SELECT plan,version FROM account_portfolio_memberships WHERE user_id=$1`, target).Scan(&plan, &data.Version)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeData(w, r, http.StatusOK, data)
+		return
+	}
+	if err != nil {
+		writeError(w, r, http.StatusServiceUnavailable, "DEPENDENCY_UNAVAILABLE", "membership entitlement is unavailable")
+		return
+	}
+	data.Lifetime = plan == "lifetime"
 	writeData(w, r, http.StatusOK, data)
 }
 

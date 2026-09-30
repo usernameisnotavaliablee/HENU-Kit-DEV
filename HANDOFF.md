@@ -209,3 +209,10 @@
 - 修正已就绪 `insufficient_evidence` 报告的任务复用读取条件；它是有效冷启动报告，不可误当缺失而重复生成。合成模型假引用拒绝，非零真实作答无模型决策不得发布。权益检查器目前**只是必须提供的接口**，尚未接真实 Account Portfolio；生产不可用测试合成回调顶替。
 - TDD：发布方法缺失先红；新增真实 PostgreSQL 测试覆盖无会员/权益依赖错误、伪造 Token/版本、冷启动幂等与 OpenAPI 校验、真实作答无决策或假引用、慢权益检查期间的清除不受 DB 锁阻塞、发布/清除并发后无复活、撤回内容拒绝。定向 race 通过（根包 1.212s / 集成 3.226s）。新建临时空库、所有 up 迁移两遍后完整 `go test -race . ./tests -count=1` 通过（1.501s / 9.302s），只删除临时库；`go vet ./...` 与差异检查通过。日志 `.cache/learning-feedback-publish-*`。旧 reconcile Docker 缺口仍在。
 - Standards/Spec 本地复核：模型结果无法绕过证据/内容复核；发布通过不代表真实内容审核、会员服务或模型评测完成。Public-ready Copy: not applicable（本阶段无新增界面文案）。下一步：真实权益客户端及 HTTP/worker 边界，自动调度与供应商适配，后续 Portal/管理审核/E2E/人工发布门禁。功能继续关闭；不含 AGENTS.md、不 push。
+
+### 22 — 独立 QuizCraft 权益只读契约与 Account Portfolio 服务边界
+
+- 上阶段 `8205c4b0` 已提交。Account Portfolio 新增独立、可选 QuizCraft 签名客户端凭据；仅开放与签名 actor 匹配的内部权益 GET，回包只含当前 lifetime 与会员 revision。未初始化不写入账户，数据库故障失败关闭；其他 owner/Console/未知内部路由不能用该凭据读取。配置必须完整、与 Portal/Console/积分游标密钥互异，未配置默认关闭。对外生产部署/QuizCraft 调用尚未接线。
+- 按权威 `packages/api-contracts/openapi/account-portfolio.yaml` 扩展路由/响应，经仓库 `cmd/contractgen` 重新生成 Go 路由常量，两次生成 SHA 一致；Redocly 2.39.0 lint 通过。新增真实签名+PG 测试覆盖未初始化、Console 授权/撤销实时可见、凭据隔离、签名 actor 不匹配、防重放、最小回包、无效/复用配置。
+- TDD：配置字段缺失测试先红。全新空白 Account Portfolio 专用测试库运行 `go test -race ./... -count=1` 最终通过（根包 1.332s、server 1.286s、集成 3.840s；其他命令包无测试），只删除本次库；`go vet ./...`、差异检查通过。首次完整验证发现 Chi 对未匹配的多余路径直接 404（未进入鉴权），测试改为要求 404 不泄露资源，重新用新空库全绿。日志 `.cache/learning-feedback-entitlement-*`，npm 缓存留工作区 `.cache/`。
+- Standards/Spec 本地复核：不借用 Gateway Owner 凭据、不通过 QuizCraft 凭据读取积分/订单/Console；签名 actor 只能由后续安全 QuizCraft 服务端绑定真实 job owner。Public-ready Copy: not applicable。下一步：QuizCraft 内部签名客户端及 Account Portfolio 服务端/worker 双端配置，实时权益校验再接 HTTP/Portal；真实性能与人工发布门禁仍缺。此提交不含 AGENTS.md，不 push。

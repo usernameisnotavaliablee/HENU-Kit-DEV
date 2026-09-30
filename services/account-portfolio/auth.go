@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"henukit.dev/account-portfolio/internal/contract"
 )
 
 const nonceTTL = 5 * time.Minute
@@ -25,6 +26,15 @@ func (h *service) authenticate(next http.Handler) http.Handler {
 		secret, keyKnown := keys[r.Header.Get("X-Key-Id")]
 		if !basic || !clientKnown || r.Header.Get("X-Service-Id") != clientID || !keyKnown || !hmac.Equal([]byte(secret), []byte(basicSecret)) {
 			writeError(w, r, http.StatusUnauthorized, "INVALID_SERVICE_AUTH", "service credentials are invalid")
+			return
+		}
+		// A job service may read only the minimal entitlement endpoint, not
+		// owner points/orders or Console commands even with a valid key.
+		prefix := strings.TrimSuffix(contract.QuizCraftEntitlementRoute, "{user_id}")
+		scopedUser := strings.TrimPrefix(r.URL.Path, prefix)
+		if h.quizCraftClientID != "" && clientID == h.quizCraftClientID &&
+			(r.Method != http.MethodGet || !strings.HasPrefix(r.URL.Path, prefix) || uuid.Validate(scopedUser) != nil) {
+			writeError(w, r, http.StatusForbidden, "ACCESS_DENIED", "QuizCraft credential is limited to entitlement reads")
 			return
 		}
 		userID := r.Header.Get("X-Actor-User-Id")

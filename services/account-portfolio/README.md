@@ -10,6 +10,15 @@ Gateway contract and never receive service credentials or an actor identifier
 they can assert themselves. Console Gateway is the only operator caller and
 must use a credential distinct from Portal Gateway's.
 
+A dedicated, optional QuizCraft service credential may read only
+`GET /api/v1/internal/quizcraft/entitlements/{user_id}`. Requests are signed,
+replay-protected, and actor-bound to the URL user ID; the response contains
+only the current lifetime bit and membership revision. Missing accounts are
+not initialized by this read. Do not reuse Portal or Console secrets. Without
+`ACCOUNT_PORTFOLIO_QUIZCRAFT_CLIENT_ID`, `_KEY_ID`, and `_SECRET` together,
+the caller is disabled. The QuizCraft caller/deployment integration remains
+dark until its worker and member gates are verified.
+
 The ¥9.9 lifetime Membership Order kernel is durable, but the process does not
 read a payment Provider credential or enable a real Provider. A missing
 Provider returns an explicit unavailable result and creates neither an order

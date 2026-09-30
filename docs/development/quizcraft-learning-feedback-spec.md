@@ -74,3 +74,8 @@
 - `PublishLearningReport` 要求非空的实时权益检查器；外部检查在事务**之前**执行，拒绝/超时/错误均失败关闭。生产 worker 必须注入实际 Account Portfolio lifetime 校验，测试里的合成回调不构成实际授权；模型调用本身也必须在事务外。
 - 按偏好→任务锁序，重新验证 owner/课程、同意版本/代次、唯一 Token 与租约时效、当前审核内容/题库、持久快照指纹及当前模型/提示词/策略版本。只从数据库不可变快照与审核内容合成报告，模型输出再次验证；写报告及置任务 ready 在一个事务内。无效模型结果不消耗租约，交由 worker 用失败接口处理。
 - 同一租约重复发布只返回已有报告，且仍需当前权益/内容/同意；`insufficient_evidence` 也是可复用的有效报告状态，stale 不可读。原子清除与发布竞争后不能残留报告，旧 Token 不能晚写。当前尚无对外读取、人工审核接线、供应商 worker 或产品开放，不能以仓储的安全门禁代替完整链路验收。
+
+## 权益权威的最小只读接口（Account Portfolio 阶段）
+
+- Account Portfolio 扩展独立可选的 QuizCraft 服务凭据，仅允许签名的 `GET /api/v1/internal/quizcraft/entitlements/{user_id}`；URL 用户必须与签名 actor 相同，回包只含当前 lifetime 布尔值和 revision。未初始化用户按无权益返回且不写数据；数据库故障显式 503。签名含时间戳/随机 nonce 并防重放，Portal/Console/QuizCraft 三套凭据互斥、不复用积分加密密钥。
+- 当前仅提供权益权威接口，不等于 QuizCraft worker/HTTP 已经完成实时查询。可选密钥未配置时默认关闭；生产启用前必须完成密钥分发、私网路由、会员撤销/依赖异常测试和发布前二次检查。不可将测试专用检查回调当生产权限来源。

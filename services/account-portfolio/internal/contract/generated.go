@@ -1,4 +1,4 @@
-// Code generated from account-portfolio.yaml (SHA256 5555bb8ca3945a53fbb3b2be9874d8a3c76f0a2ac190c7f61adbbd42013edc01); DO NOT EDIT.
+// Code generated from account-portfolio.yaml (SHA256 89b3e39ca41355a0ea11d4803e4e498c94fcae6609fc704baca8a39281bf55b9); DO NOT EDIT.
 package contract
 
 const (
@@ -6,6 +6,7 @@ const (
 	SummaryRoute                        = "/api/v1/account/summary"
 	PointsRoute                         = "/api/v1/account/points"
 	MembershipRoute                     = "/api/v1/account/membership"
+	QuizCraftEntitlementRoute           = "/api/v1/internal/quizcraft/entitlements/{user_id}"
 	NotificationsRoute                  = "/api/v1/account/notifications"
 	NotificationReadRoute               = "/api/v1/account/notifications/{notification_id}/read"
 	TicketsRoute                        = "/api/v1/account/tickets"
