@@ -36,6 +36,52 @@ func validLearningJobVersions(v LearningJobVersions) bool {
 		!strings.ContainsAny(v.Model+v.Prompt, "\r\n\x00")
 }
 
+func learningJobInputSHA(snapshot LearningJobSnapshot) (string, error) {
+	evidence, versions := snapshot.Evidence, snapshot.Versions
+	key, err := json.Marshal(struct {
+		Evidence string
+		Content  uuid.UUID
+		Model    string
+		Prompt   string
+		Policy   string
+	}{evidence.InputSHA256, evidence.ContentVersionID, versions.Model, versions.Prompt, versions.Policy})
+	if err != nil {
+		return "", err
+	}
+	return hash(key), nil
+}
+
+// Apply under the owner's preference lock; the content may change between
+// evidence capture and enqueue, or during an external model call.
+func learningCurrentContent(ctx context.Context, tx pgx.Tx, bankID uuid.UUID, evidence LearningEvidenceSnapshot) error {
+	var contentVersion, bankVersion uuid.UUID
+	var digest string
+	err := tx.QueryRow(ctx, `SELECT c.id,c.bank_version_id,c.content_sha256
+        FROM quizcraft_learning_catalogs l
+        JOIN quizcraft_learning_content_versions c ON c.bank_id=l.bank_id AND c.id=l.active_content_version_id
+        JOIN quizcraft_banks b ON b.id=c.bank_id AND b.active_version_id=c.bank_version_id
+        JOIN quizcraft_bank_versions bv ON bv.bank_id=b.id AND bv.id=b.active_version_id AND bv.sealed_at IS NOT NULL
+        WHERE l.bank_id=$1 AND l.enabled AND c.status='approved'
+        FOR SHARE OF l,c,b`, bankID).Scan(&contentVersion, &bankVersion, &digest)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrLearningUnavailable
+	}
+	if err != nil {
+		return err
+	}
+	if contentVersion != evidence.ContentVersionID || bankVersion != evidence.BankVersionID || digest != evidence.ContentSHA256 {
+		return ErrLearningUnavailable
+	}
+	return nil
+}
+
+func learningJobCurrent(p learningStoredPreferences, snapshot LearningJobSnapshot) bool {
+	e := snapshot.Evidence
+	return p.Value.Enabled && p.Value.ExternalAnalysisConsent && p.ConsentVersion == learningConsentVersion &&
+		p.Value.Revision == e.PreferenceRevision && p.Value.BankId == e.BankID &&
+		p.Value.Goal == contract.LearningReportPreferencesGoal(e.Goal) && slices.Equal(p.Value.ChapterIds, e.ChapterIDs)
+}
+
 // QueueLearningReport is an internal repository operation. The HTTP/scheduler
 // caller MUST verify the owner and live lifetime entitlement before entry.
 // Model invocation, if any, happens later and never within this transaction.
@@ -57,17 +103,10 @@ func (s *Service) QueueLearningReport(ctx context.Context, userID, bankID uuid.U
 	if len(raw) > learningSnapshotMaxBytes {
 		return empty, false, ErrLearningInvalidJob
 	}
-	key, err := json.Marshal(struct {
-		Evidence string
-		Content  uuid.UUID
-		Model    string
-		Prompt   string
-		Policy   string
-	}{evidence.InputSHA256, evidence.ContentVersionID, versions.Model, versions.Prompt, versions.Policy})
+	inputSHA, err := learningJobInputSHA(snapshot)
 	if err != nil {
 		return empty, false, err
 	}
-	inputSHA := hash(key)
 	tx, err := s.database.Begin(ctx)
 	if err != nil {
 		return empty, false, err
@@ -78,30 +117,14 @@ func (s *Service) QueueLearningReport(ctx context.Context, userID, bankID uuid.U
 		return empty, false, err
 	}
 	p := stored.Value
-	if !p.Enabled || !p.ExternalAnalysisConsent || stored.ConsentVersion != learningConsentVersion || p.Revision != evidence.PreferenceRevision ||
-		p.Goal != contract.LearningReportPreferencesGoal(evidence.Goal) || !slices.Equal(p.ChapterIds, evidence.ChapterIDs) {
+	if !learningJobCurrent(stored, snapshot) {
 		return empty, false, ErrLearningUnavailable
 	}
 	if source == "automatic" && (p.NextDueAt == nil || p.NextDueAt.After(time.Now())) {
 		return empty, false, ErrLearningUnavailable
 	}
-	var contentVersion, bankVersion uuid.UUID
-	var digest string
-	err = tx.QueryRow(ctx, `SELECT c.id,c.bank_version_id,c.content_sha256
-        FROM quizcraft_learning_catalogs l
-        JOIN quizcraft_learning_content_versions c ON c.bank_id=l.bank_id AND c.id=l.active_content_version_id
-        JOIN quizcraft_banks b ON b.id=c.bank_id AND b.active_version_id=c.bank_version_id
-        JOIN quizcraft_bank_versions bv ON bv.bank_id=b.id AND bv.id=b.active_version_id AND bv.sealed_at IS NOT NULL
-        WHERE l.bank_id=$1 AND l.enabled AND c.status='approved'
-        FOR SHARE OF l,c,b`, bankID).Scan(&contentVersion, &bankVersion, &digest)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return empty, false, ErrLearningUnavailable
-	}
-	if err != nil {
+	if err := learningCurrentContent(ctx, tx, bankID, evidence); err != nil {
 		return empty, false, err
-	}
-	if contentVersion != evidence.ContentVersionID || bankVersion != evidence.BankVersionID || digest != evidence.ContentSHA256 {
-		return empty, false, ErrLearningUnavailable
 	}
 	task := contract.LearningReportTask{BankId: bankID}
 	var reason string
