@@ -496,3 +496,19 @@
 - 未验证（本机不可行，留给有 Docker 的 CI）：sqlc 生成、镜像构建与镜像扫描、Playwright practice 浏览器用例。
 - 三轴：Standards（本轮修的是 CI 守护自身的一致性：断言不写死、回滚顺序正确、down 不破坏不可变保证）；Spec 不适用（无行为与契约变化）；Public-ready Copy: not applicable。
 - 结论：这三处缺陷会随第一个 PR 一起把 CI 打成红的（一个写死的数字、一个漏掉的回滚文件、一个永远执行不了的 down 文件）。分支「没有 PR 就没有 CI」的盲区，本轮用本地等价复现补上了；剩下的 Docker 类步骤仍需真实 CI。
+
+### 46 — 真实后端联合验证：真实 Core 进程 + 真实 PG + 网关进程内处理器（50 条断言）
+
+- 背景：HANDOFF 44 记录的本仓 `下一步建议：真实后端联合验证`。此前 Core 与 Gateway 各自有集成测试，但没有任何一次运行让**真实的两个服务**互相说话 —— 契约是契约，接线是接线。
+- 做法（新文件，都在网关模块里，因为只有网关能同时铸造会员 cookie 并驱动 Core）：
+  - `services/portal-gateway/internal/httpapi/learning_report_joint_test.go`：`QUIZCRAFT_JOINT_DATABASE_URL` 存在才跑，否则 SKIP（0.16s），所以 `go test ./...` 仍然离线、快速、不碰数据库。它会：重建名为 `quizcraft_v2` 的库（`cmd/server` 只接受这个名字）→ 用 `psql` 把 13 个 `*.up.sql` 跑两遍 → 灌 fixture → 起**校验 HMAC 签名**的平台权益 stub 与 Platform Core 权限 stub（都是 httptest）→ `go build` 并 exec **真实 Core 二进制**（`QUIZCRAFT_HTTP_ADDR` 随机端口，等 `/readyz`）→ 用 `httpapi.New` 在进程内起网关（V2 读 + 学习报告开关打开、凭据与 Core 对齐）→ 用 `internal/session` 铸造终身会员会话 cookie。
+  - `services/portal-gateway/internal/httpapi/testdata/quizcraft_learning_report_fixture.sql`：最小合成 fixture（一门已发布课程 + 封存题库版本 + 2 道单章单选题 + 已审核学习内容版本接到启用的 catalog + 1 条真实不可变作答）。内容摘要用 SQL 里的 `sha256(convert_to(:'document','UTF8'))` 现算，和 Core 的 Go 规范化重序列化一致，不用手抄十六进制常量。**不含任何密钥或真实学生数据。**
+- 覆盖的链路（50 条断言，四条子路径）：会员链路（catalog 200 → 偏好 GET 默认关闭 → 偏好 PUT 开启含 consent 且 revision=2 → 生成 POST 202 → 任务 GET 200 `queued` → 清除 DELETE 200）；**暗态**（同一处理器关掉学习报告 → 会员路由给文档化的 503，不依赖任何外部服务）；**撤权**（权益 stub 返回 lifetime=false → 开启被 403 拒绝）；**手动守卫**（`QUIZCRAFT_LEARNING_MANUAL_LIMIT=1`，隔一次改偏好的新输入生成 → 202 然后 429 `practice_command_rate_limited`）。
+- 我自己的验证（不是转述子代理）：
+  - 绿：`QUIZCRAFT_JOINT_ALLOW_DESTRUCTIVE_RECREATE=1 QUIZCRAFT_JOINT_DATABASE_URL=postgres://mac@127.0.0.1:5432/postgres?sslmode=disable go test ./internal/httpapi -run TestQuizCraftLearningReportMemberChainAcrossARealCore -count=1` → `50 assertions passed`，真实 Core 起在 `http://127.0.0.1:62xxx`，13 个迁移两遍，四条子测试全 PASS（约 1.5s）。
+  - **会咬人**：把第 918 行 `http.StatusTooManyRequests` 改成 `http.StatusOK` → `second generation over the cap = 429, want 200`、`46 assertions passed`、FAIL；`cmp` 确认恢复为逐字节相同后再次全绿。
+  - **破坏性有守卫**（我加的）：库已存在且含 QuizCraft 表时，未设 `QUIZCRAFT_JOINT_ALLOW_DESTRUCTIVE_RECREATE=1` 会直接拒绝（实测：`quizcraft_v2 already holds 117 QuizCraft tables and this test drops and recreates it`），防止把开发者本机有数据的库静默重建；只有确认数据可丢时才用该开关。
+  - 离线路径：不设 URL → `SKIP 0.158s`，`go test ./...` 仍绿（网关模块 `-race` 全量，见下）。
+- 结论：会员学习报告链路现在有一条**跨真实服务进程**的可执行证据。Core 在四条路径上的行为与规格/契约声明完全一致，没有发现产品缺陷（原句：`No product bug found`）。这把 `#166` 切流决定从「两侧各自测过」推进到「两侧一起跑过」。
+- 三轴：Standards（测试自持 fixture、显式破坏性开关、断言经真实 HTTP 契约、离线默认 SKIP）；Spec（覆盖 LF-01…LF-06 的会员可见链路与失败/权限/限流路径）；Public-ready Copy: not applicable（无用户可见文案）。
+- 未覆盖（仍待外部输入）：真实模型 provider 冒烟、真实账号全链路、人工内容/语义/文案门禁。
