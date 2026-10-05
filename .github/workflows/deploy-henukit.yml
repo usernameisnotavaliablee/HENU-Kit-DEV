@@ -100,9 +100,12 @@ jobs:
       - name: Verify Library owner download behavior
         run: pnpm --filter @henukit/portal test:e2e:library-download
 
-  # The QuizCraft catalog and QQ binding groups each start their own dev
-  # server; Practice uses the default one. All three run here, beside
-  # portal-responsive, so that job stays within its 20-minute limit (#553).
+  # The QuizCraft catalog, learning report and QQ binding groups each start
+  # their own dev server; Practice uses the default one. All four run here,
+  # beside portal-responsive, so that job stays within its 20-minute limit
+  # (#553). The learning report group is the only place the cutover-only
+  # learning flags are exercised in a browser, so it runs even while the
+  # feature stays dark in production.
   portal-practice-and-binding:
     name: portal-practice-and-binding
     needs: validate-release-contract
@@ -125,6 +128,8 @@ jobs:
         run: pnpm --filter @henukit/portal test:e2e:quizcraft-catalog
       - name: Verify Practice session, swipe, and transition behavior
         run: pnpm --filter @henukit/portal test:e2e:practice
+      - name: Verify learning report settings, generation and clearing
+        run: pnpm --filter @henukit/portal test:e2e:learning-reports
       - name: Verify QQ binding authorization
         run: pnpm --filter @henukit/portal test:e2e:qq-binding
 

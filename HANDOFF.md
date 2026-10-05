@@ -386,3 +386,16 @@
   - 命令与结果：全新空白库两遍迁移后 `go test -race . ./tests ./cmd/server ./cmd/learninghealth -count=1`（见下条全量日志）；`gofmt -l` 无输出、`go vet ./...` 退出 0。
 - Standards/Spec 本地复核：监测只读、不改数据（测试断言行数与两次读取一致）；告警只在真实运维问题出现时产生，暗态不吵；回退顺序 fail-closed，且明确「保留报告/偏好/任务/审核记录、不清除会员同意」；健康命令不提供任何跨库直连（只允许 `quizcraft_v2`）。仍**未**做：自动回退、外部告警系统接线、token 级成本核算、供应商成功率面板、真实人工评测与真实供应商调用。Public-ready Copy: not applicable（无用户可见文案）。
 - 下一步：真实供应商受控演练、学习报告 e2e 组接进 CI、#166 切流决定（含是否烘焙浏览器开关）。本阶段独立 commit 并 push，不包含 AGENTS.md。
+
+### 39 — 学习报告 e2e 组接入 CI 浏览器门禁（LF-07「全链路测试」缺的那一格）
+
+- 背景：op 35 交付的 `/practice/reports` 界面只在本地用专用 Playwright 配置跑过（5 项），而 `.github/workflows/deploy-henukit.yml` 的浏览器门禁只列了 catalog / practice / qq-binding / stats 等组——学习报告的界面回归与「暗态不泄漏、开启后可用」在 CI 里没有任何守卫。功能越晚切流，越需要这条守卫；它不需要任何新决策，所以补上。
+- 改动：
+  - `deploy-henukit.yml` 的 `portal-practice-and-binding` 作业新增步骤 `Verify learning report settings, generation and clearing` → `pnpm --filter @henukit/portal test:e2e:learning-reports`，并更新作业注释（现在有四个组，其中三个自带 dev server，学习报告组是唯一在浏览器里打开三个学习开关的地方）。作业超时保持 `20` 分钟：本组实测整轮 14.5s（`real 15.15s`），CI 冷启动 Next dev server 后仍在预算内，因此不动既有超时断言。
+  - `scripts/ops/tests/deploy-henukit-workflow.test.mjs`：把 `learning-reports` 加入该作业的组列表（同时断言它**不**在 `portal-responsive` 里跑），并新增断言：portal 脚本必须指向 `playwright.learning-reports.config.ts`，且该配置必须保持 `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS: "1"`、`NEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY: "1"`、`reuseExistingServer: false`——否则这组会「静默改成渲染暗态并通过」，比不跑更危险（护栏是这次回归的真正价值）。
+- 验证：
+  - `PLAYWRIGHT_BROWSERS_PATH=<workspace>/.cache/ms-playwright npx playwright test --config playwright.learning-reports.config.ts` → **5 passed (14.5s)**（会员设置与报告、保存设置、无报告时的去处、排队跟随进度、二次确认清除）。
+  - `node --test scripts/ops/tests/deploy-henukit-workflow.test.mjs`：本次修改的用例 `✔ CI runs the QuizCraft catalog, Practice, learning report and QQ binding browser groups beside portal-responsive` 通过；共 14 通过 / 4 失败，失败四项全部是本机无 Docker 导致（`spawnSync docker ENOENT`，与本次改动无关的环境限制，HANDOFF 既有记录）。
+  - `ruby -ryaml -e 'YAML.load_file(...)'` 确认 workflow YAML 仍可解析；`.github/workflows/deploy-henukit.yml` 触发条件是全量 `pull_request`，无需新增路径过滤。
+- Standards/Spec 本地复核：门禁只在 CI 里跑，不改运行时行为；学习报告组用专用配置与专用端口（3003）自带 dev server，`reuseExistingServer: false`，不会借用其它组的服务器而误判；治理测试同时锁「在哪跑」和「跑的是什么配置」两件事，删步骤或悄悄关掉浏览器开关都会红。Public-ready Copy: not applicable（无用户可见文案改动）。
+- 下一步：真实供应商受控演练、#166 切流决定（含是否烘焙浏览器开关）、人工评测与发布授权。本阶段独立 commit 并 push，不包含 AGENTS.md。
