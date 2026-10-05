@@ -435,3 +435,14 @@
   - 治理：`node --test scripts/ops/tests/deploy-henukit-workflow.test.mjs` 仍为 14 pass / 4 fail，4 个失败全部是本机无 Docker 的 `spawnSync docker ENOENT`，与本次改动无关；`ruby -ryaml` 校验两套 compose 通过。
 - 未整改（判断型，已记录）：`learning_review_http.go` 审核闭包签名里三个裸 UUID（Data Clumps）与 retire 路径丢弃两个参数（Refused Bequest）；`practice_http.go` 中 create-session 幂等键的 kind 字面量（那是处理函数自身语义，不是枚举白名单）。真要重构审核写路径，应在有并发/失败路径回归的前提下单独一票，不在评审整改里顺手动。
 - 下一步：等 Spec 轴评审结论合并处理；仍等真实供应商受控演练、真实账号全链路、人工内容/语义/文案复核、#166 切流决定与发布授权。
+
+### 42 — 学习反馈「默认全暗 + 回退顺序」合同测试（#166 切流前置）
+
+- 背景：`#166` 要决定是否切流，但「每个部署面都默认暗」此前只是散落在若干测试里的零碎断言，没有一处能把整条暗态合同说清楚。切流必须是一次会让某个测试变红的显式改动，而不是某个 surface 悄悄写死 1。
+- 新增 `scripts/ops/tests/learning-feedback-dark.test.mjs`（3 项，已注册进 CI `release-contract` 作业的文件清单）：
+  - 部署面默认全暗：`.env.henukit.example` 四项（网关门禁 0、浏览器开关 0、worker 0、限流 10）；`docker-compose.henukit.yml` 四项 `:-默认`；生产 overlay 不许出现任何学习开关 `=1`；`apps/portal/Dockerfile` 的 `ARG`/`ENV` 浏览器开关保持 0；`henukit-release-images.sh` 的 release env 只烘焙 catalog/V2 读取（并以此锚定读的是那段 env），学习开关一律不许 `=1`。
+  - 读侧 fail-closed：网关必须 `getenv("PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS")` 且保留「置 1 但没开 V2 读取就启动失败」；Portal 的浏览器开关必须是 `=== "1"`（不设=关，而不是不设=开）。
+  - 回退顺序：运维矩阵里四步顺序（先关会员入口 → 烘焙 0 重建 Portal → 关 worker → 关调度）必须仍有记录且顺序不变。
+- 补齐运维面缺口：`.env.henukit.example` 此前只列了 `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG`，而 compose 实际还传 `V2_READS` 与 `LEARNING_REPORTS` 两个**构建期**浏览器开关；现在两者都进示例文件，并写明「构建期生效、运行时改 .env 无效、与网关服务端开关成对开启」。
+- 验证：新测试 3/3 通过；**并证明它会咬人** —— 把示例文件浏览器开关改成 1 → `fail 1`（`/^NEXT_PUBLIC_..._LEARNING_REPORTS=0$/m` 不匹配）；把 `henukit-release-images.sh` 里塞一行学习开关 `=1` → `fail 1`（`release images must stay dark for PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS`）；两处恢复后 3/3 通过。治理测试仍 14 pass / 4 fail（4 个为本机无 Docker 的 ENOENT）；两套 compose 与 workflow 的 YAML 校验通过。
+- 结论：`#166` 需要人做的产品决定（是否烘焙浏览器开关、是否开成员入口）不变，但「默认暗」这条工程约束现在有单一、可执行、会在切流时变红的守护。
