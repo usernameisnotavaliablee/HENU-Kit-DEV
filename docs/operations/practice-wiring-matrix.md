@@ -105,6 +105,8 @@
 - **运行监测**：`QUIZCRAFT_V2_DATABASE_URL`（必须 `quizcraft_v2`）下运行
   `go run ./cmd/learninghealth -json -fail-on-alert`（`-queued-behind` 默认 30m，`-failure-budget` 默认 0）。
   告警项：过期租约、排队超阈值、24h 失败超预算、已同意会员但无启用课程。暗态功能不产生告警。
+- **手动生成限流**：`QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 `10`，`0` 关闭）限制同一会员对同一课程每小时的生成任务数，
+  超限为 429 `rate_limited`（网关转 429 `practice_command_rate_limited`）。这是成本/滥用保护，不是配额；计划任务不受限。
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。

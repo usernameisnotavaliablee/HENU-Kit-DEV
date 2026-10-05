@@ -25,18 +25,24 @@ var (
 type Config struct {
 	Database                     *pgxpool.Pool
 	AllowTestBootstrapActivation bool
+	// LearningManualLimit is the abuse guard for member-requested course
+	// feedback: how many generations one member may start for one course inside
+	// LearningManualWindow. Zero disables the guard (an explicit operator
+	// choice); it is never a usage quota and never applies to scheduled work.
+	LearningManualLimit int
 }
 
 type Service struct {
 	database                     *pgxpool.Pool
 	allowTestBootstrapActivation bool
+	learningManualLimit          int
 }
 
 func New(config Config) (*Service, error) {
 	if config.Database == nil {
 		return nil, errors.New("quizcraft database is required")
 	}
-	return &Service{database: config.Database, allowTestBootstrapActivation: config.AllowTestBootstrapActivation}, nil
+	return &Service{database: config.Database, allowTestBootstrapActivation: config.AllowTestBootstrapActivation, learningManualLimit: config.LearningManualLimit}, nil
 }
 
 type ValidationError struct {

@@ -1000,6 +1000,10 @@ func (h *Handler) writePracticeCommandFailure(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusNotFound, contract.ErrorEnvelope{Error: "practice_session_not_found", Message: "练习记录不存在，请刷新后重试", RequestID: requestIDOf(w, r)})
 	case errors.Is(err, practice.ErrPracticeCommandConflict):
 		writeJSON(w, http.StatusConflict, contract.ErrorEnvelope{Error: "practice_command_conflict", Message: "操作内容有更新，请刷新后重试", RequestID: requestIDOf(w, r)})
+	case errors.Is(err, practice.ErrPracticeCommandRateLimited):
+		// Abuse protection, not a failed dependency and not a quota: the member
+		// can retry the same request later.
+		writeJSON(w, http.StatusTooManyRequests, contract.ErrorEnvelope{Error: "practice_command_rate_limited", Message: "操作太频繁了，请稍后再试", RequestID: requestIDOf(w, r)})
 	case errors.Is(err, practice.ErrPracticeCommandInvalid):
 		writeJSON(w, http.StatusBadGateway, contract.ErrorEnvelope{Error: "practice_command_invalid_response", Message: "服务暂时不可用，请稍后再来", RequestID: requestIDOf(w, r)})
 	default:

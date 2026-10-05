@@ -27,8 +27,12 @@ var (
 	ErrPracticeCommandForbidden    = errors.New("QuizCraft denied access to the practice session")
 	ErrPracticeCommandNotFound     = errors.New("QuizCraft practice session was not found")
 	ErrPracticeCommandConflict     = errors.New("QuizCraft practice command conflicted")
-	ErrPracticeCommandUnavailable  = errors.New("QuizCraft practice commands are unavailable")
-	ErrPracticeCommandInvalid      = errors.New("QuizCraft returned an invalid practice command response")
+	// Core's abuse guard for member-requested generation. It is not a quota and
+	// not a fault: the Gateway must answer 429 instead of pretending the
+	// dependency is down.
+	ErrPracticeCommandRateLimited = errors.New("QuizCraft practice command was rate limited")
+	ErrPracticeCommandUnavailable = errors.New("QuizCraft practice commands are unavailable")
+	ErrPracticeCommandInvalid     = errors.New("QuizCraft returned an invalid practice command response")
 )
 
 // CommandClient owns only the two Portal-initiated practice commands. Its
@@ -161,6 +165,8 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 		return CommandResult{}, ErrPracticeCommandNotFound
 	case http.StatusConflict:
 		return CommandResult{}, ErrPracticeCommandConflict
+	case http.StatusTooManyRequests:
+		return CommandResult{}, ErrPracticeCommandRateLimited
 	default:
 		if !containsStatus(extraStatuses, response.StatusCode) {
 			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))

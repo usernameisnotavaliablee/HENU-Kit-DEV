@@ -399,3 +399,21 @@
   - `ruby -ryaml -e 'YAML.load_file(...)'` 确认 workflow YAML 仍可解析；`.github/workflows/deploy-henukit.yml` 触发条件是全量 `pull_request`，无需新增路径过滤。
 - Standards/Spec 本地复核：门禁只在 CI 里跑，不改运行时行为；学习报告组用专用配置与专用端口（3003）自带 dev server，`reuseExistingServer: false`，不会借用其它组的服务器而误判；治理测试同时锁「在哪跑」和「跑的是什么配置」两件事，删步骤或悄悄关掉浏览器开关都会红。Public-ready Copy: not applicable（无用户可见文案改动）。
 - 下一步：真实供应商受控演练、#166 切流决定（含是否烘焙浏览器开关）、人工评测与发布授权。本阶段独立 commit 并 push，不包含 AGENTS.md。
+
+### 40 — 手动生成限流 + 429 诚实转达（LF-05 收尾：成本不再理论上无限）
+
+- 背景：契约早就为会员手动生成声明了 `429 Abuse rate limit; not a usage quota`，但 Core 从来不返回它，网关也没有 429 分支——也就是说这个「滥用保护」只是纸面承诺，而一次范围变更就会产生一次模型调用（代次语义会取消在途任务，但不限制变更频率）。本阶段把限流做成真的，并保证链路不把限流谎报成依赖故障。
+- Core（`learning_jobs.go`、`importer.go`、`practice_http.go`、`learning_reports_http.go`、`cmd/server/learning_limit.go`）：
+  - `ErrLearningRateLimited` + `LearningManualWindow` = 固定 1 小时；计数直接读 `quizcraft_learning_report_jobs.created_at`（不可变、可审计），不建计数器表、不需要迁移；窗口外历史不计入。
+  - 守卫只在 **确实要新建任务** 的分支里、且持有该会员偏好行锁时执行：同幂等键/同有效输入的重放与并发重试仍复用既有任务（不会被误拒），并发请求也无法同时越过上限；计划任务（`source=automatic`）完全不受限。
+  - 配置 `QUIZCRAFT_LEARNING_MANUAL_LIMIT`（空=默认 10，`0`=显式关闭，1..1000 合法，越界/非数字拒绝启动），经 `PracticeHTTPConfig.LearningManualLimit` 传入；超限返回 429 `rate_limited`（Core 文案英文，与其它 Core 错误一致）。
+- 网关（`internal/practice/command_client.go`、`internal/httpapi/handler.go`）：新增 `ErrPracticeCommandRateLimited`，Core 429 → **429 `practice_command_rate_limited` + 中文提示**（此前会落进 default 变成 503 `practice_commands_unavailable`，即把限流说成服务不可用）。
+- Portal（`src/lib/api/gateway-errors.ts`）：`practice_command_rate_limited` 加入放行名单，429 的中文提示原样展示给会员。
+- 验证：
+  - Core 全量：全新空白库两遍迁移后 `go test -race . ./tests ./cmd/server ./cmd/learninghealth -count=1` → exit 0（1.876s / 14.212s / 1.379s / 1.417s，日志 `.cache/learning-feedback-limit-full-race.log`）。
+  - 新增 `tests/learning_limit_test.go`（真实 PostgreSQL）：2 小时前的历史任务不占用额度（用 INSERT 夹具，因为 `created_at` 受不可变触发器保护，UPDATE 回拨会报 23514）；额度内首请求 202；**额度已满时同幂等键重放仍返回原始 202 与逐字节相同响应**；范围变更产生新输入 → 429 `rate_limited`；被拒请求不落库（任务数保持 2）；`limit=0` 时同请求通过；同一服务上 `automatic` 仍成功而 `manual` 新输入被拒；并发 5 个同输入不同幂等键的请求全部 2xx 且只存 1 个任务（重试不是额外工作）。
+  - Gateway 全量 `go test ./...` → exit 0；`TestLearningReportWriteFailuresMapToHonestBrowserErrors/abuse_guard` 断言 429→429。
+  - Portal：`npx tsc --noEmit` 退出 0；`npx vitest run src/lib/api src/app/practice` 9 文件 74 项通过。**并验证了护栏本身会咬人**：把 `practice_command_rate_limited` 从名单里注释掉后 `gateway-errors.test.ts` 立刻红（`expected [ 'practice_command_rate_limited' ] to deeply equal []`），恢复后 10/10 通过——该测试会扫描 Gateway 源码里的字面量错误码，所以新增码不能被悄悄漏掉。
+- Standards/Spec 本地复核：限流不是配额（不扣积分、无日常额度、不写拒绝计数），只在新建任务时生效且持锁，重放与计划任务不受影响；429 全链路语义一致，不再把限流伪装成 503；配置越界即拒绝启动。Public-ready Copy：新增一句用户可见文案「操作太频繁了，请稍后再试」，已本地走查（措辞与既有 409/503 提示同风格、不暴露内部原因），列入下方待人工复核清单。
+- 待人工复核（含本阶段新增）：429 文案「操作太频繁了，请稍后再试」；HANDOFF 35 遗留的非会员写文案、`insufficient_evidence`/`stale` 状态措辞。
+- 下一步：真实供应商受控演练、真实账号全链路、#166 切流决定与发布授权。本阶段独立 commit 并 push，不包含 AGENTS.md。

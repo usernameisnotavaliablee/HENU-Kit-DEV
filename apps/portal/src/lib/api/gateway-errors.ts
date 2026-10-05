@@ -27,6 +27,8 @@ export const GATEWAY_USER_MESSAGE_CODES: ReadonlySet<string> = new Set([
   "practice_command_conflict",
   "practice_command_invalid",
   "practice_command_invalid_response",
+  // 滥用保护，不是配额也不是依赖故障：429 原样显示「稍后再试」，不要谎报服务不可用。
+  "practice_command_rate_limited",
   "practice_commands_unavailable",
   "practice_session_forbidden",
   "practice_session_not_found",

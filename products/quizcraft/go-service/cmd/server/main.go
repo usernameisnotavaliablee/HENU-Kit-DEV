@@ -38,6 +38,8 @@ func main() {
 	fail(err)
 	worker, err := learningWorkerFromEnv()
 	fail(err)
+	manualLimit, err := learningManualLimitFromEnv()
+	fail(err)
 	if worker != nil && entitlement == nil {
 		fail(errors.New("QuizCraft learning report worker requires the signed entitlement client"))
 	}
@@ -62,6 +64,7 @@ func main() {
 		AuthHMACSecret:        []byte(authSecret),
 		LearningEntitlement:   entitlement,
 		LearningVersions:      learningVersions(worker),
+		LearningManualLimit:   manualLimit,
 		LegacyBaseURL:         os.Getenv("QUIZCRAFT_LEGACY_BASE_URL"),
 		LegacyCompareSecret:   os.Getenv("QUIZCRAFT_LEGACY_COMPARE_SECRET"),
 		SummaryClientID:       os.Getenv("QUIZCRAFT_SUMMARY_CLIENT_ID"),
@@ -87,7 +90,7 @@ func main() {
 	// The report worker is opt-in and only starts with a validated provider and
 	// the signed entitlement client; every other deployment stays dark.
 	if worker != nil {
-		service, err := quizcraft.New(quizcraft.Config{Database: pool})
+		service, err := quizcraft.New(quizcraft.Config{Database: pool, LearningManualLimit: manualLimit})
 		fail(err)
 		workerContext, stopWorker := context.WithCancel(context.Background())
 		defer stopWorker()

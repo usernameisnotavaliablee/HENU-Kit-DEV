@@ -50,3 +50,16 @@ credentials prevent startup. This only prepares a signed, uncached internal
 caller: it does **not** expose report routes, start a model worker, or enable
 learning feedback. Until those gates are implemented and reviewed, leave the
 settings empty.
+
+### Manual generation abuse guard
+
+`QUIZCRAFT_LEARNING_MANUAL_LIMIT` bounds how many course-feedback generations
+one member may start for one course inside a fixed one-hour window (default
+`10`; `1..1000` accepted; `0` disables the guard explicitly). The guard counts
+stored jobs, runs inside the member's preference lock only when a new job would
+be written, so replays and concurrent retries of the same request still reuse
+their job for free, and scheduled (`automatic`) generation is never limited. It
+is abuse protection, not a usage quota: no credits are charged and no daily
+allowance exists. Exceeding it is `429 rate_limited` from Core, which the Portal
+Gateway must forward as `429 practice_command_rate_limited` instead of reporting
+a dependency failure.

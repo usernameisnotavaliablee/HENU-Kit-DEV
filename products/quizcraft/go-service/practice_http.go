@@ -37,7 +37,10 @@ type PracticeHTTPConfig struct {
 	// LearningVersions is the server-pinned model, prompt and policy for
 	// reports requested through the API. It must match the running worker or
 	// the worker rejects the job, so it comes from the same configuration.
-	LearningVersions    LearningJobVersions
+	LearningVersions LearningJobVersions
+	// LearningManualLimit is the per-member, per-course abuse guard for
+	// member-requested generation; 0 disables it. It never limits scheduled work.
+	LearningManualLimit int
 	LegacyBaseURL       string
 	LegacyCompareSecret string
 	HTTPClient          *http.Client
@@ -71,6 +74,7 @@ type practiceHTTP struct {
 	authHMACSecret          []byte
 	learningEntitlement     *LearningEntitlementClient
 	learningVersions        LearningJobVersions
+	learningManualLimit     int
 	legacyBaseURL           string
 	legacyCompareSecret     string
 	httpClient              *http.Client
@@ -260,7 +264,7 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 	if releaseSHA == "" {
 		releaseSHA = "development"
 	}
-	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, learningVersions: config.LearningVersions, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
+	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, learningVersions: config.LearningVersions, learningManualLimit: config.LearningManualLimit, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
 	if platformCount == len(platformValues) {
 		platform, err := newPlatformClient(config.PlatformCoreURL, config.PlatformClientID, config.PlatformClientSecret, config.PlatformKeyID, client)
 		if err != nil {

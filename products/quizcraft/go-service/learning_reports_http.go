@@ -28,7 +28,7 @@ import (
 // the stored evidence snapshot or provider input.
 
 func (service *practiceHTTP) learning() *Service {
-	return &Service{database: service.database}
+	return &Service{database: service.database, learningManualLimit: service.learningManualLimit}
 }
 
 // learningPublishedBank resolves the course in the path and requires it to be
@@ -89,6 +89,10 @@ func (service *practiceHTTP) writeLearningWriteError(writer http.ResponseWriter,
 		writeError(writer, http.StatusConflict, "learning_no_practice", "this report has no available practice questions")
 	case errors.Is(err, ErrLearningUnavailable):
 		writeError(writer, http.StatusConflict, "learning_conflict", "course feedback is not available in its current state")
+	case errors.Is(err, ErrLearningRateLimited):
+		// Abuse protection, not a quota: nothing was charged and the same
+		// request replays for free once the window moves on.
+		writeError(writer, http.StatusTooManyRequests, "rate_limited", "too many course feedback requests; retry later")
 	default:
 		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
 	}

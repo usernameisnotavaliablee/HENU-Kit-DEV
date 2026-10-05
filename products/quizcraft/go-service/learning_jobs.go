@@ -14,7 +14,31 @@ import (
 	"henukit.dev/quizcraft/internal/contract"
 )
 
-var ErrLearningInvalidJob = errors.New("invalid learning report job")
+var (
+	ErrLearningInvalidJob = errors.New("invalid learning report job")
+	// ErrLearningRateLimited is abuse protection for member-requested
+	// generation: it is not a quota, no credits are consumed, and scheduled
+	// (automatic) generation is never limited by it.
+	ErrLearningRateLimited = errors.New("too many learning report requests for this owner and course")
+)
+
+// LearningManualWindow is the fixed window of the member-requested generation
+// guard. Counting stored jobs (not a separate counter) keeps the guard honest
+// after a restart and gives it an immutable, auditable clock.
+const LearningManualWindow = time.Hour
+
+func learningRecentGenerations(ctx context.Context, query learningQuerier, userID, bankID uuid.UUID, since time.Time) (int, error) {
+	var used int
+	// Counts every generation for this member and course in the window,
+	// automatic ones included: the point is the cost of model work, not who
+	// asked for it.
+	err := query.QueryRow(ctx, `SELECT count(*) FROM quizcraft_learning_report_jobs
+        WHERE user_id=$1 AND bank_id=$2 AND created_at > $3`, userID, bankID, since).Scan(&used)
+	if err != nil {
+		return 0, fmt.Errorf("count learning generations: %w", err)
+	}
+	return used, nil
+}
 
 // Versions are server configuration, not caller-provided HTTP fields. The
 // policy is compiled into the evaluator; changing model/prompt invalidates work.
@@ -135,6 +159,18 @@ func (s *Service) QueueLearningReport(ctx context.Context, userID, bankID uuid.U
 		userID, bankID, p.Revision, inputSHA).Scan(&task.TaskId, &task.Status, &task.CreatedAt, &reason, &runAfter)
 	if errors.Is(err, pgx.ErrNoRows) {
 		reused = false
+		// The guard runs inside the owner's preference lock and only when a new
+		// job would be written, so a replay of an existing request still reuses
+		// its job, and two concurrent requests cannot both pass the limit.
+		if source == "manual" && s.learningManualLimit > 0 {
+			used, err := learningRecentGenerations(ctx, tx, userID, bankID, time.Now().Add(-LearningManualWindow))
+			if err != nil {
+				return empty, false, err
+			}
+			if used >= s.learningManualLimit {
+				return empty, false, ErrLearningRateLimited
+			}
+		}
 		task.TaskId = uuid.New()
 		err = tx.QueryRow(ctx, `INSERT INTO quizcraft_learning_report_jobs(id,user_id,bank_id,preference_revision,content_version_id,input_sha256,snapshot)
             VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING status,created_at`,

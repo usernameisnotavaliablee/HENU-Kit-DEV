@@ -518,6 +518,7 @@ func TestLearningReportWriteFailuresMapToHonestBrowserErrors(t *testing.T) {
 		{name: "revoked entitlement", coreStatus: http.StatusForbidden, wantStatus: http.StatusForbidden, wantError: "practice_session_forbidden"},
 		{name: "unknown bank", coreStatus: http.StatusNotFound, wantStatus: http.StatusNotFound, wantError: "practice_session_not_found"},
 		{name: "state conflict", coreStatus: http.StatusConflict, wantStatus: http.StatusConflict, wantError: "practice_command_conflict"},
+		{name: "abuse guard", coreStatus: http.StatusTooManyRequests, wantStatus: http.StatusTooManyRequests, wantError: "practice_command_rate_limited"},
 		{name: "core fault", coreStatus: http.StatusInternalServerError, wantStatus: http.StatusServiceUnavailable, wantError: "practice_commands_unavailable"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
