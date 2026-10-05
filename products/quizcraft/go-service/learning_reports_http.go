@@ -85,6 +85,8 @@ func (service *practiceHTTP) writeLearningWriteError(writer http.ResponseWriter,
 		writeError(writer, http.StatusBadRequest, "invalid_learning_request", "the course feedback request is invalid")
 	case errors.Is(err, ErrLearningReportNotFound):
 		writeError(writer, http.StatusNotFound, "learning_report_not_found", "no course feedback report is available yet")
+	case errors.Is(err, ErrLearningNoPracticeRecommendation):
+		writeError(writer, http.StatusConflict, "learning_no_practice", "this report has no available practice questions")
 	case errors.Is(err, ErrLearningUnavailable):
 		writeError(writer, http.StatusConflict, "learning_conflict", "course feedback is not available in its current state")
 	default:
@@ -343,4 +345,77 @@ func (service *practiceHTTP) portalLearningReportTask(writer http.ResponseWriter
 		return
 	}
 	writeJSON(writer, http.StatusOK, responseEnvelope{RequestID: requestID(), Data: task})
+}
+
+// portalCreateLearningReportPracticeSession pins one practice session to the
+// questions the published report recommends. The client sends no question ids;
+// questions that are no longer published are dropped and counted, and the
+// report is revalidated against the approved active content version in the same
+// transaction as the session.
+func (service *practiceHTTP) portalCreateLearningReportPracticeSession(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := service.learningCommandOwner(writer, request)
+	if !ok {
+		return
+	}
+	bankID, ok := service.learningPublishedBank(writer, request)
+	if !ok {
+		return
+	}
+	reportID, err := uuid.Parse(chi.URLParam(request, "report_id"))
+	if err != nil {
+		writeError(writer, http.StatusBadRequest, "invalid_report_id", "report_id must be a UUID")
+		return
+	}
+	idempotencyKey, ok := requiredIdempotencyKey(writer, request)
+	if !ok {
+		return
+	}
+	if !service.requireLearningLifetime(writer, request, *actor.userID) {
+		return
+	}
+	write := learningWriteRequest{actorKey: actor.key, kind: "create_learning_report_session", key: idempotencyKey, hash: hashCanonical([]byte(http.MethodPost + ":" + bankID.String() + ":" + reportID.String()))}
+	ctx := request.Context()
+	tx, err := service.database.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	queries := store.New(tx)
+	if err := lockIdempotency(ctx, queries, write.actorKey, write.kind, write.key); err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
+		return
+	}
+	storedStatus, storedBody, found, conflict, err := loadIdempotency(ctx, queries, write.actorKey, write.kind, write.key, write.hash)
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
+		return
+	}
+	if conflict {
+		writeError(writer, http.StatusConflict, "idempotency_conflict", "idempotency key was already used with another request")
+		return
+	}
+	if found {
+		writeRawJSON(writer, storedStatus, storedBody)
+		return
+	}
+	session, err := createLearningReportPracticeSession(ctx, tx, *actor.userID, bankID, reportID)
+	if err != nil {
+		service.writeLearningWriteError(writer, err)
+		return
+	}
+	body, err := json.Marshal(responseEnvelope{RequestID: requestID(), Data: session})
+	if err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
+		return
+	}
+	if err := storeIdempotency(ctx, queries, write.actorKey, write.kind, write.key, write.hash, http.StatusCreated, body, session.SessionID); err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft is temporarily unavailable")
+		return
+	}
+	writeRawJSON(writer, http.StatusCreated, body)
 }

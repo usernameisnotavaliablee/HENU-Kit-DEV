@@ -84,15 +84,15 @@ func TestVersionedMigrationArtifactsAdoptTheReleasedPreHistoryBaseline(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Adopted) != 8 || len(report.Applied) != 4 || report.Applied[0].Version != "000009" || report.Applied[1].Version != "000010" || report.Applied[2].Version != "000011" || report.Applied[3].Version != "000012" || len(report.Skipped) != 0 {
+	if len(report.Adopted) != 8 || len(report.Applied) != 5 || report.Applied[0].Version != "000009" || report.Applied[1].Version != "000010" || report.Applied[2].Version != "000011" || report.Applied[3].Version != "000012" || report.Applied[4].Version != "000013" || len(report.Skipped) != 0 {
 		t.Fatalf("pre-history adoption report = %+v", report)
 	}
 	var historyCount int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM quizcraft_schema_migrations`).Scan(&historyCount); err != nil {
 		t.Fatal(err)
 	}
-	if historyCount != 12 {
-		t.Fatalf("adopted migration history count = %d, want 12", historyCount)
+	if historyCount != 13 {
+		t.Fatalf("adopted migration history count = %d, want 13", historyCount)
 	}
 }
 
@@ -156,7 +156,7 @@ func TestVersionedMigrationArtifactsAdoptTheReleasedBaselineWithUnrelatedSchemaO
 		t.Fatal(err)
 	}
 	report, err := quizcraft.ApplyVersionedMigrations(ctx, pool, "../db/migrations")
-	if err != nil || len(report.Adopted) != 8 || len(report.Applied) != 4 || report.Applied[0].Version != "000009" || report.Applied[1].Version != "000010" || report.Applied[2].Version != "000011" || report.Applied[3].Version != "000012" {
+	if err != nil || len(report.Adopted) != 8 || len(report.Applied) != 5 || report.Applied[0].Version != "000009" || report.Applied[1].Version != "000010" || report.Applied[2].Version != "000011" || report.Applied[3].Version != "000012" || report.Applied[4].Version != "000013" {
 		t.Fatalf("baseline adoption with unrelated object = %+v / %v", report, err)
 	}
 }

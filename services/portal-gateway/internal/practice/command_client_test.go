@@ -1,6 +1,9 @@
 package practice
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 const validPracticeSessionEnvelope = `{"request_id":"req_core_session","data":{"session_id":"22222222-2222-4222-8222-222222222222","bank_id":"33333333-3333-4333-8333-333333333333","bank_version_id":"44444444-4444-4444-8444-444444444444","mode":"random","excluded_unavailable_count":0,"questions":[{"question_id":"55555555-5555-4555-8555-555555555555","question_version_id":"66666666-6666-4666-8666-666666666666","type":"single","chapter_id":"ch01","chapter":"基础","content":"服务端选择的题目","options":["甲","乙"]}]}}`
 
@@ -91,5 +94,17 @@ func TestValidatePracticeAnswerEnvelopeRejectsIncompleteOrUnclosedCoreData(t *te
 	}
 	if err := validatePracticeAnswerEnvelope([]byte(validPracticeAnswerEnvelope)); err != nil {
 		t.Fatalf("rejected valid Core answer response: %v", err)
+	}
+}
+
+func TestValidatePracticeSessionEnvelopeAcceptsEveryContractMode(t *testing.T) {
+	template := `{"request_id":"req_core_session","data":{"session_id":"22222222-2222-4222-8222-222222222222","bank_id":"33333333-3333-4333-8333-333333333333","bank_version_id":"44444444-4444-4444-8444-444444444444","mode":"%s","excluded_unavailable_count":0,"questions":[{"question_id":"55555555-5555-4555-8555-555555555555","question_version_id":"66666666-6666-4666-8666-666666666666","type":"single","chapter_id":"ch01","chapter":"基础","content":"服务端选择的题目","options":["甲","乙"]}]}}`
+	for _, mode := range []string{"random", "difficult", "chapter", "favorites", "report"} {
+		if err := validatePracticeSessionEnvelope([]byte(fmt.Sprintf(template, mode))); err != nil {
+			t.Fatalf("mode %s was rejected: %v", mode, err)
+		}
+	}
+	if err := validatePracticeSessionEnvelope([]byte(fmt.Sprintf(template, "invented"))); err == nil {
+		t.Fatal("unknown mode was accepted")
 	}
 }

@@ -360,8 +360,16 @@ func validatePracticeAnswerEnvelope(raw []byte) error {
 	return nil
 }
 
+// validPracticeSessionMode accepts every mode the QuizCraft contract defines,
+// including favorites and the pinned learning-report set. Rejecting a mode the
+// Core legitimately returns would turn a valid session into a failed read.
 func validPracticeSessionMode(value string) bool {
-	return value == "random" || value == "difficult" || value == "chapter"
+	switch value {
+	case "random", "difficult", "chapter", "favorites", "report":
+		return true
+	default:
+		return false
+	}
 }
 
 func validPracticeQuestionType(value string) bool {

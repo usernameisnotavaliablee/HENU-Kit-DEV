@@ -64,6 +64,7 @@ func TestLearningReportWritesStayDarkWithoutEntitlementBoundary(t *testing.T) {
 		{http.MethodPut, base + "/preferences", learningPreferencesBody(false, false), "learning-dark-prefs-0001"},
 		{http.MethodPost, base, nil, "learning-dark-request-0001"},
 		{http.MethodDelete, base, nil, "learning-dark-clear-0001"},
+		{http.MethodPost, learningPracticeSessionPath(bankID.String(), uuid.NewString()), nil, "learning-dark-session-0001"},
 	}
 	for _, item := range cases {
 		request := newPortalPracticeCommandRequest(t, item.method, server.URL, item.path, item.body, owner.String(), item.key)

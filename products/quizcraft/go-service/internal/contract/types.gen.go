@@ -446,6 +446,7 @@ const (
 	PracticeSessionModeDifficult PracticeSessionMode = "difficult"
 	PracticeSessionModeFavorites PracticeSessionMode = "favorites"
 	PracticeSessionModeRandom    PracticeSessionMode = "random"
+	PracticeSessionModeReport    PracticeSessionMode = "report"
 )
 
 // Valid indicates whether the value is a known member of the PracticeSessionMode enum.
@@ -458,6 +459,8 @@ func (e PracticeSessionMode) Valid() bool {
 	case PracticeSessionModeFavorites:
 		return true
 	case PracticeSessionModeRandom:
+		return true
+	case PracticeSessionModeReport:
 		return true
 	default:
 		return false

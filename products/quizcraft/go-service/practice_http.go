@@ -318,6 +318,7 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 		learningWrites.Put("/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences", service.portalUpdateLearningReportPreferences)
 		learningWrites.Post("/api/v1/portal/practice/banks/{bank_id}/learning-reports", service.portalRequestLearningReport)
 		learningWrites.Delete("/api/v1/portal/practice/banks/{bank_id}/learning-reports", service.portalClearLearningReports)
+		learningWrites.Post("/api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions", service.portalCreateLearningReportPracticeSession)
 	}
 	writes := router.With(service.requireWritesEnabled)
 	writes.Get("/api/v1/feedback", service.listFeedbackStatuses)

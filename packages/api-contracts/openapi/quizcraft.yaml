@@ -1812,7 +1812,7 @@ components:
                   value: { type: string, maxLength: 80 }
                   hint: { type: string, maxLength: 120 }
     QuestionType: { type: string, enum: [single, multi, judge, blank] }
-    PracticeSessionMode: { type: string, enum: [random, difficult, chapter, favorites] }
+    PracticeSessionMode: { type: string, enum: [random, difficult, chapter, favorites, report] }
     OperationKind:
       type: string
       enum: [create_practice_session, submit_practice_answer, favorite_question, unfavorite_question, create_favorites_session, create_feedback, create_workshop_bank, create_bank_version, import_bank, validate_version, publish_version, unpublish_version, rollback_bank]
