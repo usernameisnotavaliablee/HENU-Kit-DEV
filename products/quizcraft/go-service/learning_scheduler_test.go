@@ -47,9 +47,12 @@ func TestLearningSchedulerLoopRepeatsAndStopsOnCancel(t *testing.T) {
 
 func TestLearningSchedulerLoopRejectsBadConfiguration(t *testing.T) {
 	ctx := context.Background()
+	// Held in a variable so the row genuinely passes a nil context without the
+	// literal that staticcheck rejects (SA1012).
+	var noContext context.Context
 	sweep := func(context.Context) error { return nil }
 	for name, run := range map[string]func() error{
-		"nil context":   func() error { return RunLearningScheduler(nil, time.Second, sweep) },
+		"nil context":   func() error { return RunLearningScheduler(noContext, time.Second, sweep) },
 		"nil sweep":     func() error { return RunLearningScheduler(ctx, time.Second, nil) },
 		"zero interval": func() error { return RunLearningScheduler(ctx, 0, sweep) },
 		"negative":      func() error { return RunLearningScheduler(ctx, -time.Second, sweep) },

@@ -474,3 +474,25 @@
 - 测试与证据：e2e 从 5 例增到 7 例 —— 新增「读不到设置时依然可以关闭学习报告并清除报告」（断言 PUT **完整**请求体含默认计划、断言 DELETE 命中 `/learning-reports`）与「暂停的生成任务不冒充生成失败」（断言 paused 区块出现且 failed 区块不存在；旧代码 `taskFailed` 含 paused，故此例在改动前必失败）。Portal 单测 38 files / 298 tests 通过；`tsc --noEmit` 干净；三个改动文件 eslint 0 问题（仓库其余 3 条告警为既有）。截图已重出，并新增失败态证据：`.cache/screenshots/learning-reports-{desktop,mobile}.png`、`.cache/screenshots/learning-reports-opt-out-{desktop,mobile}.png`。
 - 三轴：Standards（子代理只读）5 条全部整改（补全请求体断言、补 URL 断言、抽出共享 `ClearReportsButton`、写失败不重读、常量位置）；Public-ready Copy（子代理只读）5 条全部整改（含 3 处不实或术语问题）。
 - 待人工复核 copy：本轮新增/改动的中文文案（OPT OUT 段落、paused 文案、空态文案、设置页脚）。
+
+### 45 — 让 QuizCraft Go 的 CI 作业在本机逐条复现并修绿（三处必红缺陷 + 一处不可执行的 down）
+
+- 背景：`codex/learning-feedback` 从来没有 PR，而 `.github/workflows/*` 的 push 触发器只有 `main`，所以这个分支**一次 CI 都没跑过**。本轮的大操作就是拿 `.github/workflows/quizcraft-go.yml` 的每个作业在本机等价复现。结果不是「应该没事」，而是三处会让第一个 PR 直接变红的真实缺陷。
+- 已修：
+  1. **迁移计数断言写死**：作业里 `SELECT count(*) FROM quizcraft_schema_migrations = 11`，而仓库现在有 13 个 `*.up.sql`（000012/000013 正是本功能加的）。本地实测迁移器记录 13 行（5 applied + 8 adopted）。→ 改为 `expected_migrations="$(ls .../*.up.sql | wc -l)"` 再断言相等，不再随新增迁移漂移。
+  2. **回滚往返漏了本功能自己的 down**：作业按逆序跑 000011…000001 的 down，没有先跑 000013/000012，于是卡在 `000001_quizcraft_content.down.sql`：`cannot drop table quizcraft_bank_versions because other objects depend on it`（`quizcraft_learning_content_version_bank_id_bank_version_id_fkey`，来自 000012）。→ 补上 13、12 的 down 并放在最前。
+  3. **`000013_learning_report_practice_mode.down.sql` 根本无法执行**：它删 `quizcraft_practice_session_questions`，撞上 000002 建的**语句级**不可变触发器（`QuizCraft immutable content cannot be updated, deleted, or truncated`；语句级触发器零行也会拦）。→ 该 down 现在不删任何会员行：只在没有 `mode='report'` 会话时把 CHECK 收窄回原值，存在这类行时保留加宽（旧代码从不写 `report`，回滚到旧代码不受影响），理由写在文件注释里。
+  4. **staticcheck SA1012**：`learning_scheduler_test.go:52` 直接传 `nil` context 给 `RunLearningScheduler`。→ 用类型化 nil 变量（`var noContext context.Context`）保留「拒绝 nil context」这一测试意图。
+  5. **本功能新增的两个 Python 测试从不运行**：`tests/test_learning_report_contract.py`、`tests/test_learning_feedback_inventory.py` 不在作业的 pytest 文件列表里。→ 已登记（测试本身只用标准库 + ruby，CI 上不会新增依赖）。
+- 验证（本机等价复现，`GOMODCACHE/GOPATH/GOCACHE` 全部指向工作区缓存；`.cache/ci-quizcraft/roundtrip.sh` 是迁移作业的本地镜像，未提交）：
+  - 迁移往返整段（000001-000008 原样 + `cmd/migrate` 两遍 + 拒绝非 v2 库 + 备份/恢复演练 + `bank_key` 守卫必须失败 + 逆序 down + 重建 + dump→`quizcraft_recovery` 恢复后 20+ 张表存在性断言）→ `ROUND TRIP OK`，计数断言 `13 migrations` 通过。
+  - `gofmt` 干净；`go vet ./...` 干净；`staticcheck@2026.1 ./...` 0 问题；`govulncheck@v1.6.0 ./...` 无可达漏洞（3 条位于依赖模块但未被调用）。
+  - 全模块 `go test -race -count=1 ./...`（新库两遍迁移）：`tests 13.993s`、`cmd/server`、`. ` 全绿；唯一 FAIL 是 `cmd/reconcile` —— 它的测试用 testcontainers 起 Postgres，本机无 Docker，属环境性失败（CI 有 Docker）。
+  - 6 个 cmd 全部 `go build` 通过；`-ldflags "-X main.buildReleaseSHA=deadbeefcafe"` 后 `strings | grep -c` 命中 3 次（对应作业的 SHA 断言）。
+  - 契约：`scripts/generate-contract.sh` 跑完后 `internal/contract`、`web-app/src/generated/quizcraft-api` **零 diff**；`redocly lint packages/api-contracts/openapi/quizcraft.yaml` 有效（3 warning）；`oasdiff breaking --unmatch-path '^/auth/(login|callback)$'`（对照 `origin/main`）退出码 **0**（4 条 warning 全是 `report` 枚举值新增，非破坏）。
+  - sqlc 这步本机跑不了（`go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.0` 被 sqlc 自己的 replace 指令拒绝，镜像又需要 Docker），但证明本分支不可能让它漂移：`db/queries` 与 `origin/main` 零 diff，且 000012/000013 对既有表没有任何 DDL（只新增表 + 一个 CHECK）。
+  - web-app：`run build`（tsc + vite）、`run lint`、`run test:syntax`（9 个检查脚本）全绿 —— 生成客户端里 `PracticeSessionMode` 新增 `report` 实测没破坏消费方类型检查。
+  - Python：`py_compile server.py db_storage.py` 通过；两个新测试文件共 8 例 `python3 -m unittest` 全过。
+- 未验证（本机不可行，留给有 Docker 的 CI）：sqlc 生成、镜像构建与镜像扫描、Playwright practice 浏览器用例。
+- 三轴：Standards（本轮修的是 CI 守护自身的一致性：断言不写死、回滚顺序正确、down 不破坏不可变保证）；Spec 不适用（无行为与契约变化）；Public-ready Copy: not applicable。
+- 结论：这三处缺陷会随第一个 PR 一起把 CI 打成红的（一个写死的数字、一个漏掉的回滚文件、一个永远执行不了的 down 文件）。分支「没有 PR 就没有 CI」的盲区，本轮用本地等价复现补上了；剩下的 Docker 类步骤仍需真实 CI。
