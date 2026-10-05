@@ -75,6 +75,7 @@
 | `GET /api/v1/practice/favorites`、`/banks/{bank_id}/favorites`、`/feedback/{feedback_id}/status` | Core actor-bound 读（V2 客户端） | 503 |
 | `GET /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`/latest`、`/tasks/{task_id}` | Core actor-bound 读（V2 客户端，学习报告镜像类型） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或缺客户端）；Core 无报告时透传 404 |
 | `POST /api/v1/practice/sessions`、`.../answers`、`/feedback`、favorites 写 | Core 命令（命令客户端） | 503 |
+| `PUT /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`POST /banks/{bank_id}/learning-reports`、`DELETE /banks/{bank_id}/learning-reports`、`POST .../results/{report_id}/practice-sessions` | Core 命令（命令客户端；需 `Idempotency-Key`） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或命令客户端缺失） |
 | `GET /api/v1/practice/banks`、`/schools`、`/lists/{id}`、`/leaderboard` | **已下线**（ADR-0036，portal-api 直读删除） | 404 + 迁移提示 |
 
 排行隐私契约：公开排行响应只含 `rank / nickname / system_avatar / correct_answer_count`，

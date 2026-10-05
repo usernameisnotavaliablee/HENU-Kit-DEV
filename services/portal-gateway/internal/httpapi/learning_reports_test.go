@@ -306,3 +306,233 @@ func TestLearningReportPreferencesAndTaskReadTheirOwnPaths(t *testing.T) {
 		t.Fatalf("task = %+v", taskEnvelope)
 	}
 }
+
+func newLearningReportWriteHandler(t *testing.T, coreURL string, learningReportsEnabled bool) *Handler {
+	t.Helper()
+	handler, err := New(config.Config{
+		SessionKey:                      []byte("0123456789abcdef0123456789abcdef"),
+		PortalOrigin:                    "https://portal.test",
+		PracticeURL:                     coreURL,
+		PracticeCommandAuth:             config.ServiceAuth{ClientID: "portal-gateway", ClientSecret: practiceCommandSecret, KeyID: "portal-practice-command-key"},
+		PracticeCommandsEnabled:         true,
+		QuizCraftLearningReportsEnabled: learningReportsEnabled,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return handler
+}
+
+func TestLearningReportWritesStayDarkUntilTheGateIsOn(t *testing.T) {
+	var coreCalls atomic.Int32
+	core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		coreCalls.Add(1)
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer core.Close()
+
+	handler := newLearningReportWriteHandler(t, core.URL, false)
+	writes := []struct {
+		method, path, body string
+	}{
+		{http.MethodPut, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/preferences", `{"enabled":true}`},
+		{http.MethodPost, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports", ""},
+		{http.MethodDelete, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports", ""},
+		{http.MethodPost, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/results/" + learningReportID + "/practice-sessions", ""},
+	}
+	for _, write := range writes {
+		recorder := httptest.NewRecorder()
+		handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, write.method, write.path, write.body, "learning-report-idempotency-key"))
+		if recorder.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s %s = %d, want 503: %s", write.method, write.path, recorder.Code, recorder.Body.String())
+		}
+	}
+	if coreCalls.Load() != 0 {
+		t.Fatalf("dark learning-report writes reached Core %d times", coreCalls.Load())
+	}
+}
+
+func TestLearningReportWritesRequireASessionAndAnIdempotencyKey(t *testing.T) {
+	var coreCalls atomic.Int32
+	core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		coreCalls.Add(1)
+	}))
+	defer core.Close()
+
+	handler := newLearningReportWriteHandler(t, core.URL, true)
+	path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports"
+
+	anonymous := httptest.NewRequest(http.MethodDelete, "https://portal.test"+path, nil)
+	anonymous.Header.Set("Idempotency-Key", "learning-report-idempotency-key")
+	recorder := httptest.NewRecorder()
+	handler.Router().ServeHTTP(recorder, anonymous)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous clear = %d, want 401: %s", recorder.Code, recorder.Body.String())
+	}
+
+	for _, key := range []string{"", "short"} {
+		recorder := httptest.NewRecorder()
+		handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodDelete, path, "", key))
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("clear with key %q = %d, want 400: %s", key, recorder.Code, recorder.Body.String())
+		}
+	}
+	if coreCalls.Load() != 0 {
+		t.Fatalf("unauthenticated or keyless writes reached Core %d times", coreCalls.Load())
+	}
+}
+
+func TestLearningReportPreferencesWriteForwardsOneSignedCommand(t *testing.T) {
+	body := `{"enabled":true,"interval_days":7,"goal":"exam_review","chapter_ids":["ch01"],"external_analysis_consent":true}`
+	var calls atomic.Int32
+	core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		expectedPath := strings.Replace(practice.UpdatePortalLearningReportPreferencesPath, "{bank_id}", learningReportBankID, 1)
+		if request.Method != http.MethodPut || request.URL.Path != expectedPath {
+			t.Fatalf("Core request = %s %s", request.Method, request.URL.Path)
+		}
+		if request.Header.Get("X-Actor-User-Id") != practiceCommandUserID {
+			t.Fatalf("actor header = %q", request.Header.Get("X-Actor-User-Id"))
+		}
+		if request.Header.Get("Idempotency-Key") != "learning-report-idempotency-key" {
+			t.Fatalf("idempotency key = %q", request.Header.Get("Idempotency-Key"))
+		}
+		assertSignedPracticeCommand(t, request, readPracticeCommandBody(t, request), practiceCommandUserID)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"request_id":"req_core_preferences","data":{"enabled":true,"interval_days":7,"goal":"exam_review","chapter_ids":["ch01"],"external_analysis_consent":true,"bank_id":"` + learningReportBankID + `","revision":3}}`))
+	}))
+	defer core.Close()
+
+	handler := newLearningReportWriteHandler(t, core.URL, true)
+	path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/preferences"
+	recorder := httptest.NewRecorder()
+	handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodPut, path, body, "learning-report-idempotency-key"))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("preferences write = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"revision":3`) || !strings.Contains(recorder.Body.String(), `"request_id":"req_core_preferences"`) {
+		t.Fatalf("preferences write did not relay the Core envelope: %s", recorder.Body.String())
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("core calls = %d", calls.Load())
+	}
+}
+
+func TestRequestLearningReportRelaysTheTaskEnvelope(t *testing.T) {
+	for _, coreStatus := range []int{http.StatusAccepted, http.StatusOK} {
+		t.Run(http.StatusText(coreStatus), func(t *testing.T) {
+			core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				expectedPath := strings.Replace(practice.RequestPortalLearningReportPath, "{bank_id}", learningReportBankID, 1)
+				if request.Method != http.MethodPost || request.URL.Path != expectedPath {
+					t.Fatalf("Core request = %s %s", request.Method, request.URL.Path)
+				}
+				assertSignedPracticeCommand(t, request, readPracticeCommandBody(t, request), practiceCommandUserID)
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(coreStatus)
+				_, _ = writer.Write([]byte(`{"request_id":"req_core_task","data":{"task_id":"` + learningReportTaskID + `","bank_id":"` + learningReportBankID + `","status":"queued","created_at":"2026-10-02T00:00:00Z"}}`))
+			}))
+			defer core.Close()
+
+			handler := newLearningReportWriteHandler(t, core.URL, true)
+			path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports"
+			recorder := httptest.NewRecorder()
+			handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodPost, path, "", "learning-report-idempotency-key"))
+			// Core answers 202 for a new request and 200 for a reused one; the
+			// browser gets 202 either way and reads the task status from the body.
+			if recorder.Code != http.StatusAccepted {
+				t.Fatalf("request write (core %d) = %d: %s", coreStatus, recorder.Code, recorder.Body.String())
+			}
+			if !strings.Contains(recorder.Body.String(), `"status":"queued"`) {
+				t.Fatalf("request write did not relay the task envelope: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestClearLearningReportsRelaysTheClearedResult(t *testing.T) {
+	core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		expectedPath := strings.Replace(practice.ClearPortalLearningReportsPath, "{bank_id}", learningReportBankID, 1)
+		if request.Method != http.MethodDelete || request.URL.Path != expectedPath {
+			t.Fatalf("Core request = %s %s", request.Method, request.URL.Path)
+		}
+		assertSignedPracticeCommand(t, request, readPracticeCommandBody(t, request), practiceCommandUserID)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"request_id":"req_core_clear","data":{"cleared":true,"revision":4}}`))
+	}))
+	defer core.Close()
+
+	handler := newLearningReportWriteHandler(t, core.URL, true)
+	path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports"
+	recorder := httptest.NewRecorder()
+	handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodDelete, path, "", "learning-report-idempotency-key"))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"cleared":true`) {
+		t.Fatalf("clear = %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCreateLearningReportPracticeSessionPinsTheReportPath(t *testing.T) {
+	var calls atomic.Int32
+	core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		expectedPath := strings.Replace(strings.Replace(practice.CreatePortalLearningReportPracticeSessionPath, "{bank_id}", learningReportBankID, 1), "{report_id}", learningReportID, 1)
+		if request.Method != http.MethodPost || request.URL.Path != expectedPath {
+			t.Fatalf("Core request = %s %s, want %s", request.Method, request.URL.Path, expectedPath)
+		}
+		assertSignedPracticeCommand(t, request, readPracticeCommandBody(t, request), practiceCommandUserID)
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write([]byte(`{"request_id":"req_core_session","data":{"session_id":"22222222-2222-4222-8222-222222222222","bank_id":"` + learningReportBankID + `","bank_version_id":"44444444-4444-4444-8444-444444444444","mode":"report","excluded_unavailable_count":0,"questions":[{"question_id":"55555555-5555-4555-8555-555555555555","question_version_id":"66666666-6666-4666-8666-666666666666","type":"single","chapter_id":"ch01","chapter":"基础","content":"服务端选择的题目","options":["甲","乙"]}]}}`))
+	}))
+	defer core.Close()
+
+	handler := newLearningReportWriteHandler(t, core.URL, true)
+	path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/results/" + learningReportID + "/practice-sessions"
+	recorder := httptest.NewRecorder()
+	handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodPost, path, "", "learning-report-idempotency-key"))
+	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), `"mode":"report"`) {
+		t.Fatalf("report session = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("core calls = %d", calls.Load())
+	}
+
+	// A report id that is not a UUID is rejected before Core is contacted.
+	malformed := httptest.NewRecorder()
+	handler.Router().ServeHTTP(malformed, authenticatedPracticeCommandRequest(t, handler, http.MethodPost, "/api/v1/practice/banks/"+learningReportBankID+"/learning-reports/results/not-a-uuid/practice-sessions", "", "learning-report-idempotency-key"))
+	if malformed.Code != http.StatusBadRequest {
+		t.Fatalf("malformed report id = %d: %s", malformed.Code, malformed.Body.String())
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("malformed report id reached Core: calls = %d", calls.Load())
+	}
+}
+
+func TestLearningReportWriteFailuresMapToHonestBrowserErrors(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		coreStatus int
+		wantStatus int
+		wantError  string
+	}{
+		{name: "invalid payload", coreStatus: http.StatusBadRequest, wantStatus: http.StatusBadRequest, wantError: "practice_command_invalid"},
+		{name: "revoked entitlement", coreStatus: http.StatusForbidden, wantStatus: http.StatusForbidden, wantError: "practice_session_forbidden"},
+		{name: "unknown bank", coreStatus: http.StatusNotFound, wantStatus: http.StatusNotFound, wantError: "practice_session_not_found"},
+		{name: "state conflict", coreStatus: http.StatusConflict, wantStatus: http.StatusConflict, wantError: "practice_command_conflict"},
+		{name: "core fault", coreStatus: http.StatusInternalServerError, wantStatus: http.StatusServiceUnavailable, wantError: "practice_commands_unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				writer.WriteHeader(test.coreStatus)
+			}))
+			defer core.Close()
+
+			handler := newLearningReportWriteHandler(t, core.URL, true)
+			path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports"
+			recorder := httptest.NewRecorder()
+			handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodDelete, path, "", "learning-report-idempotency-key"))
+			if recorder.Code != test.wantStatus || !strings.Contains(recorder.Body.String(), test.wantError) {
+				t.Fatalf("clear (core %d) = %d: %s", test.coreStatus, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}

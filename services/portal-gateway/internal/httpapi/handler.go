@@ -267,6 +267,13 @@ func (h *Handler) Router() chi.Router {
 	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/preferences", h.learningReportPreferences)
 	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/latest", h.latestLearningReport)
 	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", h.learningReportTask)
+	// Learning-report writes reuse the practice command credential and the
+	// idempotency-key contract; like the reads they register unconditionally and
+	// fail closed (503) while the learning surface or the command client is off.
+	r.Put("/api/v1/practice/banks/{bank_id}/learning-reports/preferences", h.updateLearningReportPreferences)
+	r.Post("/api/v1/practice/banks/{bank_id}/learning-reports", h.requestLearningReport)
+	r.Delete("/api/v1/practice/banks/{bank_id}/learning-reports", h.clearLearningReports)
+	r.Post("/api/v1/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions", h.createLearningReportSession)
 
 	// The owner-backed download command must shadow the public-data wildcard.
 	// Browser callers select only a material ID, never a storage key or URL.

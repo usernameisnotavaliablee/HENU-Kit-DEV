@@ -113,7 +113,10 @@ func (c *CommandClient) CreateFavoritesSession(ctx context.Context, bankID, acto
 
 type commandEnvelopeValidator func([]byte) error
 
-func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie, expectedStatus int, validate commandEnvelopeValidator) (CommandResult, error) {
+// command performs exactly one signed Core write. extraStatuses documents the
+// additional success codes a command may answer with the same envelope (for
+// example a reused learning report request answering 200 instead of 202).
+func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie, expectedStatus int, validate commandEnvelopeValidator, extraStatuses ...int) (CommandResult, error) {
 	if c == nil || c.signer == nil || c.httpClient == nil || strings.TrimSpace(requestID) == "" || !ValidIdempotencyKey(idempotencyKey) || len(raw) == 0 || len(raw) > 2<<20 {
 		return CommandResult{}, ErrPracticeCommandBadRequest
 	}
@@ -159,8 +162,10 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 	case http.StatusConflict:
 		return CommandResult{}, ErrPracticeCommandConflict
 	default:
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
-		return CommandResult{}, fmt.Errorf("QuizCraft Portal command status %d: %w", response.StatusCode, ErrPracticeCommandUnavailable)
+		if !containsStatus(extraStatuses, response.StatusCode) {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+			return CommandResult{}, fmt.Errorf("QuizCraft Portal command status %d: %w", response.StatusCode, ErrPracticeCommandUnavailable)
+		}
 	}
 	rawResponse, err := io.ReadAll(io.LimitReader(response.Body, 2<<20+1))
 	if err != nil || len(rawResponse) == 0 || len(rawResponse) > 2<<20 || validate(rawResponse) != nil {
@@ -178,6 +183,15 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 func ValidIdempotencyKey(value string) bool {
 	value = strings.TrimSpace(value)
 	return len(value) >= 16 && len(value) <= 160
+}
+
+func containsStatus(statuses []int, want int) bool {
+	for _, status := range statuses {
+		if status == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validPracticeCommandUUID(value string) bool {

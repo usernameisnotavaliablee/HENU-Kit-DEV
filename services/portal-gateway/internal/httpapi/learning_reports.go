@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -68,4 +69,54 @@ func (h *Handler) learningReportRead(w http.ResponseWriter, r *http.Request, rea
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope)
+}
+
+// learningReportWrite routes one learning-report write. The cutover flag is
+// checked first because the shared command skeleton only knows about the
+// command client: with the command client present but the learning surface
+// still dark, an unwired write must answer an honest 503 rather than reach Core.
+func (h *Handler) learningReportWrite(w http.ResponseWriter, r *http.Request, successStatus int, readBody bool, command practiceCommand) {
+	if !h.learningReportsEnabled {
+		writeError(w, r, http.StatusServiceUnavailable, "practice learning reports are not enabled", "学习报告暂时不可用，请稍后再试")
+		return
+	}
+	h.practiceCommand(w, r, successStatus, false, readBody, "请先登录后再使用学习报告", command)
+}
+
+// updateLearningReportPreferences saves preferences and consent. Core decides
+// whether the change needs a live entitlement (enabling/narrowing does, turning
+// generation off does not); Gateway forwards the browser body unchanged.
+func (h *Handler) updateLearningReportPreferences(w http.ResponseWriter, r *http.Request) {
+	bankID := chi.URLParam(r, "bank_id")
+	h.learningReportWrite(w, r, http.StatusOK, true, func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
+		return h.practiceCommands.UpdateLearningReportPreferences(ctx, bankID, actorUserID, requestID, idempotencyKey, raw, anonymousCookie)
+	})
+}
+
+// requestLearningReport asks Core to queue one manual report request. Core
+// answers with the task envelope either way; the envelope's task status tells
+// the browser whether work was queued or an identical request was reused.
+func (h *Handler) requestLearningReport(w http.ResponseWriter, r *http.Request) {
+	bankID := chi.URLParam(r, "bank_id")
+	h.learningReportWrite(w, r, http.StatusAccepted, false, func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
+		return h.practiceCommands.RequestLearningReport(ctx, bankID, actorUserID, requestID, idempotencyKey, anonymousCookie)
+	})
+}
+
+// clearLearningReports withdraws the owner's derived reports and queued work.
+func (h *Handler) clearLearningReports(w http.ResponseWriter, r *http.Request) {
+	bankID := chi.URLParam(r, "bank_id")
+	h.learningReportWrite(w, r, http.StatusOK, false, func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
+		return h.practiceCommands.ClearLearningReports(ctx, bankID, actorUserID, requestID, idempotencyKey, anonymousCookie)
+	})
+}
+
+// createLearningReportSession starts practice from the verified report
+// recommendation. The browser sends no question ids.
+func (h *Handler) createLearningReportSession(w http.ResponseWriter, r *http.Request) {
+	bankID := chi.URLParam(r, "bank_id")
+	reportID := chi.URLParam(r, "report_id")
+	h.learningReportWrite(w, r, http.StatusCreated, false, func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
+		return h.practiceCommands.CreateLearningReportPracticeSession(ctx, bankID, reportID, actorUserID, requestID, idempotencyKey, anonymousCookie)
+	})
 }

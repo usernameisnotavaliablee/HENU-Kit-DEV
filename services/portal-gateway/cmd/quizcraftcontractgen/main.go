@@ -7,6 +7,7 @@ import (
 	"go/format"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -25,6 +26,7 @@ type parameter struct {
 	In       string `yaml:"in"`
 	Required bool   `yaml:"required"`
 	Schema   schema `yaml:"schema"`
+	Ref      string `yaml:"$ref"`
 }
 
 type response struct {
@@ -93,6 +95,7 @@ type document struct {
 	Components struct {
 		Schemas         map[string]schema         `yaml:"schemas"`
 		SecuritySchemes map[string]securityScheme `yaml:"securitySchemes"`
+		Parameters      map[string]parameter      `yaml:"parameters"`
 	} `yaml:"components"`
 }
 
@@ -148,6 +151,10 @@ func main() {
 	getPortalLearningReportPreferencesPath, getPortalLearningReportPreferencesMethod, getPortalLearningReportPreferencesOperation := requireOperation(spec.Paths, "getPortalLearningReportPreferences")
 	getPortalLatestLearningReportPath, getPortalLatestLearningReportMethod, getPortalLatestLearningReportOperation := requireOperation(spec.Paths, "getPortalLatestLearningReport")
 	getPortalLearningReportTaskPath, getPortalLearningReportTaskMethod, getPortalLearningReportTaskOperation := requireOperation(spec.Paths, "getPortalLearningReportTask")
+	updatePortalLearningReportPreferencesPath, updatePortalLearningReportPreferencesMethod, updatePortalLearningReportPreferencesOperation := requireOperation(spec.Paths, "updatePortalLearningReportPreferences")
+	requestPortalLearningReportPath, requestPortalLearningReportMethod, requestPortalLearningReportOperation := requireOperation(spec.Paths, "requestPortalLearningReport")
+	clearPortalLearningReportsPath, clearPortalLearningReportsMethod, clearPortalLearningReportsOperation := requireOperation(spec.Paths, "clearPortalLearningReports")
+	createPortalLearningReportPracticeSessionPath, createPortalLearningReportPracticeSessionMethod, createPortalLearningReportPracticeSessionOperation := requireOperation(spec.Paths, "createPortalLearningReportPracticeSession")
 	validatePortalReadOperation("listPracticeBanks", catalogMethod, catalogOperation, "BankListEnvelope", catalogSecurityRequirements)
 	validatePortalReadOperation("getPersonalPracticeStats", statsMethod, statsOperation, "PersonalPracticeStatsEnvelope", personalStatsSecurityRequirements)
 	validatePersonalStatsActorBinding(statsOperation)
@@ -171,6 +178,21 @@ func main() {
 	validatePersonalStatsActorBinding(getPortalLatestLearningReportOperation)
 	validatePortalReadOperation("getPortalLearningReportTask", getPortalLearningReportTaskMethod, getPortalLearningReportTaskOperation, "LearningReportTaskEnvelope", personalStatsSecurityRequirements)
 	validatePersonalStatsActorBinding(getPortalLearningReportTaskOperation)
+	validatePortalPracticeCommandOperation("updatePortalLearningReportPreferences", updatePortalLearningReportPreferencesPath, updatePortalLearningReportPreferencesMethod, updatePortalLearningReportPreferencesOperation, "200", "LearningReportPreferencesEnvelope")
+	requireIdempotencyKeyParameter("updatePortalLearningReportPreferences", updatePortalLearningReportPreferencesOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("updatePortalLearningReportPreferences", updatePortalLearningReportPreferencesOperation, spec.Components.Parameters)
+	validatePortalPracticeCommandOperation("requestPortalLearningReport", requestPortalLearningReportPath, requestPortalLearningReportMethod, requestPortalLearningReportOperation, "202", "LearningReportTaskEnvelope")
+	// A manual request that reuses an existing report or task answers 200 with
+	// the same envelope, so both success statuses must stay documented.
+	requireCommandSuccess("requestPortalLearningReport", requestPortalLearningReportOperation, "200", "LearningReportTaskEnvelope")
+	requireIdempotencyKeyParameter("requestPortalLearningReport", requestPortalLearningReportOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("requestPortalLearningReport", requestPortalLearningReportOperation, spec.Components.Parameters)
+	validatePortalPracticeCommandOperation("clearPortalLearningReports", clearPortalLearningReportsPath, clearPortalLearningReportsMethod, clearPortalLearningReportsOperation, "200", "LearningReportClearResultEnvelope")
+	requireIdempotencyKeyParameter("clearPortalLearningReports", clearPortalLearningReportsOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("clearPortalLearningReports", clearPortalLearningReportsOperation, spec.Components.Parameters)
+	validatePortalPracticeCommandOperation("createPortalLearningReportPracticeSession", createPortalLearningReportPracticeSessionPath, createPortalLearningReportPracticeSessionMethod, createPortalLearningReportPracticeSessionOperation, "201", "PracticeSessionEnvelope")
+	requireIdempotencyKeyParameter("createPortalLearningReportPracticeSession", createPortalLearningReportPracticeSessionOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("createPortalLearningReportPracticeSession", createPortalLearningReportPracticeSessionOperation, spec.Components.Parameters)
 	validateCatalogSecurity(spec.Components.SecuritySchemes, personalStatsSecurityRequirements)
 	validatePortalPracticeCommandSecurity(spec.Components.SecuritySchemes)
 	validateCatalogSchema(spec.Components.Schemas)
@@ -180,7 +202,28 @@ func main() {
 	validateLearningReportSchema(spec.Components.Schemas)
 
 	digest := fmt.Sprintf("%x", sha256.Sum256(source))
-	generated, err := format.Source([]byte(render(catalogPath, statsPath, overallRankingPath, bankRankingPath, createPortalPracticeSessionPath, submitPortalPracticeAnswerPath, createPortalPracticeFeedbackPath, getPortalPracticeFeedbackStatusPath, getPortalFavoritesOverviewPath, listPortalFavoriteQuestionsPath, favoritePortalQuestionPath, unfavoritePortalQuestionPath, createPortalFavoritesSessionPath, getPortalLearningReportPreferencesPath, getPortalLatestLearningReportPath, getPortalLearningReportTaskPath, digest)))
+	generated, err := format.Source([]byte(render(pathConstants([]pathConstant{
+		{"ListPracticeBanksPath", catalogPath},
+		{"GetPersonalPracticeStatsPath", statsPath},
+		{"OverallRankingPath", overallRankingPath},
+		{"BankRankingPath", bankRankingPath},
+		{"CreatePortalPracticeSessionPath", createPortalPracticeSessionPath},
+		{"SubmitPortalPracticeAnswerPath", submitPortalPracticeAnswerPath},
+		{"CreatePortalPracticeFeedbackPath", createPortalPracticeFeedbackPath},
+		{"GetPortalPracticeFeedbackStatusPath", getPortalPracticeFeedbackStatusPath},
+		{"GetPortalFavoritesOverviewPath", getPortalFavoritesOverviewPath},
+		{"ListPortalFavoriteQuestionsPath", listPortalFavoriteQuestionsPath},
+		{"FavoritePortalQuestionPath", favoritePortalQuestionPath},
+		{"UnfavoritePortalQuestionPath", unfavoritePortalQuestionPath},
+		{"CreatePortalFavoritesSessionPath", createPortalFavoritesSessionPath},
+		{"GetPortalLearningReportPreferencesPath", getPortalLearningReportPreferencesPath},
+		{"GetPortalLatestLearningReportPath", getPortalLatestLearningReportPath},
+		{"GetPortalLearningReportTaskPath", getPortalLearningReportTaskPath},
+		{"UpdatePortalLearningReportPreferencesPath", updatePortalLearningReportPreferencesPath},
+		{"RequestPortalLearningReportPath", requestPortalLearningReportPath},
+		{"ClearPortalLearningReportsPath", clearPortalLearningReportsPath},
+		{"CreatePortalLearningReportPracticeSessionPath", createPortalLearningReportPracticeSessionPath},
+	}), digest)))
 	fail(err)
 	fail(os.WriteFile(*outputPath, generated, 0o644))
 }
@@ -266,6 +309,54 @@ func validatePortalPracticeCommandOperation(operationID, path, method string, op
 			fail(fmt.Errorf("%s is missing security scheme %s", operationID, requirement.name))
 		}
 	}
+}
+
+// requireCommandSuccess pins one extra documented success response for a
+// command that can answer more than one status with the same envelope.
+func requireCommandSuccess(operationID string, operation operation, status, envelope string) {
+	response, ok := operation.Responses[status]
+	if !ok || response.Content["application/json"].Schema.Ref != "#/components/schemas/"+envelope {
+		fail(fmt.Errorf("%s %s response must be %s", operationID, status, envelope))
+	}
+}
+
+// requireIdempotencyKeyParameter keeps the browser contract and the Core write
+// contract aligned: every learning-report write is idempotent by key, so the
+// parameter must stay documented before Gateway starts forwarding it. The
+// parameter is a component reference in the source contract, so the component
+// must be resolved instead of relying on the inline name.
+func requireIdempotencyKeyParameter(operationID string, operation operation, components map[string]parameter) {
+	for _, parameter := range operation.Parameters {
+		resolved, ok := resolveParameter(parameter, components)
+		if ok && resolved.Name == "Idempotency-Key" && resolved.In == "header" && resolved.Required {
+			return
+		}
+	}
+	fail(fmt.Errorf("%s must require the Idempotency-Key header", operationID))
+}
+
+// requireActorHeaderParameter pins the sixth signed segment: the verified owner
+// must travel as a required UUID header, never as request JSON.
+func requireActorHeaderParameter(operationID string, operation operation, components map[string]parameter) {
+	for _, parameter := range operation.Parameters {
+		resolved, ok := resolveParameter(parameter, components)
+		if ok && resolved.Name == "X-Actor-User-Id" && resolved.In == "header" && resolved.Required && resolved.Schema.Type == "string" && resolved.Schema.Format == "uuid" {
+			return
+		}
+	}
+	fail(fmt.Errorf("%s must require UUID X-Actor-User-Id header binding", operationID))
+}
+
+func resolveParameter(parameter parameter, components map[string]parameter) (parameter, bool) {
+	if parameter.Ref == "" {
+		return parameter, true
+	}
+	name := parameter.Ref[strings.LastIndex(parameter.Ref, "/")+1:]
+	resolved, found := components[name]
+	if !found {
+		return parameter, false
+	}
+	return resolved, true
 }
 
 func validatePersonalStatsActorBinding(operation operation) {
@@ -581,28 +672,30 @@ func contains(values []string, want string) bool {
 	return false
 }
 
-func render(catalogPath, statsPath, overallRankingPath, bankRankingPath, createPortalPracticeSessionPath, submitPortalPracticeAnswerPath, createPortalPracticeFeedbackPath, getPortalPracticeFeedbackStatusPath, getPortalFavoritesOverviewPath, listPortalFavoriteQuestionsPath, favoritePortalQuestionPath, unfavoritePortalQuestionPath, createPortalFavoritesSessionPath, getPortalLearningReportPreferencesPath, getPortalLatestLearningReportPath, getPortalLearningReportTaskPath, digest string) string {
+// pathConstant is one generated contract route constant. The constants are
+// rendered from a slice rather than positional Sprintf arguments so a misordered
+// route cannot silently label the wrong path.
+type pathConstant struct {
+	name  string
+	value string
+}
+
+func pathConstants(constants []pathConstant) string {
+	block := strings.Builder{}
+	for _, constant := range constants {
+		block.WriteString("\nconst " + constant.name + " = " + strconv.Quote(constant.value))
+	}
+	block.WriteString("\n")
+	return block.String()
+}
+
+func render(constants, digest string) string {
 	return fmt.Sprintf(`// Code generated by cmd/quizcraftcontractgen from quizcraft.yaml; DO NOT EDIT.
 package practice
 
 const QuizCraftCatalogContractSHA256 = %q
 const QuizCraftRankingContractSHA256 = QuizCraftCatalogContractSHA256
-const ListPracticeBanksPath = %q
-const GetPersonalPracticeStatsPath = %q
-const OverallRankingPath = %q
-const BankRankingPath = %q
-const CreatePortalPracticeSessionPath = %q
-const SubmitPortalPracticeAnswerPath = %q
-const CreatePortalPracticeFeedbackPath = %q
-const GetPortalPracticeFeedbackStatusPath = %q
-const GetPortalFavoritesOverviewPath = %q
-const ListPortalFavoriteQuestionsPath = %q
-const FavoritePortalQuestionPath = %q
-const UnfavoritePortalQuestionPath = %q
-const CreatePortalFavoritesSessionPath = %q
-const GetPortalLearningReportPreferencesPath = %q
-const GetPortalLatestLearningReportPath = %q
-const GetPortalLearningReportTaskPath = %q
+%s
 
 // BankListEnvelope is the generated read-only QuizCraft catalog response.
 // Its data members are the published, and therefore available, bank versions.
@@ -841,7 +934,7 @@ type LearningReportSource struct {
 	Version  string `+"`json:\"version\"`"+`
 	Locator  string `+"`json:\"locator\"`"+`
 }
-`, digest, catalogPath, statsPath, overallRankingPath, bankRankingPath, createPortalPracticeSessionPath, submitPortalPracticeAnswerPath, createPortalPracticeFeedbackPath, getPortalPracticeFeedbackStatusPath, getPortalFavoritesOverviewPath, listPortalFavoriteQuestionsPath, favoritePortalQuestionPath, unfavoritePortalQuestionPath, createPortalFavoritesSessionPath, getPortalLearningReportPreferencesPath, getPortalLatestLearningReportPath, getPortalLearningReportTaskPath)
+`, digest, constants)
 }
 
 func fail(err error) {

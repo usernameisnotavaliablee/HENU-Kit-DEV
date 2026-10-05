@@ -3,6 +3,7 @@ package practice
 
 const QuizCraftCatalogContractSHA256 = "6a5b4ecd6a5fe3c15f3b5637ff14dba5fc3996a1e036ad7e376432e4cb881dfa"
 const QuizCraftRankingContractSHA256 = QuizCraftCatalogContractSHA256
+
 const ListPracticeBanksPath = "/api/v1/banks"
 const GetPersonalPracticeStatsPath = "/api/v1/stats"
 const OverallRankingPath = "/api/v1/rankings/overall"
@@ -19,6 +20,10 @@ const CreatePortalFavoritesSessionPath = "/api/v1/portal/practice/banks/{bank_id
 const GetPortalLearningReportPreferencesPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences"
 const GetPortalLatestLearningReportPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports/latest"
 const GetPortalLearningReportTaskPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports/tasks/{task_id}"
+const UpdatePortalLearningReportPreferencesPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences"
+const RequestPortalLearningReportPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports"
+const ClearPortalLearningReportsPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports"
+const CreatePortalLearningReportPracticeSessionPath = "/api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions"
 
 // BankListEnvelope is the generated read-only QuizCraft catalog response.
 // Its data members are the published, and therefore available, bank versions.
