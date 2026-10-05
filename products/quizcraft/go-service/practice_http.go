@@ -337,6 +337,10 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 	writes.Post("/api/v1/workshop/banks/{bank_id}/versions/{bank_version_id}/publish", service.publishWorkshopVersion)
 	writes.Post("/api/v1/workshop/banks/{bank_id}/versions/{bank_version_id}/unpublish", service.unpublishWorkshopVersion)
 	writes.Post("/api/v1/workshop/banks/{bank_id}/rollback", service.rollbackWorkshopBank)
+	router.Get("/api/v1/workshop/banks/{bank_id}/learning-content", service.listWorkshopLearningContent)
+	writes.Post("/api/v1/workshop/banks/{bank_id}/learning-content", service.importWorkshopLearningContent)
+	writes.Post("/api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/approve", service.approveWorkshopLearningContent)
+	writes.Post("/api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/retire", service.retireWorkshopLearningContent)
 	router.Get("/api/v1/workshop/feedback/{feedback_id}", service.getWorkshopFeedback)
 	router.Get("/api/v1/favorites", service.listFavoriteFolders)
 	router.Get("/api/v1/banks/{bank_id}/favorites", service.listFavoriteQuestions)
@@ -382,7 +386,7 @@ func (service *practiceHTTP) operationStatus(writer http.ResponseWriter, request
 		return
 	}
 	kind := chi.URLParam(request, "operation_kind")
-	if kind != "create_practice_session" && kind != "submit_practice_answer" && kind != "favorite_question" && kind != "unfavorite_question" && kind != "create_favorites_session" && kind != "create_feedback" && kind != "create_workshop_bank" && kind != "create_bank_version" && kind != "import_bank" && kind != "validate_version" && kind != "publish_version" && kind != "unpublish_version" && kind != "rollback_bank" {
+	if kind != "create_practice_session" && kind != "submit_practice_answer" && kind != "favorite_question" && kind != "unfavorite_question" && kind != "create_favorites_session" && kind != "create_feedback" && kind != "create_workshop_bank" && kind != "create_bank_version" && kind != "import_bank" && kind != "validate_version" && kind != "publish_version" && kind != "unpublish_version" && kind != "rollback_bank" && kind != "import_learning_content" && kind != "approve_learning_content" && kind != "retire_learning_content" {
 		writeError(writer, http.StatusNotFound, "operation_unknown", "operation is not implemented by Practice Core")
 		return
 	}

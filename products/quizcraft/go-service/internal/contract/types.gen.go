@@ -179,6 +179,60 @@ func (e HealthEnvelopeDataStatus) Valid() bool {
 	}
 }
 
+// Defines values for LearningContentDraftSchemaVersion.
+const (
+	N1 LearningContentDraftSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the LearningContentDraftSchemaVersion enum.
+func (e LearningContentDraftSchemaVersion) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LearningContentTagKind.
+const (
+	LearningContentTagKindAbility   LearningContentTagKind = "ability"
+	LearningContentTagKindKnowledge LearningContentTagKind = "knowledge"
+)
+
+// Valid indicates whether the value is a known member of the LearningContentTagKind enum.
+func (e LearningContentTagKind) Valid() bool {
+	switch e {
+	case LearningContentTagKindAbility:
+		return true
+	case LearningContentTagKindKnowledge:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LearningContentVersionStatus.
+const (
+	LearningContentVersionStatusApproved LearningContentVersionStatus = "approved"
+	LearningContentVersionStatusDraft    LearningContentVersionStatus = "draft"
+	LearningContentVersionStatusRetired  LearningContentVersionStatus = "retired"
+)
+
+// Valid indicates whether the value is a known member of the LearningContentVersionStatus enum.
+func (e LearningContentVersionStatus) Valid() bool {
+	switch e {
+	case LearningContentVersionStatusApproved:
+		return true
+	case LearningContentVersionStatusDraft:
+		return true
+	case LearningContentVersionStatusRetired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LearningReportGoal.
 const (
 	LearningReportGoalExamReview   LearningReportGoal = "exam_review"
@@ -301,16 +355,16 @@ func (e LearningReportPreferencesUpdateGoal) Valid() bool {
 
 // Defines values for LearningReportStatisticTagKind.
 const (
-	Ability   LearningReportStatisticTagKind = "ability"
-	Knowledge LearningReportStatisticTagKind = "knowledge"
+	LearningReportStatisticTagKindAbility   LearningReportStatisticTagKind = "ability"
+	LearningReportStatisticTagKindKnowledge LearningReportStatisticTagKind = "knowledge"
 )
 
 // Valid indicates whether the value is a known member of the LearningReportStatisticTagKind enum.
 func (e LearningReportStatisticTagKind) Valid() bool {
 	switch e {
-	case Ability:
+	case LearningReportStatisticTagKindAbility:
 		return true
-	case Knowledge:
+	case LearningReportStatisticTagKindKnowledge:
 		return true
 	default:
 		return false
@@ -391,6 +445,7 @@ func (e OperationState) Valid() bool {
 
 // Defines values for OperationKind.
 const (
+	OperationKindApproveLearningContent OperationKind = "approve_learning_content"
 	OperationKindCreateBankVersion      OperationKind = "create_bank_version"
 	OperationKindCreateFavoritesSession OperationKind = "create_favorites_session"
 	OperationKindCreateFeedback         OperationKind = "create_feedback"
@@ -398,7 +453,9 @@ const (
 	OperationKindCreateWorkshopBank     OperationKind = "create_workshop_bank"
 	OperationKindFavoriteQuestion       OperationKind = "favorite_question"
 	OperationKindImportBank             OperationKind = "import_bank"
+	OperationKindImportLearningContent  OperationKind = "import_learning_content"
 	OperationKindPublishVersion         OperationKind = "publish_version"
+	OperationKindRetireLearningContent  OperationKind = "retire_learning_content"
 	OperationKindRollbackBank           OperationKind = "rollback_bank"
 	OperationKindSubmitPracticeAnswer   OperationKind = "submit_practice_answer"
 	OperationKindUnfavoriteQuestion     OperationKind = "unfavorite_question"
@@ -409,6 +466,8 @@ const (
 // Valid indicates whether the value is a known member of the OperationKind enum.
 func (e OperationKind) Valid() bool {
 	switch e {
+	case OperationKindApproveLearningContent:
+		return true
 	case OperationKindCreateBankVersion:
 		return true
 	case OperationKindCreateFavoritesSession:
@@ -423,7 +482,11 @@ func (e OperationKind) Valid() bool {
 		return true
 	case OperationKindImportBank:
 		return true
+	case OperationKindImportLearningContent:
+		return true
 	case OperationKindPublishVersion:
+		return true
+	case OperationKindRetireLearningContent:
 		return true
 	case OperationKindRollbackBank:
 		return true
@@ -1003,6 +1066,86 @@ type ImportedQuestionReport struct {
 	SourceQuestionId  string             `json:"source_question_id"`
 }
 
+// LearningContentDraft defines model for LearningContentDraft.
+type LearningContentDraft struct {
+	Lessons       *[]LearningContentLesson          `json:"lessons,omitempty"`
+	Questions     []LearningContentQuestion         `json:"questions"`
+	SchemaVersion LearningContentDraftSchemaVersion `json:"schema_version"`
+	Sources       *[]LearningContentSource          `json:"sources,omitempty"`
+	Tags          []LearningContentTag              `json:"tags"`
+}
+
+// LearningContentDraftSchemaVersion defines model for LearningContentDraft.SchemaVersion.
+type LearningContentDraftSchemaVersion int
+
+// LearningContentLesson defines model for LearningContentLesson.
+type LearningContentLesson struct {
+	Body      string   `json:"body"`
+	Id        string   `json:"id"`
+	SourceIds []string `json:"source_ids"`
+	TagIds    []string `json:"tag_ids"`
+	Title     string   `json:"title"`
+}
+
+// LearningContentQuestion defines model for LearningContentQuestion.
+type LearningContentQuestion struct {
+	QuestionId        openapi_types.UUID `json:"question_id"`
+	QuestionVersionId openapi_types.UUID `json:"question_version_id"`
+	TagIds            []string           `json:"tag_ids"`
+}
+
+// LearningContentReviewCommand defines model for LearningContentReviewCommand.
+type LearningContentReviewCommand struct {
+	// Activate Point the course learning catalog at this version.
+	Activate *bool `json:"activate,omitempty"`
+
+	// Enable Turn the course learning catalog on for members.
+	Enable *bool   `json:"enable,omitempty"`
+	Note   *string `json:"note,omitempty"`
+}
+
+// LearningContentSource defines model for LearningContentSource.
+type LearningContentSource struct {
+	Commit     string `json:"commit"`
+	Id         string `json:"id"`
+	Locator    string `json:"locator"`
+	Path       string `json:"path"`
+	Repository string `json:"repository"`
+	Sha256     string `json:"sha256"`
+	Title      string `json:"title"`
+	UsageBasis string `json:"usage_basis"`
+}
+
+// LearningContentTag defines model for LearningContentTag.
+type LearningContentTag struct {
+	Definition string                 `json:"definition"`
+	Id         string                 `json:"id"`
+	Kind       LearningContentTagKind `json:"kind"`
+	Name       string                 `json:"name"`
+}
+
+// LearningContentTagKind defines model for LearningContentTag.Kind.
+type LearningContentTagKind string
+
+// LearningContentVersion defines model for LearningContentVersion.
+type LearningContentVersion struct {
+	Active           bool                         `json:"active"`
+	BankId           openapi_types.UUID           `json:"bank_id"`
+	BankVersionId    openapi_types.UUID           `json:"bank_version_id"`
+	CatalogEnabled   *bool                        `json:"catalog_enabled,omitempty"`
+	ContentSha256    string                       `json:"content_sha256"`
+	ContentVersionId openapi_types.UUID           `json:"content_version_id"`
+	CreatedAt        time.Time                    `json:"created_at"`
+	LessonCount      int                          `json:"lesson_count"`
+	QuestionCount    int                          `json:"question_count"`
+	ReviewedAt       *time.Time                   `json:"reviewed_at,omitempty"`
+	ReviewedBy       *openapi_types.UUID          `json:"reviewed_by,omitempty"`
+	Status           LearningContentVersionStatus `json:"status"`
+}
+
+// LearningContentVersionStatus defines model for LearningContentVersion.Status.
+type LearningContentVersionStatus string
+
 // LearningReport defines model for LearningReport.
 type LearningReport struct {
 	BankId           openapi_types.UUID        `json:"bank_id"`
@@ -1438,6 +1581,12 @@ type WorkshopFeedbackEnvelope struct {
 	RequestId RequestID        `json:"request_id"`
 }
 
+// WorkshopLearningContentEnvelope defines model for WorkshopLearningContentEnvelope.
+type WorkshopLearningContentEnvelope struct {
+	Data      []LearningContentVersion `json:"data"`
+	RequestId string                   `json:"request_id"`
+}
+
 // WorkshopQuestionDetail defines model for WorkshopQuestionDetail.
 type WorkshopQuestionDetail struct {
 	Analysis          *string            `json:"analysis,omitempty"`
@@ -1479,6 +1628,9 @@ type BankVersionID = openapi_types.UUID
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
+
+// LearningContentVersionID defines model for LearningContentVersionID.
+type LearningContentVersionID = openapi_types.UUID
 
 // OperationKindParam defines model for OperationKindParam.
 type OperationKindParam = OperationKind
@@ -1680,6 +1832,21 @@ type ImportWorkshopBankParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ImportWorkshopLearningContentParams defines parameters for ImportWorkshopLearningContent.
+type ImportWorkshopLearningContentParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ApproveWorkshopLearningContentParams defines parameters for ApproveWorkshopLearningContent.
+type ApproveWorkshopLearningContentParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RetireWorkshopLearningContentParams defines parameters for RetireWorkshopLearningContent.
+type RetireWorkshopLearningContentParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
 // RollbackWorkshopBankParams defines parameters for RollbackWorkshopBank.
 type RollbackWorkshopBankParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -1731,6 +1898,15 @@ type CreateWorkshopBankJSONRequestBody = CreateWorkshopBank
 
 // ImportWorkshopBankJSONRequestBody defines body for ImportWorkshopBank for application/json ContentType.
 type ImportWorkshopBankJSONRequestBody = BankImportRequest
+
+// ImportWorkshopLearningContentJSONRequestBody defines body for ImportWorkshopLearningContent for application/json ContentType.
+type ImportWorkshopLearningContentJSONRequestBody = LearningContentDraft
+
+// ApproveWorkshopLearningContentJSONRequestBody defines body for ApproveWorkshopLearningContent for application/json ContentType.
+type ApproveWorkshopLearningContentJSONRequestBody = LearningContentReviewCommand
+
+// RetireWorkshopLearningContentJSONRequestBody defines body for RetireWorkshopLearningContent for application/json ContentType.
+type RetireWorkshopLearningContentJSONRequestBody = LearningContentReviewCommand
 
 // RollbackWorkshopBankJSONRequestBody defines body for RollbackWorkshopBank for application/json ContentType.
 type RollbackWorkshopBankJSONRequestBody = RollbackCommand

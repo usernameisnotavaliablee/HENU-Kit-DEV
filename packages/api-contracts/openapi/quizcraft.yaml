@@ -1144,6 +1144,77 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/workshop/banks/{bank_id}/learning-content:
+    get:
+      summary: List learning content versions with their review state
+      tags: [Workshop]
+      operationId: listWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+      responses:
+        '200': { description: Learning content versions owned by this bank, content: { application/json: { schema: { $ref: '#/components/schemas/WorkshopLearningContentEnvelope' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      summary: Import a validated learning content draft awaiting human review
+      description: The draft is stored as `draft` without reviewer identity; only the separate approve operation records a human decision.
+      tags: [Workshop]
+      operationId: importWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LearningContentDraft' } } } }
+      responses:
+        '201': { description: Stored draft without reviewer identity, content: { application/json: { schema: { $ref: '#/components/schemas/OperationEnvelope' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/approve:
+    post:
+      summary: Record a human review of a learning content draft
+      description: Approval names the reviewing actor and is required before any member-facing report can use this content.
+      tags: [Workshop]
+      operationId: approveWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+        - $ref: '#/components/parameters/LearningContentVersionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LearningContentReviewCommand' } } } }
+      responses:
+        '200': { description: Approval write result, content: { application/json: { schema: { $ref: '#/components/schemas/OperationEnvelope' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/retire:
+    post:
+      summary: Retire approved learning content that is no longer active
+      tags: [Workshop]
+      operationId: retireWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+        - $ref: '#/components/parameters/LearningContentVersionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LearningContentReviewCommand' } } } }
+      responses:
+        '200': { description: Retire write result, content: { application/json: { schema: { $ref: '#/components/schemas/OperationEnvelope' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /api/v1/workshop/feedback/{feedback_id}:
     get:
       summary: Read full product-owned feedback from an Operations Inbox deep link
@@ -1185,6 +1256,7 @@ components:
     SessionID: { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
     OperationKindParam: { name: operation_kind, in: path, required: true, schema: { $ref: '#/components/schemas/OperationKind' } }
     RankingPeriodParam: { name: period, in: query, required: false, schema: { type: string, enum: [weekly, lifetime], default: weekly } }
+    LearningContentVersionID: { name: content_version_id, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
     BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     Unauthorized: { description: Missing or invalid actor credentials, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
@@ -1194,6 +1266,104 @@ components:
     ServiceReplay: { description: Dedicated service request nonce was already used, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     ServiceUnavailable: { description: PostgreSQL or a required service is unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
   schemas:
+    LearningContentDraft: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "tags", "questions"],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "tags": { "type": "array", "maxItems": 300, "items": { "$ref": "#/components/schemas/LearningContentTag" } },
+        "questions": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/components/schemas/LearningContentQuestion" } },
+        "sources": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/components/schemas/LearningContentSource" } },
+        "lessons": { "type": "array", "maxItems": 300, "items": { "$ref": "#/components/schemas/LearningContentLesson" } }
+      }
+    }
+    LearningContentTag: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "definition"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "kind": { "type": "string", "enum": ["knowledge", "ability"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "definition": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    }
+    LearningContentQuestion: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question_id", "question_version_id", "tag_ids"],
+      "properties": {
+        "question_id": { "type": "string", "format": "uuid" },
+        "question_version_id": { "type": "string", "format": "uuid" },
+        "tag_ids": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string" } }
+      }
+    }
+    LearningContentSource: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "repository", "commit", "path", "sha256", "locator", "usage_basis"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "repository": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locator": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "usage_basis": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    }
+    LearningContentLesson: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "body", "tag_ids", "source_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "tag_ids": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string" } },
+        "source_ids": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string" } }
+      }
+    }
+    LearningContentReviewCommand: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "note": { "type": "string", "maxLength": 1000, "default": "" },
+        "activate": { "type": "boolean", "default": true, "description": "Point the course learning catalog at this version." },
+        "enable": { "type": "boolean", "default": false, "description": "Turn the course learning catalog on for members." }
+      }
+    }
+    LearningContentVersion: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_version_id", "bank_id", "bank_version_id", "content_sha256", "status", "created_at", "active", "question_count", "lesson_count"],
+      "properties": {
+        "content_version_id": { "type": "string", "format": "uuid" },
+        "bank_id": { "type": "string", "format": "uuid" },
+        "bank_version_id": { "type": "string", "format": "uuid" },
+        "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "status": { "type": "string", "enum": ["draft", "approved", "retired"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "reviewed_by": { "type": ["string", "null"], "format": "uuid" },
+        "reviewed_at": { "type": ["string", "null"], "format": "date-time" },
+        "active": { "type": "boolean" },
+        "question_count": { "type": "integer", "minimum": 0 },
+        "lesson_count": { "type": "integer", "minimum": 0 },
+        "catalog_enabled": { "type": "boolean" }
+      }
+    }
+    WorkshopLearningContentEnvelope: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "data"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "data": { "type": "array", "items": { "$ref": "#/components/schemas/LearningContentVersion" } }
+      }
+    }
     LearningReportPreferencesUpdate: {
       "type": "object",
       "additionalProperties": false,
@@ -1827,7 +1997,7 @@ components:
     PracticeSessionMode: { type: string, enum: [random, difficult, chapter, favorites, report] }
     OperationKind:
       type: string
-      enum: [create_practice_session, submit_practice_answer, favorite_question, unfavorite_question, create_favorites_session, create_feedback, create_workshop_bank, create_bank_version, import_bank, validate_version, publish_version, unpublish_version, rollback_bank]
+      enum: [create_practice_session, submit_practice_answer, favorite_question, unfavorite_question, create_favorites_session, create_feedback, create_workshop_bank, create_bank_version, import_bank, validate_version, publish_version, unpublish_version, rollback_bank, import_learning_content, approve_learning_content, retire_learning_content]
     BankVersion:
       type: object
       required: [bank_id, bank_version_id, bank_key, name, content_sha256, question_count, chapters]

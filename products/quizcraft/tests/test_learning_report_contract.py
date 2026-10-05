@@ -20,11 +20,20 @@ class LearningReportContractTests(unittest.TestCase):
         cls.spec = json.loads(result.stdout)
 
     def test_actor_is_required_and_only_service_signatures_authorize_reports(self):
-        for suffix, methods in {
-            '/preferences': ['get', 'put'], '': ['post', 'delete'],
-            '/latest': ['get'], '/tasks/{task_id}': ['get'],
-            '/{report_id}/practice-sessions': ['post'],
-        }.items():
+        # Reads are served by the actor-bound catalog read middleware
+        # (portalCatalog*); only the writes use the practice command credential
+        # pair. Both require the owner header and an explicit (never anonymous)
+        # security block.
+        reads = {'/preferences': ['get'], '/latest': ['get'], '/tasks/{task_id}': ['get']}
+        writes = {'/preferences': ['put'], '': ['post', 'delete'], '/results/{report_id}/practice-sessions': ['post']}
+        for suffix, methods in reads.items():
+            for method in methods:
+                op = self.spec['paths'][PREFIX + suffix][method]
+                self.assertTrue(op['x-internal'])
+                self.assertNotIn({}, op['security'])
+                self.assertTrue(any(name.startswith('portalCatalog') for name in op['security'][0]), op['security'][0])
+                self.assertTrue(any(p.get('name') == 'X-Actor-User-Id' and p.get('required') for p in op['parameters']))
+        for suffix, methods in writes.items():
             for method in methods:
                 op = self.spec['paths'][PREFIX + suffix][method]
                 self.assertTrue(op['x-internal'])

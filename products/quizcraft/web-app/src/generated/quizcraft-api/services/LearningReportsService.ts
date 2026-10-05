@@ -42,7 +42,7 @@ export class LearningReportsService {
                 401: `Missing or invalid actor credentials`,
                 403: `Permission code or product Scope denied`,
                 404: `Resource or operation is unknown to this actor`,
-                409: `Idempotency payload or optimistic version conflict`,
+                409: `Dedicated service request nonce was already used`,
                 503: `PostgreSQL or a required service is unavailable`,
             },
         });
@@ -196,7 +196,7 @@ export class LearningReportsService {
                 401: `Missing or invalid actor credentials`,
                 403: `Permission code or product Scope denied`,
                 404: `Resource or operation is unknown to this actor`,
-                409: `Idempotency payload or optimistic version conflict`,
+                409: `Dedicated service request nonce was already used`,
                 503: `PostgreSQL or a required service is unavailable`,
             },
         });
@@ -234,7 +234,7 @@ export class LearningReportsService {
                 401: `Missing or invalid actor credentials`,
                 403: `Permission code or product Scope denied`,
                 404: `Resource or operation is unknown to this actor`,
-                409: `Idempotency payload or optimistic version conflict`,
+                409: `Dedicated service request nonce was already used`,
                 503: `PostgreSQL or a required service is unavailable`,
             },
         });
