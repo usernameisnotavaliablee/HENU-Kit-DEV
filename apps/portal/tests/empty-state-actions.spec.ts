@@ -34,6 +34,16 @@ test("practice data that has not launched yet points to practice", async ({ page
   await expect(disabled.getByRole("link", { name: "去刷题", exact: true })).toHaveAttribute("href", "/practice");
 });
 
+test("learning reports that have not opened yet point to the catalog", async ({ page }) => {
+  await page.goto("/practice/reports");
+  await waitForHydration(page);
+
+  const disabled = page.getByTestId("practice-reports-disabled");
+  await expect(disabled).toContainText("学习报告暂未开放");
+  await expect(disabled).not.toContainText("EMPTY");
+  await expect(disabled.getByRole("link", { name: "去题库", exact: true })).toHaveAttribute("href", "/practice");
+});
+
 test("a leaderboard that has not opened yet points to practice", async ({ page }) => {
   await page.goto("/practice/leaderboard");
   await waitForHydration(page);

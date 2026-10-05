@@ -91,6 +91,8 @@ for (const inner of [
   // 默认构建里排行榜未开放，正文是空状态；开放后的周期切换由 practice-leaderboard-live.spec.ts 检查。
   { route: "/practice/leaderboard", ready: (page: Page) => page.getByText("排行榜数据暂未开放") },
   { route: "/practice/favorites", ready: (page: Page) => page.getByRole("button", { name: "去登录 →" }) },
+  // 学习报告默认关闭（浏览器开关 0），正文是空状态与「去题库」链接。
+  { route: "/practice/reports", ready: (page: Page) => page.getByText("学习报告暂未开放，先去刷题") },
   { route: "/account/recover", ready: (page: Page) => page.getByRole("heading", { name: "找回密码" }) },
   { route: `/food/post/${FOOD_POSTS[0].id}`, ready: (page: Page) => page.getByRole("link", { name: "投稿一家好店 →" }) },
 ] as const) {

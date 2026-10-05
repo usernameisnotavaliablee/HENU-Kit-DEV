@@ -77,6 +77,7 @@ defineOAuthContinuationJourney({
       readySelector: "main",
     },
     { path: "/practice/quiz", readySelector: "main" },
+    { path: "/practice/reports", readySelector: "main" },
     { path: "/practice/stats", readySelector: "main" },
     { path: "/privacy", readySelector: "main" },
     { path: "/terms", readySelector: "main" },

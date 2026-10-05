@@ -23,6 +23,7 @@ const ALIGNED_PAGES = [
   "/career",
   "/practice",
   "/practice/stats",
+  "/practice/reports",
   "/practice/favorites",
   "/practice/favorites/bank-1",
 ] as const;

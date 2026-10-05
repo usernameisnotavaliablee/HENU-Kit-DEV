@@ -96,6 +96,14 @@ function sessionIDFromLocation(): string {
   return new URLSearchParams(window.location.search).get("session_id")?.trim() ?? "";
 }
 
+// A handed-off session keeps its origin in the URL until the member leaves it,
+// so an expired handoff can name the surface that can re-create it.
+function sessionOriginFromLocation(): "report" | null {
+  return new URLSearchParams(window.location.search).get("from") === "report"
+    ? "report"
+    : null;
+}
+
 type IdempotencyMemory = { current: Record<string, string> };
 
 function idempotencyKeyFor(scope: string, prefix: string, memory: IdempotencyMemory) {
@@ -225,7 +233,11 @@ export default function QuizPage() {
             setSession(payload);
             setLoadState(payload.questions.length === 0 ? "empty" : "ready");
           } else {
-            setLoadError("收藏练习会话已失效，请返回收藏夹重新发起。");
+            setLoadError(
+              sessionOriginFromLocation() === "report"
+                ? "学习报告的练习会话已失效，请返回学习报告重新发起。"
+                : "收藏练习会话已失效，请返回收藏夹重新发起。"
+            );
             setLoadState("error");
           }
         }
@@ -531,12 +543,16 @@ export default function QuizPage() {
   };
 
   const startAnotherSession = () => {
-    // A handoff favorites session carries no bank params to re-create from;
-    // send the user back to the folder for a fresh favorites session.
+    // A handed-off session carries no bank params to re-create from; send the
+    // user back to the surface that can mint another one.
     if (sessionIDFromLocation()) {
       const bankIDValue = session?.bank_id;
       if (bankIDValue) {
-        void router.replace(`/practice/favorites/${encodeURIComponent(bankIDValue)}`);
+        void router.replace(
+          sessionOriginFromLocation() === "report"
+            ? `/practice/reports?bank_id=${encodeURIComponent(bankIDValue)}`
+            : `/practice/favorites/${encodeURIComponent(bankIDValue)}`
+        );
         return;
       }
     }
@@ -564,12 +580,23 @@ export default function QuizPage() {
     );
   }
   if (loadState === "empty") {
-    return session?.mode === "favorites" ? (
-      <PracticeState
-        title="收藏夹里暂时没有可练习题目"
-        detail="不可用的收藏不会进入练习；可以返回收藏夹查看或取消收藏。"
-      />
-    ) : (
+    if (session?.mode === "favorites") {
+      return (
+        <PracticeState
+          title="收藏夹里暂时没有可练习题目"
+          detail="不可用的收藏不会进入练习；可以返回收藏夹查看或取消收藏。"
+        />
+      );
+    }
+    if (session?.mode === "report") {
+      return (
+        <PracticeState
+          title="这份报告暂时没有可练习的题目"
+          detail="报告推荐的题目可能已经下架，可以重新生成报告后再试。"
+        />
+      );
+    }
+    return (
       <PracticeState title="当前题库没有可练习题目" detail="请返回题库目录重新选择。" />
     );
   }
