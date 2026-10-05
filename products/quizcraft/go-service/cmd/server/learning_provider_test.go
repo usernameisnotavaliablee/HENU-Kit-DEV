@@ -11,6 +11,7 @@ var learningWorkerEnvNames = []string{
 	"QUIZCRAFT_LEARNING_WORKER_ENABLED",
 	"QUIZCRAFT_LEARNING_WORKER_POLL",
 	"QUIZCRAFT_LEARNING_WORKER_LEASE",
+	"QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL",
 	"QUIZCRAFT_LEARNING_PROVIDER_URL",
 	"QUIZCRAFT_LEARNING_PROVIDER_API_KEY",
 	"QUIZCRAFT_LEARNING_PROVIDER_MODEL",
@@ -122,6 +123,40 @@ func TestLearningWorkerBuildsPinnedVersionsAndBoundedIntervals(t *testing.T) {
 	if settings.Poll != learningWorkerDefaultPoll || settings.Lease != learningWorkerDefaultLease {
 		t.Fatalf("unexpected default intervals poll=%s lease=%s", settings.Poll, settings.Lease)
 	}
+	if settings.Schedule != learningWorkerDefaultSchedule {
+		t.Fatalf("unexpected default schedule %s", settings.Schedule)
+	}
+}
+
+func TestLearningSchedulerIntervalIsBoundedAndCanBeTurnedOff(t *testing.T) {
+	clearLearningWorkerEnv(t)
+	t.Setenv("QUIZCRAFT_LEARNING_WORKER_ENABLED", "1")
+	t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_URL", "https://provider.test/v1")
+	t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_API_KEY", "sk-live-9f3a2b7c4d5e6f70")
+	t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_MODEL", "model-a")
+	t.Setenv("QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL", "0")
+	settings, err := learningWorkerFromEnv()
+	if err != nil || settings == nil || settings.Schedule != 0 {
+		t.Fatalf("explicit 0 must run the worker without automatic scheduling, got %+v err=%v", settings, err)
+	}
+	for name, value := range map[string]string{
+		"unparseable": "every hour",
+		"too small":   "500ms",
+		"too large":   "2h",
+		"sub-second":  "10500ms",
+	} {
+		t.Run(name, func(t *testing.T) {
+			clearLearningWorkerEnv(t)
+			t.Setenv("QUIZCRAFT_LEARNING_WORKER_ENABLED", "1")
+			t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_URL", "https://provider.test/v1")
+			t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_API_KEY", "sk-live-9f3a2b7c4d5e6f70")
+			t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_MODEL", "model-a")
+			t.Setenv("QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL", value)
+			if settings, err := learningWorkerFromEnv(); err == nil || settings != nil {
+				t.Fatalf("expected %s to be refused, got %+v err=%v", value, settings, err)
+			}
+		})
+	}
 }
 
 func TestLearningWorkerIntervalBoundsAreEnforced(t *testing.T) {
@@ -159,11 +194,12 @@ func TestLearningWorkerAcceptsExplicitIntervals(t *testing.T) {
 	t.Setenv("QUIZCRAFT_LEARNING_PROVIDER_MODEL", "model-a")
 	t.Setenv("QUIZCRAFT_LEARNING_WORKER_POLL", "30s")
 	t.Setenv("QUIZCRAFT_LEARNING_WORKER_LEASE", "3m")
+	t.Setenv("QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL", "45m")
 	settings, err := learningWorkerFromEnv()
 	if err != nil || settings == nil {
 		t.Fatalf("explicit in-range intervals must be accepted, got %+v err=%v", settings, err)
 	}
-	if settings.Poll != 30*time.Second || settings.Lease != 3*time.Minute {
+	if settings.Poll != 30*time.Second || settings.Lease != 3*time.Minute || settings.Schedule != 45*time.Minute {
 		t.Fatalf("explicit intervals were not honoured: %+v", settings)
 	}
 }

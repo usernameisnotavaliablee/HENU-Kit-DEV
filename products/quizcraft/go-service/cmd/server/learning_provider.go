@@ -16,11 +16,18 @@ type learningWorkerSettings struct {
 	Versions quizcraft.LearningJobVersions
 	Poll     time.Duration
 	Lease    time.Duration
+	// Schedule is how often the automatic sweep queues due work. Zero means the
+	// operator runs the worker for manual requests only.
+	Schedule time.Duration
 }
 
 const (
-	learningWorkerDefaultPoll  = 15 * time.Second
-	learningWorkerDefaultLease = 90 * time.Second
+	learningWorkerDefaultPoll     = 15 * time.Second
+	learningWorkerDefaultLease    = 90 * time.Second
+	learningWorkerDefaultSchedule = 10 * time.Minute
+	// One sweep never queues more than this much work, so a backlog cannot turn
+	// a single tick into an unbounded burst.
+	learningSchedulerBatch = 50
 )
 
 // The provider is operator configuration: never a browser field, and never the
@@ -68,12 +75,32 @@ func learningWorkerFromEnv() (*learningWorkerSettings, error) {
 	if enabled != "1" {
 		return nil, nil
 	}
+	schedule, err := learningSchedulerInterval()
+	if err != nil {
+		return nil, err
+	}
 	return &learningWorkerSettings{
 		Provider: provider,
 		Versions: quizcraft.LearningJobVersions{Model: model, Prompt: quizcraft.LearningPromptVersion, Policy: quizcraft.LearningAnalysisPolicyVersion},
 		Poll:     poll,
 		Lease:    lease,
+		Schedule: schedule,
 	}, nil
+}
+
+// learningSchedulerInterval reads the automatic sweep interval. It defaults to
+// ten minutes and accepts an explicit 0 to run the worker without automatic
+// scheduling; anything else is range checked like the other worker durations so
+// a typo cannot silently produce a busy loop or a once-a-year sweep.
+func learningSchedulerInterval() (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv("QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL"))
+	if raw == "" {
+		return learningWorkerDefaultSchedule, nil
+	}
+	if raw == "0" {
+		return 0, nil
+	}
+	return learningWorkerDuration("QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL", learningWorkerDefaultSchedule, time.Second, time.Hour)
 }
 
 func learningWorkerDuration(name string, fallback, minimum, maximum time.Duration) (time.Duration, error) {

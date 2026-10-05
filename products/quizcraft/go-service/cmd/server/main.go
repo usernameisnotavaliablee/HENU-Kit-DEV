@@ -105,6 +105,36 @@ func main() {
 				log.Printf("QuizCraft learning report worker stopped: %v", err)
 			}
 		}()
+		// Automatic scheduling is part of the same opt-in worker: it only queues
+		// work, and the queue repository rechecks consent, content and the due
+		// time under the preference lock.
+		if worker.Schedule > 0 {
+			log.Printf("QuizCraft learning report scheduler started (every %s, batch %d)", worker.Schedule, learningSchedulerBatch)
+			go func() {
+				if err := quizcraft.RunLearningScheduler(workerContext, worker.Schedule, func(stepContext context.Context) error {
+					// Drain a backlog in batches instead of one batch per tick.
+					// Only queued work counts as progress: rows the repository
+					// rejects keep their due time, so a batch of them must not
+					// make the scheduler spin.
+					for stepContext.Err() == nil {
+						queued, skipped, err := service.QueueDueLearningReports(stepContext, worker.Versions, learningSchedulerBatch)
+						if err != nil {
+							log.Printf("QuizCraft learning report schedule failed: %v", err)
+							return err
+						}
+						if queued > 0 || skipped > 0 {
+							log.Printf("QuizCraft learning report schedule queued %d skipped %d", queued, skipped)
+						}
+						if queued < learningSchedulerBatch {
+							return nil
+						}
+					}
+					return nil
+				}); err != nil {
+					log.Printf("QuizCraft learning report scheduler stopped: %v", err)
+				}
+			}()
+		}
 	}
 	log.Printf("QuizCraft Practice shadow service listening on %s", address)
 	err = server.ListenAndServe()
