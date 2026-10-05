@@ -134,6 +134,8 @@ const reportSession = {
 type Mocks = {
   report?: unknown | null;
   preferences?: unknown;
+  /** Status for the preferences read, so tests can pin unreadable settings. */
+  preferencesStatus?: number;
   taskStatus?: string;
   /** Records request bodies/headers so tests can assert the writes. */
 };
@@ -148,6 +150,13 @@ async function mockLearningReportGateway(page: Page, mocks: Mocks = {}) {
     async (route) => {
       if (route.request().method() === "PUT") {
         await route.fulfill({ json: preferences });
+        return;
+      }
+      if (mocks.preferencesStatus) {
+        await route.fulfill({
+          status: mocks.preferencesStatus,
+          json: { error: "learning reports unavailable", message: "学习报告暂时不可用" },
+        });
         return;
       }
       await route.fulfill({ json: mocks.preferences ?? preferences });
@@ -311,4 +320,68 @@ test("清除报告需要二次确认", async ({ page }) => {
   await expect(page.getByTestId("practice-reports-clear")).toHaveText("确认清除报告");
   await page.getByTestId("practice-reports-clear").click();
   await clear;
+});
+
+test("读不到设置时依然可以关闭学习报告并清除报告", async ({ page }) => {
+  await mockLearningReportGateway(page, { preferencesStatus: 503 });
+  const writes: Array<{ method: string; url: string; body: unknown }> = [];
+  page.on("request", (request) => {
+    if (request.method() === "GET") return;
+    writes.push({
+      method: request.method(),
+      url: request.url(),
+      body: request.postDataJSON?.(),
+    });
+  });
+  await page.goto("/practice/reports");
+  await expect(page.getByTestId("practice-reports-preferences-error")).toBeVisible();
+  await expect(page.getByTestId("practice-reports-opt-out")).toBeVisible();
+
+  const screenshotDir = process.env.PLAYWRIGHT_SCREENSHOT_DIR;
+  if (screenshotDir) {
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-opt-out-desktop.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-opt-out-mobile.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1280, height: 1400 });
+  }
+
+  await page.getByTestId("practice-reports-opt-out-close").click();
+  // Closing without readable settings sends the full default schedule, so the
+  // test pins every field: dropping one would silently keep the old schedule.
+  await expect
+    .poll(() => writes.find((write) => write.method === "PUT")?.body)
+    .toEqual({
+      enabled: false,
+      external_analysis_consent: false,
+      interval_days: 7,
+      goal: "follow_course",
+      chapter_ids: [],
+    });
+
+  await page.getByTestId("practice-reports-opt-out-clear").click();
+  await expect(page.getByTestId("practice-reports-opt-out-clear")).toHaveText("确认清除报告");
+  await page.getByTestId("practice-reports-opt-out-clear").click();
+  await expect
+    .poll(() =>
+      writes.some(
+        (write) =>
+          write.method === "DELETE" && write.url.includes("/learning-reports")
+      )
+    )
+    .toBe(true);
+});
+
+test("暂停的生成任务不冒充生成失败", async ({ page }) => {
+  await mockLearningReportGateway(page, { report: null, taskStatus: "paused" });
+  await page.goto("/practice/reports");
+  await page.getByTestId("practice-reports-generate").click();
+  await expect(page.getByTestId("practice-reports-task-paused")).toBeVisible();
+  await expect(page.getByTestId("practice-reports-task-failed")).toHaveCount(0);
 });

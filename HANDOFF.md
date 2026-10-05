@@ -457,3 +457,20 @@
   5. **计划任务消耗手动预算**（矛盾，且是我自己 op 40 的说法不准）：守卫只拒绝 `manual` 请求，但计数含 `automatic` 任务。→ 判定为**有意**语义（守卫限制的是模型工作量，不是点击次数）并写进规格：计划任务请求永不被拒、其任务计入窗口工作量（每个到期周期至多 1 个）。op 40 HANDOFF 里「计划任务永不受限」的说法不属于「请求被拒」这一层，本次更正为精确表述；既有测试已固定这一行为（automatic 队列后、新输入的 manual 请求必须被拒）。
 - 验证：Core 全量 `-race`（新库两遍迁移）全绿：`ok . 1.684s / tests 13.549s / cmd/server 1.187s / cmd/learninghealth 1.189s`。**两个新测试都证明了会咬人**：把健康读的 `consent_version` 条件去掉 → `TestLearningFeedbackHealthIgnoresStaleConsentGeneration` 失败（`stale consent counted as live`，`ConsentedCourses:1`）；把「只复用草稿」改回恒假 → `TestWorkshopLearningContentImportRefusesReviewedPackage` 失败（`re-import of an approved package = 201`）。两处均已恢复，`gofmt` 干净。
 - Standards/Public-ready Copy：无新增用户可见文案（429 文案沿用 op 40 已列入待复核清单的那句）。
+
+### 44 — Portal LF-06 Spec 轴整改（关闭/清除不被读取挡住、paused 与 failed 分开、文案与共享控件）
+
+- 背景：对会员可见面（`/practice/reports`）单独跑了一次收窄范围的 Spec 轴只读评审（子代理，范围=LF-06 + 可见文案）。3 条矛盾 + 2 条缺失 + 2 条多余，逐条核实后处置。
+- 已修：
+  1. **关闭/清除被「读设置」挡住**（最严重）：关闭与清除原先只在设置读取成功时才渲染，于是会员被撤销或读接口 503 时，会员既不能撤回同意也不能清除报告 —— 与 spec「只有关闭/清除不受会员撤销阻断」以及 Core 自身的保证（撤销后 disable/clear 仍放行）矛盾。现在读取失败态会渲染一个 OPT OUT 区块（关闭 + 清除），走同一条写入路径；因为读不到设置时 PUT 必须给全量字段，关闭会带回默认生成计划（每 7 天 / 跟着课程进度 / 不选章节），文案也把这个「恢复默认」明说出来。关闭写失败时不再重试读取（改为只在写入成功后才重读）。
+  2. **paused 不再冒充 failed**：`paused` 的真实语义是 `entitlement_unavailable`（worker 置 paused 并 5 分钟后重试，自动调度因 `next_due_at` 未推进会再次到期），原先借用「这次没能生成报告，可以稍后再试一次」，把会员不可控的依赖问题说成生成失败。现在有自己的文案：学习报告暂时不可用（会员状态或课程内容还没准备好），条件恢复后会自动重试，也可以稍后再点一次生成。
+  3. **空态不再说谎**：报告读取对 stale/被取代的报告返回 404，所以「这门课还没有学习报告…开启设置后生成第一份」是误导。改为「这门课目前没有可读的学习报告（改过设置后旧报告会失效）。设置已开启时，点「生成报告」重新生成」。
+  4. **设置页脚版本号**：`当前版本 v{n}` 是偏好 revision，容易被当成同意版本。改为「设置版本 v{n}：改课程范围、目标或授权会让已生成的报告失效」；文案评审同时纠正了「改设置」的过度声称（`learning_preferences.go` 的 invalidate 不含 `interval_days`，只改生成频率不会让报告失效）。
+  5. **会员可见词汇统一**：一律说「学习报告」（关闭学习报告 / 学习报告暂时不可用），「学习反馈」是内部功能名。
+- 未修（已记录，需要决策）：
+  - 403 `lifetime_required` 仍走通用错误横幅，没有专门的状态块。要让 Portal 分辨 403 与其它读取失败，就得给 `FetchState.error` 加上错误码 —— 那是收藏等页面共用的库改动，单独一票处理。
+  - 同意代次过期的续期流程在界面上不可见：Core 明确拒绝原地续期（要求先退出同意、再重新开启），而 Portal 只拿到网关的通用 400 文案。要修同样需要 Core/网关给出可分辨的错误码。
+  - `learningReportStatusCopy` 里的 `stale` 分支不可达（网关按 spec 对 stale 一律 404），保留为无害文案，不改行为；fail-closed 由网关的读取路径负责。
+- 测试与证据：e2e 从 5 例增到 7 例 —— 新增「读不到设置时依然可以关闭学习报告并清除报告」（断言 PUT **完整**请求体含默认计划、断言 DELETE 命中 `/learning-reports`）与「暂停的生成任务不冒充生成失败」（断言 paused 区块出现且 failed 区块不存在；旧代码 `taskFailed` 含 paused，故此例在改动前必失败）。Portal 单测 38 files / 298 tests 通过；`tsc --noEmit` 干净；三个改动文件 eslint 0 问题（仓库其余 3 条告警为既有）。截图已重出，并新增失败态证据：`.cache/screenshots/learning-reports-{desktop,mobile}.png`、`.cache/screenshots/learning-reports-opt-out-{desktop,mobile}.png`。
+- 三轴：Standards（子代理只读）5 条全部整改（补全请求体断言、补 URL 断言、抽出共享 `ClearReportsButton`、写失败不重读、常量位置）；Public-ready Copy（子代理只读）5 条全部整改（含 3 处不实或术语问题）。
+- 待人工复核 copy：本轮新增/改动的中文文案（OPT OUT 段落、paused 文案、空态文案、设置页脚）。

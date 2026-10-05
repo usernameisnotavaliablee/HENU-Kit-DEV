@@ -12,6 +12,7 @@ import {
 import { quizCraftLearningReportsEnabled } from "@/lib/api/env";
 import type { LearningReportTask, QuizCraftCatalogBank } from "@/lib/api/types";
 import {
+  LEARNING_REPORT_DEFAULT_INTERVAL_DAYS,
   LEARNING_REPORT_POLL_INTERVAL_MS,
   LEARNING_REPORT_POLL_LIMIT,
   learningPreferencesAllowGeneration,
@@ -56,6 +57,31 @@ function Header() {
         随时可以关闭或清除。
       </p>
     </div>
+  );
+}
+
+/** The confirm step and styling of 清除报告, shared by both places it appears. */
+function ClearReportsButton({
+  testId,
+  confirming,
+  busy,
+  onPress,
+}: {
+  testId: string;
+  confirming: boolean;
+  busy: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onPress}
+      disabled={busy}
+      className="inline-flex min-h-11 items-center border border-ink/25 px-4 font-mono text-xs transition-colors hover:bg-ink/5 disabled:opacity-60"
+    >
+      {confirming ? "确认清除报告" : "清除报告"}
+    </button>
   );
 }
 
@@ -145,6 +171,25 @@ function ReportsSurface() {
     [savePreferences, setPreferencesState, latest]
   );
 
+  // Closing consent without a readable settings row: the full update payload is
+  // required, so the schedule falls back to its default and the member picks a
+  // plan again when they re-enable.
+  const onDisable = useCallback(async () => {
+    setSavedPreferences(false);
+    const saved = await savePreferences({
+      enabled: false,
+      external_analysis_consent: false,
+      interval_days: LEARNING_REPORT_DEFAULT_INTERVAL_DAYS,
+      goal: "follow_course",
+      chapter_ids: [],
+    });
+    // Re-read only after a write that landed: retrying a read that just failed
+    // would repeat the same error while the write is the member's intent.
+    if (!saved) return;
+    preferences.retry();
+    latest.retry();
+  }, [savePreferences, preferences, latest]);
+
   const onGenerate = useCallback(async () => {
     setTaskAttempts(0);
     const created = await requestReport();
@@ -210,7 +255,11 @@ function ReportsSurface() {
     learningPreferencesAllowGeneration(preferencesState.data);
   const taskSettled = task ? learningTaskIsSettled(task) : true;
   const taskStopped = Boolean(task) && !taskSettled && taskAttempts >= LEARNING_REPORT_POLL_LIMIT;
-  const taskFailed = task?.status === "failed" || task?.status === "paused";
+  const taskFailed = task?.status === "failed";
+  // Paused means a membership or content dependency is unavailable, not that the
+  // generator broke. Saying "try again later" for both would blame the member's
+  // request for a dependency the member cannot fix.
+  const taskPaused = task?.status === "paused";
 
   return (
     <main className="mx-auto max-w-site px-5 py-12 md:px-8 md:py-16">
@@ -278,13 +327,50 @@ function ReportsSurface() {
           )}
 
           {preferencesState.status === "error" && (
-            <section data-testid="practice-reports-preferences-error" className="mt-10">
-              <ErrorBanner
-                message={preferencesState.message}
-                requestId={preferencesState.requestId}
-                onRetry={preferences.retry}
-              />
-            </section>
+            <>
+              <section data-testid="practice-reports-preferences-error" className="mt-10">
+                <ErrorBanner
+                  message={preferencesState.message}
+                  requestId={preferencesState.requestId}
+                  onRetry={preferences.retry}
+                />
+              </section>
+              {/* Opting out is the member's own data right and Core keeps that
+                  write open after revocation, so it must not sit behind the
+                  read that just failed. Closing resets the schedule, which only
+                  matters once the member enables the feature again. */}
+              <section
+                data-testid="practice-reports-opt-out"
+                data-block
+                className="mt-10 border border-ink/25 p-5 md:p-7"
+              >
+                <p className="font-mono text-xs text-ink/60">
+                  <span className="tracking-[0.25em]">OPT OUT</span> / 关闭与清除
+                </p>
+                <p className="mt-3 text-sm leading-7">
+                  读不到这门课的设置时，你依然可以关闭学习报告或清除已生成的报告。关闭会停止生成并撤回同意，课程范围、目标和生成频率会恢复默认，重新开启时需要再选一次；你的作答记录不会被删除。
+                </p>
+                <div className="mt-5 flex flex-wrap items-center gap-4">
+                  <button
+                    type="button"
+                    data-testid="practice-reports-opt-out-close"
+                    onClick={() => void onDisable()}
+                    disabled={working === "save"}
+                    className="inline-flex min-h-11 items-center border border-ink px-4 font-mono text-xs transition-colors hover:bg-ink hover:text-paper disabled:opacity-60"
+                  >
+                    {working === "save" ? "正在关闭" : "关闭学习报告"}
+                  </button>
+                  <ClearReportsButton
+                    testId="practice-reports-opt-out-clear"
+                    confirming={confirmingClear}
+                    busy={working === "clear"}
+                    onPress={() =>
+                      confirmingClear ? void onClear() : setConfirmingClear(true)
+                    }
+                  />
+                </div>
+              </section>
+            </>
           )}
 
           {preferencesState.status === "ready" && (
@@ -323,17 +409,14 @@ function ReportsSurface() {
                   勾选「定期生成」并同意后即可生成报告。
                 </p>
               )}
-              <button
-                type="button"
-                data-testid="practice-reports-clear"
-                onClick={() =>
+              <ClearReportsButton
+                testId="practice-reports-clear"
+                confirming={confirmingClear}
+                busy={working === "clear"}
+                onPress={() =>
                   confirmingClear ? void onClear() : setConfirmingClear(true)
                 }
-                disabled={working === "clear"}
-                className="inline-flex min-h-11 items-center border border-ink/25 px-4 font-mono text-xs transition-colors hover:bg-ink/5 disabled:opacity-60"
-              >
-                {confirmingClear ? "确认清除报告" : "清除报告"}
-              </button>
+              />
               <p className="font-mono text-xs text-ink/60">
                 清除会撤回已生成的报告和排队中的生成，原始作答不会被删除。
               </p>
@@ -362,6 +445,15 @@ function ReportsSurface() {
             </section>
           )}
 
+          {taskPaused && (
+            <section data-testid="practice-reports-task-paused" className="mt-10">
+              <EmptyBlock
+                label="学习报告暂时不可用（会员状态或课程内容还没准备好），条件恢复后会自动重试，也可以稍后再点一次生成"
+                action={{ label: "去刷题", href: "/practice" }}
+              />
+            </section>
+          )}
+
           {latest.state.status === "loading" && (
             <section data-testid="practice-reports-loading" className="mt-10">
               <LoadingBlock label="正在读取学习报告" />
@@ -381,7 +473,7 @@ function ReportsSurface() {
           {readState.status === "ready" && !report && (
             <section data-testid="practice-reports-empty" className="mt-10">
               <EmptyBlock
-                label="这门课还没有学习报告，开启设置后生成第一份"
+                label="这门课目前没有可读的学习报告（改过设置后旧报告会失效）。设置已开启时，点「生成报告」重新生成"
                 action={{ label: "去刷题", href: "/practice" }}
               />
             </section>

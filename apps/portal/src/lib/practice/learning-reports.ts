@@ -32,6 +32,9 @@ import type {
 export const LEARNING_REPORT_POLL_INTERVAL_MS = 3000;
 export const LEARNING_REPORT_POLL_LIMIT = 20;
 
+/** Schedule used when a member opts out without a readable settings row. */
+export const LEARNING_REPORT_DEFAULT_INTERVAL_DAYS = 7;
+
 /**
  * A 404 from the report read is the honest "this member has no report yet"
  * state, not a load failure: the surface shows an empty block with a way

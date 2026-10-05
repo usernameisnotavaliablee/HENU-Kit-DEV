@@ -185,7 +185,7 @@ export default function LearningReportSettings({
           </p>
         )}
         <p className="font-mono text-xs text-ink/60">
-          当前版本 v{preferences.revision}
+          设置版本 v{preferences.revision}：改课程范围、目标或授权会让已生成的报告失效
         </p>
       </div>
     </section>
