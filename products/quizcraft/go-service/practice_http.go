@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"henukit.dev/quizcraft/internal/contract"
 	"henukit.dev/quizcraft/internal/store"
 )
 
@@ -74,7 +75,7 @@ type practiceHTTP struct {
 	authHMACSecret          []byte
 	learningEntitlement     *LearningEntitlementClient
 	learningVersions        LearningJobVersions
-	learningManualLimit     int
+	learningService         *Service
 	legacyBaseURL           string
 	legacyCompareSecret     string
 	httpClient              *http.Client
@@ -264,7 +265,7 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 	if releaseSHA == "" {
 		releaseSHA = "development"
 	}
-	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, learningVersions: config.LearningVersions, learningManualLimit: config.LearningManualLimit, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
+	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, learningVersions: config.LearningVersions, learningService: &Service{database: config.Database, learningManualLimit: config.LearningManualLimit}, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
 	if platformCount == len(platformValues) {
 		platform, err := newPlatformClient(config.PlatformCoreURL, config.PlatformClientID, config.PlatformClientSecret, config.PlatformKeyID, client)
 		if err != nil {
@@ -390,7 +391,9 @@ func (service *practiceHTTP) operationStatus(writer http.ResponseWriter, request
 		return
 	}
 	kind := chi.URLParam(request, "operation_kind")
-	if kind != "create_practice_session" && kind != "submit_practice_answer" && kind != "favorite_question" && kind != "unfavorite_question" && kind != "create_favorites_session" && kind != "create_feedback" && kind != "create_workshop_bank" && kind != "create_bank_version" && kind != "import_bank" && kind != "validate_version" && kind != "publish_version" && kind != "unpublish_version" && kind != "rollback_bank" && kind != "import_learning_content" && kind != "approve_learning_content" && kind != "retire_learning_content" {
+	// The contract enum is the single list of operation kinds this Core
+	// implements: a new kind must not need a second hand-maintained switch here.
+	if !contract.OperationKind(kind).Valid() {
 		writeError(writer, http.StatusNotFound, "operation_unknown", "operation is not implemented by Practice Core")
 		return
 	}

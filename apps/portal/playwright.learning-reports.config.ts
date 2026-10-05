@@ -1,4 +1,11 @@
+import path from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
+
+// 桌面与移动端截图是本仓库对前端改动的验收证据：跑这个配置就默认产出到仓库根
+// `.cache/screenshots/`（由配置文件位置推导，不依赖调用目录），无需额外导出
+// 环境变量；需要换目录时用 PLAYWRIGHT_SCREENSHOT_DIR 覆盖。
+process.env.PLAYWRIGHT_SCREENSHOT_DIR ??= path.resolve(__dirname, "../../.cache/screenshots");
 
 // The learning-report surface is cutover-only: its browser flag defaults to 0,
 // so it needs its own dev server instead of borrowing a locally reused default

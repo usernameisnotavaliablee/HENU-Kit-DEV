@@ -28,7 +28,7 @@ import (
 // the stored evidence snapshot or provider input.
 
 func (service *practiceHTTP) learning() *Service {
-	return &Service{database: service.database, learningManualLimit: service.learningManualLimit}
+	return service.learningService
 }
 
 // learningPublishedBank resolves the course in the path and requires it to be

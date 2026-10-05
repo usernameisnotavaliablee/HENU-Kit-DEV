@@ -65,8 +65,10 @@ func scanLearningContentVersion(row pgx.Row) (LearningContentVersionInfo, error)
 	return info, nil
 }
 
-func learningContentVersion(ctx context.Context, query learningQuerier, bankID, contentID uuid.UUID) (LearningContentVersionInfo, error) {
-	info, err := scanLearningContentVersion(query.QueryRow(ctx, `SELECT `+learningContentVersionColumns+` `+learningContentVersionFrom+` WHERE c.bank_id=$1 AND c.id=$2`, bankID, contentID))
+// learningContentVersionWhere runs one content-version lookup and maps the
+// shared "no such version" answer, so both lookups cannot drift apart.
+func learningContentVersionWhere(ctx context.Context, query learningQuerier, where string, args ...any) (LearningContentVersionInfo, error) {
+	info, err := scanLearningContentVersion(query.QueryRow(ctx, `SELECT `+learningContentVersionColumns+` `+learningContentVersionFrom+` WHERE `+where, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LearningContentVersionInfo{}, ErrLearningContentMissing
 	}
@@ -76,15 +78,12 @@ func learningContentVersion(ctx context.Context, query learningQuerier, bankID, 
 	return info, nil
 }
 
+func learningContentVersion(ctx context.Context, query learningQuerier, bankID, contentID uuid.UUID) (LearningContentVersionInfo, error) {
+	return learningContentVersionWhere(ctx, query, `c.bank_id=$1 AND c.id=$2`, bankID, contentID)
+}
+
 func learningContentVersionByDigest(ctx context.Context, query learningQuerier, bankID uuid.UUID, digest string) (LearningContentVersionInfo, error) {
-	info, err := scanLearningContentVersion(query.QueryRow(ctx, `SELECT `+learningContentVersionColumns+` `+learningContentVersionFrom+` WHERE c.bank_id=$1 AND c.content_sha256=$2`, bankID, digest))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return LearningContentVersionInfo{}, ErrLearningContentMissing
-	}
-	if err != nil {
-		return LearningContentVersionInfo{}, err
-	}
-	return info, nil
+	return learningContentVersionWhere(ctx, query, `c.bank_id=$1 AND c.content_sha256=$2`, bankID, digest)
 }
 
 // ListLearningContentVersions returns every content version of a bank, newest

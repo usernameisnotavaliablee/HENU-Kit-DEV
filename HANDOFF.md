@@ -417,3 +417,21 @@
 - Standards/Spec 本地复核：限流不是配额（不扣积分、无日常额度、不写拒绝计数），只在新建任务时生效且持锁，重放与计划任务不受影响；429 全链路语义一致，不再把限流伪装成 503；配置越界即拒绝启动。Public-ready Copy：新增一句用户可见文案「操作太频繁了，请稍后再试」，已本地走查（措辞与既有 409/503 提示同风格、不暴露内部原因），列入下方待人工复核清单。
 - 待人工复核（含本阶段新增）：429 文案「操作太频繁了，请稍后再试」；HANDOFF 35 遗留的非会员写文案、`insufficient_evidence`/`stale` 状态措辞。
 - 下一步：真实供应商受控演练、真实账号全链路、#166 切流决定与发布授权。本阶段独立 commit 并 push，不包含 AGENTS.md。
+
+### 41 — 双轴评审发现整改（spec 自相矛盾、截图证据链、枚举单一来源、死代码）
+
+- 背景：对 `39698417..d66cd0d8`（操作 35–40）做 Standards / Spec 双轴只读评审（并行子代理，见本轮最终答复）。Standards 轴报了 2 处「记录标准」违规 + 若干判断型坏味道；本阶段把其中真实的、低风险的整改掉，判断型且改动面大的留作记录。
+- 已整改：
+  - 规格自相矛盾（HARD）：`docs/development/quizcraft-learning-feedback-spec.md` 旧文仍写「手动防滥用入口限流仍未接线」「手动入口的限流与全局熔断仍未接线」，与新增章节和 LF-05 行冲突。现统一为「按会员每课程成本守卫已接线，全局熔断/多实例共享速率仍未接线」，并明确「不要把去重当成限流」。
+  - 截图证据链（HARD-ish）：`apps/portal/tests/learning-reports.spec.ts` 的桌面/移动端截图被 `PLAYWRIGHT_SCREENSHOT_DIR` 包住，而全仓没有任何地方设置它，等于 AGENTS.md「前端改动附桌面和移动端截图」在文档化命令下无法复现。现在 `playwright.learning-reports.config.ts` 用 `path.resolve(__dirname,"../../.cache/screenshots")` 兜底（仍可用环境变量覆盖），跑 `pnpm --filter @henukit/portal test:e2e:learning-reports` 即产出验收证据。
+  - 枚举单一来源（Repeated Switches / Shotgun Surgery）：`practice_http.go` 手写的 16 个字面量 operation kind 白名单改成 `contract.OperationKind(kind).Valid()`；新增 kind 只需契约重新生成，不再需要第二份手工开关。
+  - 漂移陷阱（Shotgun Surgery）：`practiceHTTP.learning()` 之前每次现场拼 `&Service{database:…, learningManualLimit:…}`，新增字段必须记得改第二处（本次限流字段就是这样）。现在 `NewPracticeHTTP` 只构造一次 `learningService`，`learning()` 直接返回。
+  - 重复逻辑（Duplicated Code）：`learning_review.go` 的两个内容版本查询合并为 `learningContentVersionWhere(...)`，`ErrNoRows → ErrLearningContentMissing` 只写一次。
+  - 死代码：Portal `learning-reports.ts` 导出的 `dismissError` 无人消费（组件不调用、也无测试引用）→ 删除；e2e mock 注释里的错字（`Records喊`）修正。
+  - compose/示例变量（新发现，非评审项）：`QUIZCRAFT_LEARNING_MANUAL_LIMIT` 之前只能在 README 里读到，compose 逐项列举环境变量（无 `env_file`），所以 compose 部署根本无法设置它。现在两套 compose 与 `.env.henukit.example` 都显式列出（默认 10）。
+- 验证：
+  - Core 全量：全新空白库两遍迁移后 `go test -race . ./tests ./cmd/server ./cmd/learninghealth -count=1` 全绿（1.921s / 13.291s / 1.343s / 1.343s）。
+  - Portal：`npx tsc --noEmit` 退出 0；`npx vitest run src/lib/practice` 6 项通过；`npx playwright test --config playwright.learning-reports.config.ts` **5 passed (11.0s)**，且 `.cache/screenshots/learning-reports-{desktop,mobile}.png` 时间戳刷新为本次运行（未导出任何环境变量），证明证据链真的能一条命令跑出来。
+  - 治理：`node --test scripts/ops/tests/deploy-henukit-workflow.test.mjs` 仍为 14 pass / 4 fail，4 个失败全部是本机无 Docker 的 `spawnSync docker ENOENT`，与本次改动无关；`ruby -ryaml` 校验两套 compose 通过。
+- 未整改（判断型，已记录）：`learning_review_http.go` 审核闭包签名里三个裸 UUID（Data Clumps）与 retire 路径丢弃两个参数（Refused Bequest）；`practice_http.go` 中 create-session 幂等键的 kind 字面量（那是处理函数自身语义，不是枚举白名单）。真要重构审核写路径，应在有并发/失败路径回归的前提下单独一票，不在评审整改里顺手动。
+- 下一步：等 Spec 轴评审结论合并处理；仍等真实供应商受控演练、真实账号全链路、人工内容/语义/文案复核、#166 切流决定与发布授权。

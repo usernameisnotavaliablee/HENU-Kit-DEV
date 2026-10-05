@@ -252,14 +252,11 @@ export function useLearningReportCommands(bankID: string | null) {
     [bankID, keys, settle]
   );
 
-  const dismissError = useCallback(() => setCommand({ status: "idle" }), []);
-
   return {
     command,
     savePreferences,
     requestReport,
     clearReports,
     startPractice,
-    dismissError,
   };
 }

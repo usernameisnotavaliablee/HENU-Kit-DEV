@@ -135,7 +135,7 @@ type Mocks = {
   report?: unknown | null;
   preferences?: unknown;
   taskStatus?: string;
-  /** Records喊 request bodies/headers so tests can assert the writes. */
+  /** Records request bodies/headers so tests can assert the writes. */
 };
 
 async function mockLearningReportGateway(page: Page, mocks: Mocks = {}) {
