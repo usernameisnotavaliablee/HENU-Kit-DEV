@@ -39,7 +39,7 @@
 | `PORTAL_PRACTICE_COMMANDS_ENABLED` | `0` | `1` | **命令（写）门禁**：session/answer/feedback/favorites 写。与读门禁**必须独立**——命令凭据 `PRACTICE_COMMAND_*` 与读凭据强制不同，读并入命令门禁会把读写可用性错误耦合 |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG` | `0` | `1`（构建时烘焙） | 浏览器目录页是否请求/渲染 V2 catalog（`apps/portal/src/lib/api/env.ts`） |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS` | `0` | `1`（构建时烘焙） | 浏览器排行榜 tab / stats 请求（`personal-stats.ts`、`practice-nav.tsx`） |
-| `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（构建时烘焙，暂不随 #166 烘焙） | 浏览器学习报告入口与请求（`lib/practice/learning-reports.ts`、`practice-nav.tsx`）。**UI 落地前该值保持 0**：此时烘焙 1 只会让入口指向一个尚无页面的路径 |
+| `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（构建时烘焙，暂不随 #166 烘焙） | 浏览器学习报告入口与请求（`lib/practice/learning-reports.ts`、`practice-nav.tsx`、`/practice/reports`）。界面已落地，但仍**保持 0**：烘焙 1 会让入口出现，而生产尚无已审核内容可用；是否随切流烘焙属未决的发布决定 |
 | `NEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY` | `0`（dev）/ `1`（prod） | `1` | 强制真实 Gateway、禁 mock（生产必须 `1`） |
 
 ## 3. 默认值与烘焙的关系（消除歧义）
@@ -92,3 +92,19 @@
 5. Browser gate（desktop + 390px）验证练习/收藏/反馈/排行通过后，才允许移除
    portal-api 残留直读（已删）并停服 FastAPI（ADR-0013-cutover）。
 6. 读失败为诚实 503/404，禁止任何 mock/legacy 兜底（ADR-0036 强制）。
+
+## 7. 学习反馈切流前置（内容审核与运行监测）
+
+- **无已审核内容不得开放**：学习报告的读/写路由即使全部打开，只要课程没有 `status='approved'` 的当前内容版本，
+  `BuildLearningEvidence` 会返回「不可用」，会员侧就是诚实的不可用状态（不 mock、不兜底）。内容只能经
+  Workshop 审核接线进入：`GET/POST /api/v1/workshop/banks/{bank_id}/learning-content`、
+  `POST .../learning-content/{content_version_id}/approve|retire`（读/写/发布三种权限，写操作需
+  `Idempotency-Key`）。导入只产生草稿，审批才写入审核人，`activate` 与 `enable` 分开。
+- **切流前必须做的内容动作**：导入候选内容包 → 人工审核（记录审核人）→ `activate` 指向该版本 → 确认
+  会员侧读取可用后才 `enable` 该课程。退役仍生效的内容会被拒绝：必须先激活替代版本。
+- **运行监测**：`QUIZCRAFT_V2_DATABASE_URL`（必须 `quizcraft_v2`）下运行
+  `go run ./cmd/learninghealth -json -fail-on-alert`（`-queued-behind` 默认 30m，`-failure-budget` 默认 0）。
+  告警项：过期租约、排队超阈值、24h 失败超预算、已同意会员但无启用课程。暗态功能不产生告警。
+- **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
+  `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
+  偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。

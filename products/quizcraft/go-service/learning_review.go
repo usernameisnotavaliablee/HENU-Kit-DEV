@@ -40,9 +40,9 @@ type LearningContentVersionInfo struct {
 	LessonCount      int
 }
 
-// learningReviewQuerier is satisfied by both a pool and a transaction, so the
+// learningQuerier is satisfied by both a pool and a transaction, so the
 // review flow can run inside the Workshop idempotency transaction.
-type learningReviewQuerier interface {
+type learningQuerier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -65,7 +65,7 @@ func scanLearningContentVersion(row pgx.Row) (LearningContentVersionInfo, error)
 	return info, nil
 }
 
-func learningContentVersion(ctx context.Context, query learningReviewQuerier, bankID, contentID uuid.UUID) (LearningContentVersionInfo, error) {
+func learningContentVersion(ctx context.Context, query learningQuerier, bankID, contentID uuid.UUID) (LearningContentVersionInfo, error) {
 	info, err := scanLearningContentVersion(query.QueryRow(ctx, `SELECT `+learningContentVersionColumns+` `+learningContentVersionFrom+` WHERE c.bank_id=$1 AND c.id=$2`, bankID, contentID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LearningContentVersionInfo{}, ErrLearningContentMissing
@@ -76,7 +76,7 @@ func learningContentVersion(ctx context.Context, query learningReviewQuerier, ba
 	return info, nil
 }
 
-func learningContentVersionByDigest(ctx context.Context, query learningReviewQuerier, bankID uuid.UUID, digest string) (LearningContentVersionInfo, error) {
+func learningContentVersionByDigest(ctx context.Context, query learningQuerier, bankID uuid.UUID, digest string) (LearningContentVersionInfo, error) {
 	info, err := scanLearningContentVersion(query.QueryRow(ctx, `SELECT `+learningContentVersionColumns+` `+learningContentVersionFrom+` WHERE c.bank_id=$1 AND c.content_sha256=$2`, bankID, digest))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LearningContentVersionInfo{}, ErrLearningContentMissing
@@ -89,7 +89,7 @@ func learningContentVersionByDigest(ctx context.Context, query learningReviewQue
 
 // ListLearningContentVersions returns every content version of a bank, newest
 // first, with the review and activation state an operator needs to decide.
-func ListLearningContentVersions(ctx context.Context, query learningReviewQuerier, bankID uuid.UUID) ([]LearningContentVersionInfo, error) {
+func ListLearningContentVersions(ctx context.Context, query learningQuerier, bankID uuid.UUID) ([]LearningContentVersionInfo, error) {
 	if bankID == uuid.Nil {
 		return nil, ErrLearningContentInvalid
 	}
@@ -123,7 +123,7 @@ func ListLearningContentVersions(ctx context.Context, query learningReviewQuerie
 // ImportLearningContentDraft stores a candidate package as a draft. The
 // membership map is loaded from the bank's published version, never from the
 // import payload, and the reviewer fields stay empty until an operator reviews.
-func ImportLearningContentDraft(ctx context.Context, query learningReviewQuerier, bankID, contentID uuid.UUID, raw []byte) (LearningContentVersionInfo, error) {
+func ImportLearningContentDraft(ctx context.Context, query learningQuerier, bankID, contentID uuid.UUID, raw []byte) (LearningContentVersionInfo, error) {
 	if bankID == uuid.Nil || contentID == uuid.Nil || len(raw) == 0 || len(raw) > learningContentMaxBytes {
 		return LearningContentVersionInfo{}, ErrLearningContentInvalid
 	}
@@ -163,7 +163,7 @@ func ImportLearningContentDraft(ctx context.Context, query learningReviewQuerier
 // ApproveLearningContent records the human review of a draft. Activation is a
 // separate, explicit choice: only an activation guard checked against the bank's
 // current published version keeps a superseded package out of the catalog.
-func ApproveLearningContent(ctx context.Context, query learningReviewQuerier, bankID, contentID, reviewer uuid.UUID, activate, enable bool, note string) (LearningContentVersionInfo, error) {
+func ApproveLearningContent(ctx context.Context, query learningQuerier, bankID, contentID, reviewer uuid.UUID, activate, enable bool, note string) (LearningContentVersionInfo, error) {
 	if bankID == uuid.Nil || contentID == uuid.Nil || reviewer == uuid.Nil || !learningReviewNote(note) {
 		return LearningContentVersionInfo{}, ErrLearningContentInvalid
 	}
@@ -213,7 +213,7 @@ func ApproveLearningContent(ctx context.Context, query learningReviewQuerier, ba
 // RetireLearningContent retires approved content. Content that is still the
 // active catalog version must be replaced first: retiring it in place would keep
 // the course enabled while every read silently fails the approved-version join.
-func RetireLearningContent(ctx context.Context, query learningReviewQuerier, bankID, contentID, reviewer uuid.UUID, note string) (LearningContentVersionInfo, error) {
+func RetireLearningContent(ctx context.Context, query learningQuerier, bankID, contentID, reviewer uuid.UUID, note string) (LearningContentVersionInfo, error) {
 	if bankID == uuid.Nil || contentID == uuid.Nil || reviewer == uuid.Nil || !learningReviewNote(note) {
 		return LearningContentVersionInfo{}, ErrLearningContentInvalid
 	}
@@ -249,7 +249,7 @@ func RetireLearningContent(ctx context.Context, query learningReviewQuerier, ban
 	return learningContentVersion(ctx, query, bankID, contentID)
 }
 
-func insertLearningContentReview(ctx context.Context, query learningReviewQuerier, bankID, contentID, reviewer uuid.UUID, action, note string) error {
+func insertLearningContentReview(ctx context.Context, query learningQuerier, bankID, contentID, reviewer uuid.UUID, action, note string) error {
 	_, err := query.Exec(ctx, `INSERT INTO quizcraft_learning_content_reviews(id,bank_id,content_version_id,actor_user_id,action,note)
         VALUES($1,$2,$3,$4,$5,$6)`, uuid.New(), bankID, contentID, reviewer, action, strings.TrimSpace(note))
 	return err
@@ -258,7 +258,7 @@ func insertLearningContentReview(ctx context.Context, query learningReviewQuerie
 // learningPublishedMembership is the authoritative question-version membership
 // of the bank's published version. Import validation must never trust the
 // payload for this.
-func learningPublishedMembership(ctx context.Context, query learningReviewQuerier, bankID uuid.UUID) (uuid.UUID, map[uuid.UUID]uuid.UUID, error) {
+func learningPublishedMembership(ctx context.Context, query learningQuerier, bankID uuid.UUID) (uuid.UUID, map[uuid.UUID]uuid.UUID, error) {
 	bankVersionID, err := learningBankActiveVersion(ctx, query, bankID)
 	if err != nil {
 		return uuid.Nil, nil, err
@@ -286,7 +286,7 @@ func learningPublishedMembership(ctx context.Context, query learningReviewQuerie
 	return bankVersionID, members, nil
 }
 
-func learningBankActiveVersion(ctx context.Context, query learningReviewQuerier, bankID uuid.UUID) (uuid.UUID, error) {
+func learningBankActiveVersion(ctx context.Context, query learningQuerier, bankID uuid.UUID) (uuid.UUID, error) {
 	var bankVersionID uuid.UUID
 	err := query.QueryRow(ctx, `SELECT b.active_version_id FROM quizcraft_banks b
         JOIN quizcraft_bank_versions bv ON bv.bank_id=b.id AND bv.id=b.active_version_id AND bv.sealed_at IS NOT NULL

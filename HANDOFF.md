@@ -371,3 +371,18 @@
   - 环境：`npx`（契约脚本第 3 步）在本机因 `~/.npm` 属 root 而 EPERM，需 `npm_config_cache` 指向工作区 `.cache/npm`；该目录已在 .gitignore 内，不产生提交噪音。
 - Standards/Spec 本地复核：审核人身份只能来自 Platform Core 会话，导入 JSON 无审核字段（契约已封死未知字段）；草稿之外的重复审批/非法迁移/并发审批都 409 且不产生第二条审核记录；激活要求题库版本未过期，退役要求先替换生效版本；导入/审批/退役都要求服务调用方权限与幂等键，且不新增任何绕过 `status='approved'` 的读取路径。仍**未**做的：真实人工审核（目前无人使用该入口）、内容/语义评测、Console 界面（本阶段交付服务调用方接口）、手动入口限流与全局熔断、真实账号全链路。Public-ready Copy: not applicable（无用户可见文案新增）。
 - 下一步：真实供应商调用与受控演练、把学习报告 e2e 组接进 CI、决定是否随 #166 切流、以及（可选）Console 审核界面。本阶段独立 commit 并 push，不包含 AGENTS.md。
+
+### 38 — 学习反馈运行健康与关闭回退（LF-07 的「成本/失败监测 + 关闭回退」落地）
+
+- 背景：LF-07 要求「成本/失败监测、关闭回退」，而此前只有 worker 日志。功能暗态时没人看得到「排队是不是卡住了、有没有一直失败、租约是不是留在了死掉的 worker 上」，回退步骤也只散落在矩阵里、没有可执行抓手。
+- 新增 `learning_health.go`：
+  - `ReadLearningFeedbackHealth(ctx, query, now)` **只读**聚合：任务按状态计数、最早排队时长、已过期租约数、近 24h 失败按 `reason_code` 分桶（空 reason 归 `unspecified`）、报告按状态计数、启用课程数、已同意会员课程数、最后一次发布报告时间。
+  - 排队时长用 `run_after` 而不是 `created_at`：`created_at` 是「同意代次」的冻结事实（行更新触发器禁止改），且未到期的任务本来就不算晚。测试里正是踩到这个不可变约束后才改成到期时间。
+  - `HealthAlerts(health, queuedBehind, failureBudget)` 是纯函数（无数据库即可审查/测试）：过期租约、排队超阈值、24h 失败超预算、已同意会员却没有任何启用课程；阈值边界为「不超过即不告警」，且**全部关闭的暗态功能不产生任何告警**。
+  - 明确定位：计数是**成本代理**，不是计费——供应商适配层不上报 token 用量，因此不做 token/金额核算，也不假装有。
+- 新增 `cmd/learninghealth`：`QUIZCRAFT_V2_DATABASE_URL`（必须 `quizcraft_v2` 且过 `RequireQuizcraftV2Target`），`-json` / `-queued-behind`（默认 30m）/ `-failure-budget`（默认 0）/ `-fail-on-alert`（有告警退出 1，供 cron 告警）。默认只打印人类可读摘要，不做隐式 gate。
+- 文档：规格新增「运行健康与关闭回退（已实现的边界）」小节（含四步 fail-closed 回退顺序与「保留什么、不清除什么」）；`docs/operations/practice-wiring-matrix.md` 新增第 7 节「学习反馈切流前置」（内容必须先导入→人工审核→activate→enable；健康命令用法；回退顺序），并修正第 42 行「UI 落地前该值保持 0」的过期表述——界面已落地，浏览器开关仍保持 0 是未决的发布决定，而不是因为没有页面。
+- TDD 与验证：`learning_health_test.go`（root 包，纯函数）：暗态/健康态不告警、过期租约、排队刚好等于阈值不告警、超阈值告警、失败预算边界、`provider_error` 分桶文本、gating 漂移、零时钟拒绝。`tests/learning_health_test.go`（真实 PostgreSQL）：空功能零活动且 gating 计数正确；排队 1 条且新鲜 → 不告警；`run_after` 回拨 2 小时 → 真实 SQL 触发排队告警；认领租约并把 `lease_until` 置为过期 → `stale_leases=1` 且队列已空（认领后不再算排队）；置为 `failed` + `reason_code` → 24h 分桶命中并告警；`updated_at` 回拨 48 小时 → 不再计数；两次读取结果一致且 job 行数不变（只读性）。`cmd/learninghealth/main_test.go`：缺 URL / 非 `quizcraft_v2` / 四个越界阈值 / 未知参数 / `-h` 全部按预期拒绝。
+  - 命令与结果：全新空白库两遍迁移后 `go test -race . ./tests ./cmd/server ./cmd/learninghealth -count=1`（见下条全量日志）；`gofmt -l` 无输出、`go vet ./...` 退出 0。
+- Standards/Spec 本地复核：监测只读、不改数据（测试断言行数与两次读取一致）；告警只在真实运维问题出现时产生，暗态不吵；回退顺序 fail-closed，且明确「保留报告/偏好/任务/审核记录、不清除会员同意」；健康命令不提供任何跨库直连（只允许 `quizcraft_v2`）。仍**未**做：自动回退、外部告警系统接线、token 级成本核算、供应商成功率面板、真实人工评测与真实供应商调用。Public-ready Copy: not applicable（无用户可见文案）。
+- 下一步：真实供应商受控演练、学习报告 e2e 组接进 CI、#166 切流决定（含是否烘焙浏览器开关）。本阶段独立 commit 并 push，不包含 AGENTS.md。
