@@ -30,8 +30,14 @@ import (
 type PracticeHTTPConfig struct {
 	Database       *pgxpool.Pool
 	AuthHMACSecret []byte
-	// Optional live Account Portfolio caller; no learning routes are enabled yet.
+	// Optional live Account Portfolio caller. Read routes need it plus the
+	// catalog caller; write routes additionally need the Portal command
+	// identity.
 	LearningEntitlement *LearningEntitlementClient
+	// LearningVersions is the server-pinned model, prompt and policy for
+	// reports requested through the API. It must match the running worker or
+	// the worker rejects the job, so it comes from the same configuration.
+	LearningVersions    LearningJobVersions
 	LegacyBaseURL       string
 	LegacyCompareSecret string
 	HTTPClient          *http.Client
@@ -64,6 +70,7 @@ type practiceHTTP struct {
 	queries                 *store.Queries
 	authHMACSecret          []byte
 	learningEntitlement     *LearningEntitlementClient
+	learningVersions        LearningJobVersions
 	legacyBaseURL           string
 	legacyCompareSecret     string
 	httpClient              *http.Client
@@ -253,7 +260,7 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 	if releaseSHA == "" {
 		releaseSHA = "development"
 	}
-	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
+	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, learningVersions: config.LearningVersions, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
 	if platformCount == len(platformValues) {
 		platform, err := newPlatformClient(config.PlatformCoreURL, config.PlatformClientID, config.PlatformClientSecret, config.PlatformKeyID, client)
 		if err != nil {
@@ -302,6 +309,15 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences", service.portalLearningReportPreferences)
 		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/latest", service.portalLatestLearningReport)
 		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", service.portalLearningReportTask)
+	}
+	// Writes use the separate Portal command identity and stay behind the
+	// write-cutover switch. Clearing and disabling remain available to an owner
+	// after revocation; enabling and generating are checked per request.
+	if service.learningEntitlement != nil && service.portalCommandsEnabled && service.portalCommandClientID != "" {
+		learningWrites := router.With(service.authenticatePortalCommand).With(service.requireWritesEnabled)
+		learningWrites.Put("/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences", service.portalUpdateLearningReportPreferences)
+		learningWrites.Post("/api/v1/portal/practice/banks/{bank_id}/learning-reports", service.portalRequestLearningReport)
+		learningWrites.Delete("/api/v1/portal/practice/banks/{bank_id}/learning-reports", service.portalClearLearningReports)
 	}
 	writes := router.With(service.requireWritesEnabled)
 	writes.Get("/api/v1/feedback", service.listFeedbackStatuses)

@@ -61,6 +61,7 @@ func main() {
 		Database:              pool,
 		AuthHMACSecret:        []byte(authSecret),
 		LearningEntitlement:   entitlement,
+		LearningVersions:      learningVersions(worker),
 		LegacyBaseURL:         os.Getenv("QUIZCRAFT_LEGACY_BASE_URL"),
 		LegacyCompareSecret:   os.Getenv("QUIZCRAFT_LEGACY_COMPARE_SECRET"),
 		SummaryClientID:       os.Getenv("QUIZCRAFT_SUMMARY_CLIENT_ID"),
@@ -124,4 +125,15 @@ func fail(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// learningVersions pins manual report requests to the worker's model, prompt and
+// policy. Without a configured worker there is nothing to run the job, so the
+// zero value keeps generation unavailable instead of queueing work no worker
+// accepts.
+func learningVersions(worker *learningWorkerSettings) quizcraft.LearningJobVersions {
+	if worker == nil {
+		return quizcraft.LearningJobVersions{}
+	}
+	return worker.Versions
 }
