@@ -482,6 +482,8 @@ services:
       LIBRARY_DOWNLOAD_KEY_ID: ${LIBRARY_DOWNLOAD_KEY_ID:-library-download-key-1}
       # Keep QuizCraft V2 personal-data reads dark until the #166 cutover.
       PORTAL_ENABLE_QUIZCRAFT_V2_READS: ${PORTAL_ENABLE_QUIZCRAFT_V2_READS:-0}
+      # 学习报告读入口保持暗态，直到学习反馈功能切流。
+      PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS: ${PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS:-0}
       # 容器化后（方案 2）应指向 http://quizcraft:10089（compose 服务名）；
       # 历史 env 值 host.docker.internal:10089 仅对尚未迁移的旧 env 兼容。
       QUIZCRAFT_CORE_URL: ${QUIZCRAFT_CORE_URL:-}

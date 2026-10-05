@@ -36,27 +36,31 @@ import (
 
 // Handler is the Portal Gateway HTTP handler.
 type Handler struct {
-	sessionCodec       *session.Codec
-	platform           *platformcore.Client
-	displayNames       *practice.DisplayNamesResolver
-	quizCraft          *practice.Client
-	portalAPI          *http.Client
-	portalAPIURL       string
-	libraryDownloads   *librarydownload.Client
-	accountPortfolio   *accountportfolio.Client
-	foodPosts          *foodposts.Client
-	career             *career.Client
-	practiceCommands   *practice.CommandClient
-	quizCraftCatalog   *practice.Client
-	redis              *redis.Client
-	portalOrigin       string
-	platformCoreURL    string
-	publicPlatformURL  string
-	clientID           string
-	redirectURI        string
-	localOAuthCookie   string
-	localSessionCookie string
-	trustedProxies     []*net.IPNet
+	sessionCodec     *session.Codec
+	platform         *platformcore.Client
+	displayNames     *practice.DisplayNamesResolver
+	quizCraft        *practice.Client
+	portalAPI        *http.Client
+	portalAPIURL     string
+	libraryDownloads *librarydownload.Client
+	accountPortfolio *accountportfolio.Client
+	foodPosts        *foodposts.Client
+	career           *career.Client
+	practiceCommands *practice.CommandClient
+	quizCraftCatalog *practice.Client
+	// learningReportsEnabled is the explicit learning-report cutover gate. The
+	// routes are registered unconditionally (ADR-0036) and answer an honest 503
+	// until the gate is on and the V2 read client exists.
+	learningReportsEnabled bool
+	redis                  *redis.Client
+	portalOrigin           string
+	platformCoreURL        string
+	publicPlatformURL      string
+	clientID               string
+	redirectURI            string
+	localOAuthCookie       string
+	localSessionCookie     string
+	trustedProxies         []*net.IPNet
 }
 
 var (
@@ -178,27 +182,28 @@ func New(cfg config.Config, rdb *redis.Client) (*Handler, error) {
 		return platform.DisplayNames(ctx, userIDs, requestID)
 	})
 	return &Handler{
-		sessionCodec:       codec,
-		platform:           platform,
-		displayNames:       displayNames,
-		quizCraft:          quizCraft,
-		portalAPI:          &http.Client{Timeout: 10 * time.Second},
-		portalAPIURL:       cfg.PortalAPIURL,
-		libraryDownloads:   libraryDownloads,
-		accountPortfolio:   portfolio,
-		foodPosts:          foodPosts,
-		career:             careerClient,
-		practiceCommands:   practiceCommands,
-		quizCraftCatalog:   quizCraftCatalog,
-		redis:              rdb,
-		portalOrigin:       cfg.PortalOrigin,
-		platformCoreURL:    cfg.PlatformCoreURL,
-		publicPlatformURL:  firstNonEmpty(cfg.PlatformCorePublicURL, cfg.PlatformCoreURL),
-		clientID:           cfg.PlatformClientID,
-		redirectURI:        cfg.PortalRedirectURI,
-		localOAuthCookie:   firstNonEmpty(cfg.LocalOAuthCookieName, "henukit_portal_oauth_local"),
-		localSessionCookie: firstNonEmpty(cfg.LocalSessionCookieName, "henukit_portal_session_local"),
-		trustedProxies:     trustedProxies,
+		sessionCodec:           codec,
+		platform:               platform,
+		displayNames:           displayNames,
+		quizCraft:              quizCraft,
+		portalAPI:              &http.Client{Timeout: 10 * time.Second},
+		portalAPIURL:           cfg.PortalAPIURL,
+		libraryDownloads:       libraryDownloads,
+		accountPortfolio:       portfolio,
+		foodPosts:              foodPosts,
+		career:                 careerClient,
+		practiceCommands:       practiceCommands,
+		quizCraftCatalog:       quizCraftCatalog,
+		learningReportsEnabled: cfg.QuizCraftLearningReportsEnabled,
+		redis:                  rdb,
+		portalOrigin:           cfg.PortalOrigin,
+		platformCoreURL:        cfg.PlatformCoreURL,
+		publicPlatformURL:      firstNonEmpty(cfg.PlatformCorePublicURL, cfg.PlatformCoreURL),
+		clientID:               cfg.PlatformClientID,
+		redirectURI:            cfg.PortalRedirectURI,
+		localOAuthCookie:       firstNonEmpty(cfg.LocalOAuthCookieName, "henukit_portal_oauth_local"),
+		localSessionCookie:     firstNonEmpty(cfg.LocalSessionCookieName, "henukit_portal_session_local"),
+		trustedProxies:         trustedProxies,
 	}, nil
 }
 
@@ -255,6 +260,13 @@ func (h *Handler) Router() chi.Router {
 	r.Put("/api/v1/practice/banks/{bank_id}/favorites/{question_id}", h.favoriteQuestion)
 	r.Delete("/api/v1/practice/banks/{bank_id}/favorites/{question_id}", h.unfavoriteQuestion)
 	r.Post("/api/v1/practice/banks/{bank_id}/favorites/practice-sessions", h.createFavoritesSession)
+	// Learning reports are the evidence-based feedback surface. Like stats and
+	// favorites they are actor-bound signed reads: the browser identity comes
+	// only from the verified Portal Session, and the gate keeps the surface dark
+	// until the #166-style cutover turns it on explicitly.
+	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/preferences", h.learningReportPreferences)
+	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/latest", h.latestLearningReport)
+	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", h.learningReportTask)
 
 	// The owner-backed download command must shadow the public-data wildcard.
 	// Browser callers select only a material ID, never a storage key or URL.

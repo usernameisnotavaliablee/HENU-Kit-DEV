@@ -2,11 +2,20 @@ package tests
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"henukit.dev/quizcraft/internal/contract"
 )
+
+// reportReadOperations are the learning operations served by the actor-bound
+// catalog read middleware rather than the practice command credentials.
+var reportReadOperations = map[string]bool{
+	"getPortalLearningReportPreferences": true,
+	"getPortalLatestLearningReport":      true,
+	"getPortalLearningReportTask":        true,
+}
 
 func TestLearningReportContractRequiresSignedOwner(t *testing.T) {
 	if contract.LearningReportPracticeSessionRoute != "/api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions" {
@@ -42,11 +51,35 @@ func TestLearningReportContractRequiresSignedOwner(t *testing.T) {
 				t.Fatalf("%s: explicit combined service auth required", op.OperationID)
 			}
 			security := (*op.Security)[0]
-			if _, ok := security["portalPracticeBasic"]; !ok {
-				t.Fatal("service identity missing")
+			// The three report GETs are served by the actor-bound catalog read
+			// middleware (authenticatePortalPersonalStats), so they must document
+			// that six-part scheme and its service-replay conflict. Only the write
+			// operations use the practice command credential pair.
+			wantSchemes := []string{"portalPracticeBasic", "portalPracticeSignature"}
+			wantConflict := "Conflict"
+			if reportReadOperations[op.OperationID] {
+				wantSchemes = []string{
+					"portalCatalogBasic", "portalCatalogSignature", "portalCatalogPermission",
+					"portalCatalogScope", "portalCatalogProduct", "portalCatalogActor",
+				}
+				wantConflict = "ServiceReplay"
 			}
-			if _, ok := security["portalPracticeSignature"]; !ok {
-				t.Fatal("service signature missing")
+			for _, scheme := range wantSchemes {
+				if _, ok := security[scheme]; !ok {
+					t.Fatalf("%s: security scheme %s missing", op.OperationID, scheme)
+				}
+			}
+			if len(security) != len(wantSchemes) {
+				t.Fatalf("%s: security schemes = %v, want %v", op.OperationID, security, wantSchemes)
+			}
+			// Check the raw response-component ref: kin-openapi resolves the
+			// chain, so the resolved schema cannot tell replay from conflict.
+			conflict, ok := op.Responses.Map()["409"]
+			if !ok || conflict == nil || conflict.Value == nil {
+				t.Fatalf("%s: conflict response missing", op.OperationID)
+			}
+			if !strings.HasSuffix(conflict.Ref, "/"+wantConflict) {
+				t.Fatalf("%s: 409 ref = %q, want %s", op.OperationID, conflict.Ref, wantConflict)
 			}
 			actor := false
 			for _, param := range op.Parameters {

@@ -20,8 +20,8 @@
       QuizCraft Go core（:10089，quizcraft 库唯一直读方；方案 2 已容器化为 compose 服务 `quizcraft`）
 ```
 
-- Portal Gateway 的 `PORTAL_ENABLE_QUIZCRAFT_CATALOG` / `PORTAL_ENABLE_QUIZCRAFT_V2_READS`
-  只决定**读客户端是否存在**，不再决定路由是否注册；路由常态注册，客户端缺省时
+- Portal Gateway 的 `PORTAL_ENABLE_QUIZCRAFT_CATALOG` / `PORTAL_ENABLE_QUIZCRAFT_V2_READS` /
+  `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 只决定**读客户端是否存在**，不再决定路由是否注册；路由常态注册，客户端缺省时
   诚实 404（公共读）或 503（actor-bound 读）。
 - portal-api 不再直读 quizcraft 库（`internal/practice/` 已删），也不再接收
   `/api/v1/practice/{banks,schools,lists,leaderboard,stats}` 的代理。
@@ -35,6 +35,7 @@
 | `QUIZCRAFT_CORE_URL` | 空 | Core 地址（可与 `PRACTICE_SERVICE_URL` 相同或不同） | V2 读客户端（rankings/stats/favorites/feedback）baseURL。与 `PRACTICE_SERVICE_URL` 的关系：两者职责分离，V2 读走 `QUIZCRAFT_CORE_URL` + `QUIZCRAFT_PORTAL_CATALOG_*` 凭据，命令/目录读走 `PRACTICE_SERVICE_URL` + `PRACTICE_*`/`PRACTICE_COMMAND_*` 凭据。**合并建议**：后续可把 `QUIZCRAFT_CORE_URL` 并入 `PRACTICE_SERVICE_URL`，本窗口保持并存但两两同设 |
 | `PORTAL_ENABLE_QUIZCRAFT_CATALOG` | `0` | `1` | Gateway catalog 读客户端（`/api/v1/practice/catalog`）。**独立于 V2 读**：目录读凭据 `PRACTICE_*` 与 V2 读凭据 `QUIZCRAFT_PORTAL_CATALOG_*` 不同源，保持独立开关以免误并 |
 | `PORTAL_ENABLE_QUIZCRAFT_V2_READS` | `0` | `1` | **V2 读总门禁**：rankings（`/api/v1/rankings/*`）、stats、favorites 读、feedback 状态读共用一个客户端，一开关全开/全关 |
+| `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（依赖 V2 读门禁） | **学习报告读门禁**：偏好 / latest / 任务进度三个读路由复用 V2 读客户端与凭据，但不随 V2 读自动开；置 `1` 时若 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=0` 则启动报错（避免静默全 503） |
 | `PORTAL_PRACTICE_COMMANDS_ENABLED` | `0` | `1` | **命令（写）门禁**：session/answer/feedback/favorites 写。与读门禁**必须独立**——命令凭据 `PRACTICE_COMMAND_*` 与读凭据强制不同，读并入命令门禁会把读写可用性错误耦合 |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG` | `0` | `1`（构建时烘焙） | 浏览器目录页是否请求/渲染 V2 catalog（`apps/portal/src/lib/api/env.ts`） |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS` | `0` | `1`（构建时烘焙） | 浏览器排行榜 tab / stats 请求（`personal-stats.ts`、`practice-nav.tsx`） |
@@ -72,6 +73,7 @@
 | `GET /api/v1/rankings/overall`、`/api/v1/banks/{bank_id}/rankings` | Core 排行契约（V2 客户端） | 404 |
 | `GET /api/v1/practice/stats` | Core 个人统计（V2 客户端） | 503 |
 | `GET /api/v1/practice/favorites`、`/banks/{bank_id}/favorites`、`/feedback/{feedback_id}/status` | Core actor-bound 读（V2 客户端） | 503 |
+| `GET /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`/latest`、`/tasks/{task_id}` | Core actor-bound 读（V2 客户端，学习报告镜像类型） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或缺客户端）；Core 无报告时透传 404 |
 | `POST /api/v1/practice/sessions`、`.../answers`、`/feedback`、favorites 写 | Core 命令（命令客户端） | 503 |
 | `GET /api/v1/practice/banks`、`/schools`、`/lists/{id}`、`/leaderboard` | **已下线**（ADR-0036，portal-api 直读删除） | 404 + 迁移提示 |
 

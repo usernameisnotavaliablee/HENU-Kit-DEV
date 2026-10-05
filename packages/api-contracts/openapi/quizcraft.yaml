@@ -25,8 +25,12 @@ paths:
       "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Missing preferences return disabled, seven-day defaults.",
       "security": [
         {
-          "portalPracticeBasic": [],
-          "portalPracticeSignature": []
+          "portalCatalogBasic": [],
+          "portalCatalogSignature": [],
+          "portalCatalogPermission": [],
+          "portalCatalogScope": [],
+          "portalCatalogProduct": [],
+          "portalCatalogActor": []
         }
       ],
       "parameters": [
@@ -58,7 +62,7 @@ paths:
           "$ref": "#/components/responses/NotFound"
         },
         "409": {
-          "$ref": "#/components/responses/Conflict"
+          "$ref": "#/components/responses/ServiceReplay"
         },
         "503": {
           "$ref": "#/components/responses/ServiceUnavailable"
@@ -308,8 +312,12 @@ paths:
       "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Return 404 if absent. Report data remains actor-bound. Stale reports are marked and cannot launch obsolete recommendations.",
       "security": [
         {
-          "portalPracticeBasic": [],
-          "portalPracticeSignature": []
+          "portalCatalogBasic": [],
+          "portalCatalogSignature": [],
+          "portalCatalogPermission": [],
+          "portalCatalogScope": [],
+          "portalCatalogProduct": [],
+          "portalCatalogActor": []
         }
       ],
       "parameters": [
@@ -341,7 +349,7 @@ paths:
           "$ref": "#/components/responses/NotFound"
         },
         "409": {
-          "$ref": "#/components/responses/Conflict"
+          "$ref": "#/components/responses/ServiceReplay"
         },
         "503": {
           "$ref": "#/components/responses/ServiceUnavailable"
@@ -370,8 +378,12 @@ paths:
       "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Task IDs never grant access across actors or banks.",
       "security": [
         {
-          "portalPracticeBasic": [],
-          "portalPracticeSignature": []
+          "portalCatalogBasic": [],
+          "portalCatalogSignature": [],
+          "portalCatalogPermission": [],
+          "portalCatalogScope": [],
+          "portalCatalogProduct": [],
+          "portalCatalogActor": []
         }
       ],
       "parameters": [
@@ -412,7 +424,7 @@ paths:
           "$ref": "#/components/responses/NotFound"
         },
         "409": {
-          "$ref": "#/components/responses/Conflict"
+          "$ref": "#/components/responses/ServiceReplay"
         },
         "503": {
           "$ref": "#/components/responses/ServiceUnavailable"

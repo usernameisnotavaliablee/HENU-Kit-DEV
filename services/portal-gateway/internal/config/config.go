@@ -50,6 +50,12 @@ type Config struct {
 	QuizCraftV2ReadsEnabled bool
 	QuizCraftCoreURL        string
 	QuizCraftCoreAuth       ServiceAuth
+	// QuizCraftLearningReportsEnabled is the explicit evidence-based learning
+	// report gate. It reuses the actor-bound V2 read credential (the Core
+	// authorizes the same catalog client for these reads), so the flag alone
+	// decides whether the member surface is live. It is only accepted when the
+	// V2 read client is configured, because the routes fail closed without it.
+	QuizCraftLearningReportsEnabled bool
 
 	PracticeAuth ServiceAuth
 	// PracticeCommandAuth is deliberately distinct from PracticeAuth. The
@@ -166,6 +172,11 @@ func FromEnv() (Config, error) {
 	cfg.QuizCraftV2ReadsEnabled = quizCraftReadsEnabled
 	cfg.QuizCraftCoreURL = quizCraftCoreURL
 	cfg.QuizCraftCoreAuth = quizCraftCoreAuth
+	learningReportsEnabled, err := quizCraftLearningReportsFromEnv(os.Getenv, quizCraftReadsEnabled)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.QuizCraftLearningReportsEnabled = learningReportsEnabled
 	if err := validateLocalCookieNames(cfg.LocalOAuthCookieName, cfg.LocalSessionCookieName); err != nil {
 		return Config{}, err
 	}
@@ -181,6 +192,23 @@ func isPlaceholderSecret(secret string) bool {
 		strings.HasPrefix(value, "change-me") ||
 		strings.HasPrefix(value, "example-") ||
 		strings.Contains(value, "placeholder")
+}
+
+// quizCraftLearningReportsFromEnv reads the learning-report gate. Enabling it
+// without the V2 read client would leave the routes permanently dark, so that
+// combination is rejected at startup instead of shipping a silent no-op.
+func quizCraftLearningReportsFromEnv(getenv func(string) string, v2ReadsEnabled bool) (bool, error) {
+	switch strings.TrimSpace(getenv("PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS")) {
+	case "", "0":
+		return false, nil
+	case "1":
+	default:
+		return false, fmt.Errorf("PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS must be 0 or 1")
+	}
+	if !v2ReadsEnabled {
+		return false, fmt.Errorf("PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS requires PORTAL_ENABLE_QUIZCRAFT_V2_READS=1")
+	}
+	return true, nil
 }
 
 func quizCraftV2ReadsFromEnv(getenv func(string) string) (bool, string, ServiceAuth, error) {
