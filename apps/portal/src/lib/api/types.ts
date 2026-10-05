@@ -328,6 +328,7 @@ export interface FoodPostDetailResponse {
 export interface PortalPracticeSessionInput {
   bank_id: string;
   bank_version_id: string;
+  /** "report" is server-chosen only: the learning-report route takes no body. */
   mode: "random" | "difficult" | "chapter" | "favorites";
   chapter_id?: string;
   question_count?: number;
@@ -350,7 +351,7 @@ export interface PortalPracticeSessionResponse {
     session_id: string;
     bank_id: string;
     bank_version_id: string;
-    mode: "random" | "difficult" | "chapter" | "favorites";
+    mode: "random" | "difficult" | "chapter" | "favorites" | "report";
     excluded_unavailable_count: number;
     questions: PortalPracticeQuestion[];
   };
@@ -458,6 +459,133 @@ export type {
   QuizCraftCatalogChapter,
   QuizCraftCatalogResponse,
 } from "./portal-session.generated";
+
+// ---- Learning reports ----
+// Field names mirror the QuizCraft Core contract (packages/api-contracts/openapi/
+// quizcraft.yaml); the Gateway mirrors the same shape to the browser. Nothing
+// here is optional unless the contract makes it optional, so a drifted name
+// shows up as a type error at the call site instead of an empty section.
+
+export type LearningReportGoal = "follow_course" | "exam_review";
+
+/** Body of one preferences write. Consent is an explicit member choice. */
+export interface LearningReportPreferencesUpdate {
+  enabled: boolean;
+  interval_days: number;
+  goal: LearningReportGoal;
+  chapter_ids: string[];
+  external_analysis_consent: boolean;
+}
+
+export interface LearningReportPreferences
+  extends LearningReportPreferencesUpdate {
+  bank_id: string;
+  revision: number;
+  next_due_at?: string;
+  updated_at?: string;
+}
+
+export interface LearningReportStatistic {
+  tag_id: string;
+  tag_kind: "knowledge" | "ability";
+  label: string;
+  attempt_count: number;
+  unique_question_count: number;
+  first_correct_count: number;
+  repeat_attempt_count: number;
+  repeat_correct_count: number;
+  latest_correct_count: number;
+}
+
+export interface LearningReportEvidence {
+  evidence_id: string;
+  question_id: string;
+  question_version_id: string;
+  submitted_at: string;
+  correct: boolean;
+  question: string;
+  submitted_answer: unknown;
+  expected_answer: unknown;
+}
+
+export interface LearningReportFinding {
+  tag_id: string;
+  status: "supported" | "tentative" | "uncovered";
+  observation: string;
+  possible_reason?: string;
+  evidence_ids: string[];
+}
+
+export interface LearningReportSource {
+  source_id: string;
+  title: string;
+  version: string;
+  locator: string;
+}
+
+export interface LearningReportLesson {
+  lesson_id: string;
+  title: string;
+  body: string;
+  sources: LearningReportSource[];
+}
+
+export interface LearningReportAction {
+  kind: "practice" | "diagnostic" | "content_unavailable" | "no_action";
+  reason: string;
+  tag_id?: string;
+  lesson?: LearningReportLesson;
+  question_ids?: string[];
+}
+
+export interface LearningReport {
+  report_id: string;
+  bank_id: string;
+  content_version_id: string;
+  status: "ready" | "insufficient_evidence" | "stale";
+  goal: LearningReportGoal;
+  evidence_until: string;
+  created_at: string;
+  statistics: LearningReportStatistic[];
+  evidence: LearningReportEvidence[];
+  findings: LearningReportFinding[];
+  next_step: LearningReportAction;
+}
+
+export interface LearningReportTask {
+  task_id: string;
+  bank_id: string;
+  status: "queued" | "running" | "ready" | "failed" | "paused" | "cancelled";
+  created_at: string;
+  report_id?: string;
+  reason_code?: string;
+  retry_after_seconds?: number;
+}
+
+export interface LearningReportClearResult {
+  cleared: boolean;
+  revision: number;
+}
+
+export interface LearningReportPreferencesEnvelope {
+  request_id: string;
+  data: LearningReportPreferences;
+}
+
+export interface LearningReportEnvelope {
+  request_id: string;
+  data: LearningReport;
+}
+
+export interface LearningReportTaskEnvelope {
+  request_id: string;
+  data: LearningReportTask;
+}
+
+export interface LearningReportClearResultEnvelope {
+  request_id: string;
+  data: LearningReportClearResult;
+}
 
 export type QuizCraftRankingPeriod = "weekly" | "lifetime";
 

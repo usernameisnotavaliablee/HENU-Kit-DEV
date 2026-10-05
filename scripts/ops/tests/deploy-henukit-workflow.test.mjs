@@ -305,6 +305,30 @@ test("Portal V2 cutover flags are enabled in production artifacts after HC-166",
   assert.match(portal.build_args, /NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS=1/);
 });
 
+// The learning-report entry point has no page yet, so this flag is wired but
+// deliberately left out of the #166 bake. Baking 1 here before the UI lands
+// would ship an entry point that leads nowhere; changing this assertion is the
+// deliberate step that publishes the surface.
+test("the Portal learning-report browser flag is wired dark and stays out of the HC-166 bake", () => {
+  assert.match(
+    portalDockerfile,
+    /ARG NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0/,
+  );
+  assert.match(
+    portalDockerfile,
+    /ENV NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=\$NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS/,
+  );
+  assert.match(
+    developmentCompose,
+    /NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS:\s+\$\{NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS:-0\}/,
+  );
+  const portal = releaseImageMatrix().include.find(({ name }) => name === "portal");
+  assert.doesNotMatch(
+    portal.build_args,
+    /NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS/,
+  );
+});
+
 test("development Compose forwards an explicit Portal V2 read build flag", () => {
   const config = JSON.parse(
     execFileSync(

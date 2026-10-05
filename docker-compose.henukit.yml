@@ -598,6 +598,9 @@ services:
         # This public Next.js value is baked into the Portal image. #166 must
         # rebuild the fixed-SHA Portal artifact when enabling the V2 read path.
         NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS: ${NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS:-0}
+        # The learning-report entry point appears only when this is 1 AND the
+        # gateway gates are on; the API stays an honest 503 otherwise.
+        NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS: ${NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS:-0}
     environment:
       NODE_ENV: production
       PORT: 3001

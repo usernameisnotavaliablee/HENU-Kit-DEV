@@ -23,3 +23,27 @@ describe("quizCraftV2ReadsEnabled", () => {
     expect(quizCraftV2ReadsEnabled()).toBe(true);
   });
 });
+
+const initialLearningFlag = process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS;
+
+afterEach(() => {
+  if (initialLearningFlag === undefined) {
+    delete process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS;
+  } else {
+    process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS = initialLearningFlag;
+  }
+});
+
+describe("quizCraftLearningReportsEnabled", () => {
+  it("stays dark unless the explicit cutover flag is exactly 1", async () => {
+    const { quizCraftLearningReportsEnabled } = await import("./env");
+    delete process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS;
+    expect(quizCraftLearningReportsEnabled()).toBe(false);
+
+    process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS = "true";
+    expect(quizCraftLearningReportsEnabled()).toBe(false);
+
+    process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS = "1";
+    expect(quizCraftLearningReportsEnabled()).toBe(true);
+  });
+});

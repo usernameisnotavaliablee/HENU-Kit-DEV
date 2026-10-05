@@ -37,6 +37,11 @@ import type {
   FavoriteWriteResponse,
   FoodPostDetailResponse,
   FoodPostListResponse,
+  LearningReportClearResultEnvelope,
+  LearningReportEnvelope,
+  LearningReportPreferencesEnvelope,
+  LearningReportPreferencesUpdate,
+  LearningReportTaskEnvelope,
   LibraryCoursesResponse,
   LibraryMaterialCountsResponse,
   MaterialDetailResponse,
@@ -718,6 +723,139 @@ export async function createFavoritesSession(
   return apiFetchRequired<PortalPracticeSessionResponse>(
     `/api/v1/practice/banks/${encodeURIComponent(bankID)}/favorites/practice-sessions`,
     favoriteCommandInit(idempotencyKey, "POST")
+  );
+}
+
+// ---- Learning reports ----
+
+/**
+ * Learning-report writes reuse the Practice command boundary (idempotency key,
+ * same-origin credentials). The read side never mints a local report: a missing
+ * report is the Gateway's 404 and stays a 404.
+ */
+function learningReportCommandInit(
+  idempotencyKey: string,
+  method: "PUT" | "POST" | "DELETE",
+  body: unknown = {}
+): RequestInit {
+  const key = idempotencyKey.trim();
+  if (key.length < 16 || key.length > 160) {
+    throw new PortalApiError("Invalid Practice idempotency key", {
+      code: "PORTAL_INVALID_PRACTICE_IDEMPOTENCY_KEY",
+    });
+  }
+  return {
+    method,
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": key,
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function learningReportBankPath(bankID: string, suffix = ""): string {
+  if (!bankID.trim()) {
+    throw new PortalApiError("Invalid Practice bank id", {
+      code: "PORTAL_INVALID_PRACTICE_BANK",
+    });
+  }
+  return `/api/v1/practice/banks/${encodeURIComponent(bankID)}/learning-reports${suffix}`;
+}
+
+/** Reads the owner's preferences; no row yet is the disabled default, not an error. */
+export async function fetchLearningReportPreferences(
+  bankID: string
+): Promise<LearningReportPreferencesEnvelope> {
+  return apiFetchRequired<LearningReportPreferencesEnvelope>(
+    learningReportBankPath(bankID, "/preferences")
+  );
+}
+
+/**
+ * Reads the newest published report. A 404 means this member has no report for
+ * this bank yet; callers must render that as an empty state, never as sample
+ * data.
+ */
+export async function fetchLatestLearningReport(
+  bankID: string
+): Promise<LearningReportEnvelope> {
+  return apiFetchRequired<LearningReportEnvelope>(
+    learningReportBankPath(bankID, "/latest")
+  );
+}
+
+/** Reads one report task's progress so a queued request can be followed. */
+export async function fetchLearningReportTask(
+  bankID: string,
+  taskID: string
+): Promise<LearningReportTaskEnvelope> {
+  if (!taskID.trim()) {
+    throw new PortalApiError("Invalid Practice task id", {
+      code: "PORTAL_INVALID_PRACTICE_TASK",
+    });
+  }
+  return apiFetchRequired<LearningReportTaskEnvelope>(
+    learningReportBankPath(bankID, `/tasks/${encodeURIComponent(taskID)}`)
+  );
+}
+
+/** Saves preferences and consent idempotently. Enabling requires live membership. */
+export async function updateLearningReportPreferences(
+  bankID: string,
+  input: LearningReportPreferencesUpdate,
+  idempotencyKey: string
+): Promise<LearningReportPreferencesEnvelope> {
+  return apiFetchRequired<LearningReportPreferencesEnvelope>(
+    learningReportBankPath(bankID, "/preferences"),
+    learningReportCommandInit(idempotencyKey, "PUT", input)
+  );
+}
+
+/** Asks Core for one manual report. A reused request answers with the same task. */
+export async function requestLearningReport(
+  bankID: string,
+  idempotencyKey: string
+): Promise<LearningReportTaskEnvelope> {
+  return apiFetchRequired<LearningReportTaskEnvelope>(
+    learningReportBankPath(bankID),
+    learningReportCommandInit(idempotencyKey, "POST")
+  );
+}
+
+/** Withdraws derived reports and queued work; original answers are kept. */
+export async function clearLearningReports(
+  bankID: string,
+  idempotencyKey: string
+): Promise<LearningReportClearResultEnvelope> {
+  return apiFetchRequired<LearningReportClearResultEnvelope>(
+    learningReportBankPath(bankID),
+    learningReportCommandInit(idempotencyKey, "DELETE")
+  );
+}
+
+/**
+ * Starts the practice session the report recommends. Core re-selects and
+ * revalidates every question, so the browser sends no question ids.
+ */
+export async function createLearningReportSession(
+  bankID: string,
+  reportID: string,
+  idempotencyKey: string
+): Promise<PortalPracticeSessionResponse> {
+  if (!reportID.trim()) {
+    throw new PortalApiError("Invalid learning report id", {
+      code: "PORTAL_INVALID_LEARNING_REPORT",
+    });
+  }
+  return apiFetchRequired<PortalPracticeSessionResponse>(
+    learningReportBankPath(
+      bankID,
+      `/results/${encodeURIComponent(reportID)}/practice-sessions`
+    ),
+    learningReportCommandInit(idempotencyKey, "POST")
   );
 }
 
