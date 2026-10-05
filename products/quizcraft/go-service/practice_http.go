@@ -294,6 +294,15 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 		router.With(service.authenticatePortalPersonalStats).Get("/api/v1/portal/practice/favorites", service.portalFavoritesOverview)
 		router.With(service.authenticatePortalPersonalStats).Get("/api/v1/portal/practice/banks/{bank_id}/favorites", service.portalFavoritesList)
 	}
+	// Course feedback reads stay dark until the signed entitlement caller exists.
+	// They reuse the Portal Gateway personal boundary; writes remain a separate
+	// command boundary that is not implemented yet.
+	if service.learningEntitlement != nil && service.catalogClientID != "" && len(service.catalogKeys) > 0 {
+		learningReads := router.With(service.authenticatePortalPersonalStats)
+		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences", service.portalLearningReportPreferences)
+		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/latest", service.portalLatestLearningReport)
+		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", service.portalLearningReportTask)
+	}
 	writes := router.With(service.requireWritesEnabled)
 	writes.Get("/api/v1/feedback", service.listFeedbackStatuses)
 	writes.Post("/api/v1/feedback", service.createFeedback)

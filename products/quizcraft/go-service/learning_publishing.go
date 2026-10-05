@@ -120,7 +120,7 @@ func (s *Service) PublishLearningReport(ctx context.Context, lease LearningJobLe
 	if err != nil {
 		return empty, err
 	}
-	if len(body) > 2<<20 {
+	if len(body) > learningReportMaxBytes {
 		return empty, ErrLearningUnavailable
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO quizcraft_learning_reports(id,job_id,user_id,bank_id,content_version_id,lease_token,evidence_until,status,body,created_at)
