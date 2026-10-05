@@ -19,6 +19,9 @@ export const GATEWAY_USER_MESSAGE_CODES: ReadonlySet<string> = new Set([
   "practice favorites are temporarily unavailable",
   "practice feedback status is not enabled",
   "practice feedback status is temporarily unavailable",
+  // 学习报告：暗态是诚实的 503；404 表示这位会员还没有报告，不是内容缺失。
+  "practice learning reports are not enabled",
+  "practice learning reports are temporarily unavailable",
   "practice statistics are not enabled",
   "practice statistics are temporarily unavailable",
   "practice_command_conflict",
@@ -27,6 +30,7 @@ export const GATEWAY_USER_MESSAGE_CODES: ReadonlySet<string> = new Set([
   "practice_commands_unavailable",
   "practice_session_forbidden",
   "practice_session_not_found",
+  "learning report not found",
   "quizcraft_catalog_invalid_response",
   "quizcraft_catalog_unavailable",
   "quizcraft_ranking_invalid_response",

@@ -65,7 +65,10 @@ func (h *Handler) learningReportRead(w http.ResponseWriter, r *http.Request, rea
 			writeError(w, r, http.StatusNotFound, "learning report not found", "暂时没有可查看的学习报告")
 			return
 		}
-		writeError(w, r, http.StatusServiceUnavailable, "practice learning reports are temporarily unavailable", "学习报告暂时不可用，请稍后再试: "+err.Error())
+		// The dependency error stays in the log-only path: the browser message is
+		// shown to members verbatim by Portal, so it must never carry transport or
+		// upstream detail. The request_id in the envelope is enough to correlate.
+		writeError(w, r, http.StatusServiceUnavailable, "practice learning reports are temporarily unavailable", "学习报告暂时不可用，请稍后再试")
 		return
 	}
 	writeJSON(w, http.StatusOK, envelope)

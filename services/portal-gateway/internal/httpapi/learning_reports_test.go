@@ -536,3 +536,40 @@ func TestLearningReportWriteFailuresMapToHonestBrowserErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestLearningReportDependencyFailureNeverLeaksUpstreamDetail(t *testing.T) {
+	platform := newLearningReportsPlatform(t, nil, http.StatusOK)
+	defer platform.Close()
+	// The failing Core answers with a body only a test can recognise. Portal
+	// shows the Gateway's own message to members verbatim, so neither that body
+	// nor any Go error text may reach the browser.
+	const marker = "upstream_marker_9f3"
+	core := newLearningReportsCore(t, nil, func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = writer.Write([]byte(`{"error":"` + marker + `","message":"` + marker + `"}`))
+	})
+	defer core.Close()
+
+	handler := newLearningReportsHandler(t, platform.URL, core.URL, true, true)
+	response := getLearningReport(t, handler, sessionCookie(t, handler, learningReportUserID), learningReportsPath("/latest"))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("core fault = %d %s", response.Code, response.Body.String())
+	}
+	var envelope struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("dependency failure is not an error envelope: %v (%s)", err, response.Body.String())
+	}
+	if envelope.Error != "practice learning reports are temporarily unavailable" {
+		t.Fatalf("dependency failure code = %q", envelope.Error)
+	}
+	if envelope.Message != "学习报告暂时不可用，请稍后再试" {
+		t.Fatalf("dependency failure message = %q", envelope.Message)
+	}
+	if strings.Contains(response.Body.String(), marker) {
+		t.Fatalf("upstream detail reached the browser: %s", response.Body.String())
+	}
+}
