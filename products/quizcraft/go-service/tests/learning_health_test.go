@@ -7,7 +7,47 @@ import (
 	"time"
 
 	quizcraft "henukit.dev/quizcraft"
+	"henukit.dev/quizcraft/internal/contract"
 )
+
+// A consent from an older generation is not consent. The operator count must use
+// the same gate as every queue and evidence read, otherwise a stale consent looks
+// live and raises the "consented member has no enabled course" alert.
+func TestLearningFeedbackHealthIgnoresStaleConsentGeneration(t *testing.T) {
+	ctx := context.Background()
+	pool, service, owner, bankID, _ := newLearningLeaseTest(t, "learning-health-consent")
+	const behind = 30 * time.Minute
+
+	if _, err := pool.Exec(ctx, `UPDATE quizcraft_learning_report_preferences SET consent_version='consent-v0' WHERE user_id=$1 AND bank_id=$2`, owner, bankID); err != nil {
+		t.Fatal(err)
+	}
+	health, err := quizcraft.ReadLearningFeedbackHealth(ctx, pool, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.EnabledCourses != 1 || health.ConsentedCourses != 0 {
+		t.Fatalf("stale consent counted as live: %+v", health)
+	}
+	if alerts := quizcraft.HealthAlerts(health, behind, 0); len(alerts) != 0 {
+		t.Fatalf("stale consent raised the live-consent alert: %v", alerts)
+	}
+
+	// Live consent needs the documented two-step renewal: an outdated generation
+	// cannot be renewed in place, the owner opts out and opts in again.
+	if _, err := service.UpdateLearningReportPreferences(ctx, owner, bankID, contract.LearningReportPreferencesUpdate{Enabled: false, ExternalAnalysisConsent: false, IntervalDays: 7, Goal: "follow_course", ChapterIds: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateLearningReportPreferences(ctx, owner, bankID, contract.LearningReportPreferencesUpdate{Enabled: true, ExternalAnalysisConsent: true, IntervalDays: 7, Goal: "follow_course", ChapterIds: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	health, err = quizcraft.ReadLearningFeedbackHealth(ctx, pool, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.ConsentedCourses != 1 {
+		t.Fatalf("live consent was not counted: %+v", health)
+	}
+}
 
 // The health read is the operator's only view of a dark feature, so it must
 // report real stored state: a fresh queue is not an alert, a queue that is hours

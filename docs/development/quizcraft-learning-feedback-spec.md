@@ -71,7 +71,7 @@
 
 ## 运行健康与关闭回退（已实现的边界）
 
-- `quizcraft.ReadLearningFeedbackHealth(ctx, query, now)` 只读聚合：任务按状态计数、最早到期排队时长（用 `run_after`，不是不可变的 `created_at`）、已过期租约数、近 24 小时失败按 `reason_code` 分桶、报告按状态计数、启用课程数与已同意会员课程数、最后一次发布报告时间。它**只读**，可对生产运行。
+- `quizcraft.ReadLearningFeedbackHealth(ctx, query, now)` 只读聚合：任务按状态计数、最早到期排队时长（用 `run_after`，不是不可变的 `created_at`）、已过期租约数、近 24 小时失败按 `reason_code` 分桶、报告按状态计数、启用课程数、**当代同意**（`consent_version=当前`，旧代同意不算）的会员课程数、最新报告记录时间（`ready`/`insufficient_evidence`/`stale` 都算一次真实产出，不是「最后一次成功发布」）。它**只读**，可对生产运行。
 - `cmd/learninghealth`：`QUIZCRAFT_V2_DATABASE_URL`（必须是 `quizcraft_v2`，且要过 `RequireQuizcraftV2Target`）＋ `-json` / `-queued-behind`（默认 30m）/ `-failure-budget`（默认 0）/ `-fail-on-alert`。用于 cron/告警：有告警且开启 `-fail-on-alert` 时退出 1。计数是**成本代理**，不是计费：供应商适配层不上报 token 用量，因此不声称 token 或金额核算。
 - 告警只在真出现问题时出现：过期租约、排队超过阈值、24 小时失败超出预算、已同意会员却没有启用课程。全部关闭的暗态功能**不产生告警**（已用测试固定）。
 - 关闭回退（顺序固定，均为 fail-closed）：① `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0`（Gateway 读/写学习报告即时 503，其它刷题不受影响）→ ② `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0`（浏览器入口消失，需重新构建 Portal 镜像）→ ③ `QUIZCRAFT_LEARNING_WORKER_ENABLED=0`（停止取任务与调模型）→ ④ `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`（或随 ③ 一起停）。已发布报告、任务、偏好与审核记录都保留，不会被清除；会员已给出的同意仍保留在其偏好里，重新开启不会绕过同意或权益校验。回退后应确认 `learninghealth` 不再新增 queued/running，且关闭接口（`DELETE .../learning-reports`）仍可用。
@@ -81,7 +81,7 @@
 
 - 入口只有会员手动请求 `POST /api/v1/portal/practice/banks/{bank_id}/learning-reports`。`QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 10，`0` 显式关闭，1–1000 合法）限制**同一会员对同一课程**在固定一小时窗口内能产生的生成任务数；超限返回 429 `rate_limited`。这是滥用保护，不是配额：不扣积分、不设日常额度、不写入拒绝计数。
 - 计数直接用 `quizcraft_learning_report_jobs.created_at`（不可变、可审计），不引入计数器表；窗口外的历史不计入。
-- 守卫只在「确实要新建任务」时生效，并且在会员偏好的行锁内执行：重复请求（同幂等键或同有效输入）仍复用既有任务、不会被误拒，并发重复请求也不会超限；计划任务（`source=automatic`）从不受限——它由到期时间与权益门禁控制。
+- 守卫只在「确实要新建任务」时生效，并且在会员偏好的行锁内执行：重复请求（同幂等键或同有效输入）仍复用既有任务、不会被误拒，并发重复请求也不会超限；计划任务（`source=automatic`）的请求永远不会被限流拒绝——它由到期时间与权益门禁控制——但它落下的任务同样计入该会员该课程的窗口工作量（每个到期周期至多 1 个），因为守卫限制的是**模型工作量**，不是点击次数。
 - 网关与 Portal 必须诚实转达：Core 429 → Portal Gateway 429 `practice_command_rate_limited`（不是把限流谎报成依赖故障 503）→ Portal 原样显示中文提示。
 - 仍未完成：全局熔断/多实例共享速率（当前是按会员与课程的成本守卫，不是全局限流）、被拒请求的可观测计数（健康检查只报告成功入队的任务）。
 
@@ -91,9 +91,9 @@
 - 导入只写 `status='draft'`，`reviewed_by`/`reviewed_at` 始终为空：审核人身份只能由已认证的 Platform Core 会话在审批时写入，导入 JSON 里没有任何审核字段（契约 `additionalProperties:false` 已封死）。
 - 内容包校验使用数据库里的已发布题目成员表，而不是载荷里声明的版本；未知/过期 `question_version_id`、缺来源/路径/摘要、越界集合一律 400。
 - 审批是「谁审核、何时审核」的唯一来源，同时写入 `quizcraft_learning_content_reviews`（actor、action、note）。草稿之外的重复审批、非法状态迁移、并发双审（行锁 + `status='draft'` 条件更新）都返回 409，不会产生第二条审核记录。
-- 启用是显式动作：`activate`（默认 true，把课程目录指向该版本）与 `enable`（默认 false，真正对会员开放）分开。激活前要求内容所属题库版本仍是当前已发布版本，否则 409，避免目录指向被后续发布作废的内容包。
+- 启用是显式动作：`activate`（默认 true，把课程目录指向该版本）与 `enable`（默认 false，真正对会员开放）分开。`enable=true` 必须与 `activate=true` 同次完成（单独置 `enable=true` 返回 400）：否则课程会对会员开放却仍指向旧内容包。激活前要求内容所属题库版本仍是当前已发布版本，否则 409，避免目录指向被后续发布作废的内容包。
 - 退役同样要显式：仍在生效的内容必须先激活替代版本才能退役，否则 409；退役后 `status='retired'`，会员侧读取因不再满足 `status='approved'` 而自然失效。
-- 同一课程重复导入同一内容包（同 `content_sha256`）返回既有草稿而不是第二条记录，响应与幂等记录都指向真正存下的版本。
+- 同一课程重复导入同一内容包（同 `content_sha256`）**只在既有版本仍是草稿时**返回既有草稿而不是第二条记录（响应与幂等记录都指向真正存下的版本）；已审核或已退役的同包返回 409 `learning_content_conflict`，因为题库内的内容摘要唯一，且评审过的版本不会退回草稿。
 - 仍未完成：真实人工审核（当前无人使用该入口）、内容/语义评测、Console 界面（本阶段是服务调用方接口，不做浏览器入口）、全局熔断与多实例共享速率（按会员每课程的手动成本守卫已接线，见「手动生成限流（已实现的边界）」）。
 
 ## 到期自动调度（已实现的边界）

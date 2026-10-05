@@ -105,7 +105,10 @@ func ReadLearningFeedbackHealth(ctx context.Context, query learningQuerier, now 
 	if err := query.QueryRow(ctx, `SELECT count(*) FROM quizcraft_learning_catalogs WHERE enabled`).Scan(&health.EnabledCourses); err != nil {
 		return LearningFeedbackHealth{}, err
 	}
-	if err := query.QueryRow(ctx, `SELECT count(*) FROM quizcraft_learning_report_preferences WHERE enabled AND external_analysis_consent`).Scan(&health.ConsentedCourses); err != nil {
+	// Same gate as every queue and evidence read: consent from an older
+	// generation is not consent, so it must not raise the "consented but no
+	// enabled course" alert.
+	if err := query.QueryRow(ctx, `SELECT count(*) FROM quizcraft_learning_report_preferences WHERE enabled AND external_analysis_consent AND consent_version=$1`, learningConsentVersion).Scan(&health.ConsentedCourses); err != nil {
 		return LearningFeedbackHealth{}, err
 	}
 	return health, nil

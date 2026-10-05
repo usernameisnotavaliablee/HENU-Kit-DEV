@@ -446,3 +446,14 @@
 - 补齐运维面缺口：`.env.henukit.example` 此前只列了 `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG`，而 compose 实际还传 `V2_READS` 与 `LEARNING_REPORTS` 两个**构建期**浏览器开关；现在两者都进示例文件，并写明「构建期生效、运行时改 .env 无效、与网关服务端开关成对开启」。
 - 验证：新测试 3/3 通过；**并证明它会咬人** —— 把示例文件浏览器开关改成 1 → `fail 1`（`/^NEXT_PUBLIC_..._LEARNING_REPORTS=0$/m` 不匹配）；把 `henukit-release-images.sh` 里塞一行学习开关 `=1` → `fail 1`（`release images must stay dark for PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS`）；两处恢复后 3/3 通过。治理测试仍 14 pass / 4 fail（4 个为本机无 Docker 的 ENOENT）；两套 compose 与 workflow 的 YAML 校验通过。
 - 结论：`#166` 需要人做的产品决定（是否烘焙浏览器开关、是否开成员入口）不变，但「默认暗」这条工程约束现在有单一、可执行、会在切流时变红的守护。
+
+### 43 — Spec 轴评审发现整改（健康读口径、重复导入、标签与自动任务计数）
+
+- 背景：Standards 轴整改后重跑了**收窄范围的 Spec 轴**只读评审（子代理，范围=Go 手写代码，明确排除生成物与文档噪声）。5 条发现全部核实为真，逐条处置：
+  1. **健康读把旧代同意算成「已同意」**（partial）：`ConsentedCourses` 少了 `consent_version=当前`，而每条入队/证据路径都要求当代同意。→ 已加同一条件（`learning_health.go`），并新增测试 `TestLearningFeedbackHealthIgnoresStaleConsentGeneration`：把偏好改成旧代同意后计数必须为 0、且不能触发「已同意却无启用课程」告警；再用**文档化的两步续期**（先退出同意、再重新开启）恢复后计数回到 1。顺带发现并复用了一个既有护栏：旧代同意不允许原地续期，服务端明确要求「explicitly renew outdated consent」。
+  2. **`enable=true, activate=false` 的 400 未在规格里声明**（scope creep 申诉）：代码里的安全规则是对的（否则课程对会员开放却仍指向旧内容包），改的是规格 —— 现在明确写「`enable=true` 必须与 `activate=true` 同次完成」。
+  3. **重复导入同包会返回已审核/已退役版本**（矛盾）：`learningContentVersionByDigest` 原本不筛状态，于是「返回既有草稿」在已审核/已退役时变成 201 指着一个非草稿行，且已退役包永远无法重新导入（题库内摘要唯一，插不进第二行）。→ 只有 `status='draft'` 才复用；已审核/已退役返回 409 `learning_content_conflict`（yaml 早已为导入路径声明 409，无需改契约）。新增测试 `TestWorkshopLearningContentImportRefusesReviewedPackage` 覆盖「已审核同包 409」「激活替代版本并退役后同包 409」「被拒导入不移动会员可见版本、也不落第二行」。
+  4. **「最后一次发布报告时间」名不副实**（矛盾）：查询是 `max(created_at)` 全状态，`stale`（曾发布但已过期）与 `insufficient_evidence` 都算。→ 保留「有一次真实产出」的语义，但把 CLI 文案改成 `latest report record`、规格行同步为「最新报告记录时间」并列出三种状态，不再谎称「成功发布」。
+  5. **计划任务消耗手动预算**（矛盾，且是我自己 op 40 的说法不准）：守卫只拒绝 `manual` 请求，但计数含 `automatic` 任务。→ 判定为**有意**语义（守卫限制的是模型工作量，不是点击次数）并写进规格：计划任务请求永不被拒、其任务计入窗口工作量（每个到期周期至多 1 个）。op 40 HANDOFF 里「计划任务永不受限」的说法不属于「请求被拒」这一层，本次更正为精确表述；既有测试已固定这一行为（automatic 队列后、新输入的 manual 请求必须被拒）。
+- 验证：Core 全量 `-race`（新库两遍迁移）全绿：`ok . 1.684s / tests 13.549s / cmd/server 1.187s / cmd/learninghealth 1.189s`。**两个新测试都证明了会咬人**：把健康读的 `consent_version` 条件去掉 → `TestLearningFeedbackHealthIgnoresStaleConsentGeneration` 失败（`stale consent counted as live`，`ConsentedCourses:1`）；把「只复用草稿」改回恒假 → `TestWorkshopLearningContentImportRefusesReviewedPackage` 失败（`re-import of an approved package = 201`）。两处均已恢复，`gofmt` 干净。
+- Standards/Public-ready Copy：无新增用户可见文案（429 文案沿用 op 40 已列入待复核清单的那句）。

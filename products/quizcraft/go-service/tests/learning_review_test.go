@@ -317,3 +317,58 @@ func TestWorkshopLearningContentReviewConcurrentApprovalApprovesOnce(t *testing.
 		t.Fatalf("concurrent approval audit rows = %d %v", reviews, err)
 	}
 }
+
+// TestWorkshopLearningContentImportRefusesReviewedPackage pins the honest answer
+// for re-importing a package the bank already reviewed. Only an existing draft is
+// "the same import": an approved or retired version is a conflict, because the
+// bank's content digest is unique and a reviewed version can never become a draft
+// again. Silently returning a reviewed row as if it were the requested draft would
+// also hide that a retired package needs a genuinely different package to return.
+func TestWorkshopLearningContentImportRefusesReviewedPackage(t *testing.T) {
+	ctx := context.Background()
+	fixture := newLearningReviewTest(t, "learning-review-reimport")
+	collection := fixture.collection()
+	pack := learningReviewPackage(t, fixture.pool, fixture.bankID, "review-reimport", 2, false)
+
+	createStatus, createBody := requestJSON(t, http.MethodPost, collection, fixture.headers("write", "learning-reimport-import-001"), json.RawMessage(pack))
+	if createStatus != http.StatusCreated {
+		t.Fatalf("import = %d: %s", createStatus, createBody)
+	}
+	contentID := uuid.MustParse(operationResourceID(t, createBody))
+	approveURL := collection + "/" + contentID.String() + "/approve"
+	if status, body := requestJSON(t, http.MethodPost, approveURL, fixture.headers("publish", "learning-reimport-approve-001"), map[string]any{"note": "审核通过并激活", "activate": true, "enable": true}); status != http.StatusOK {
+		t.Fatalf("approve = %d: %s", status, body)
+	}
+	if status, body := requestJSON(t, http.MethodPost, collection, fixture.headers("write", "learning-reimport-import-002"), json.RawMessage(pack)); status != http.StatusConflict || !bytes.Contains(body, []byte("learning_content_conflict")) {
+		t.Fatalf("re-import of an approved package = %d %s", status, body)
+	}
+
+	// Retiring the active content needs an activated replacement first.
+	replacement := learningReviewPackage(t, fixture.pool, fixture.bankID, "review-reimport-next", 2, false)
+	nextStatus, nextBody := requestJSON(t, http.MethodPost, collection, fixture.headers("write", "learning-reimport-import-003"), json.RawMessage(replacement))
+	if nextStatus != http.StatusCreated {
+		t.Fatalf("import replacement = %d: %s", nextStatus, nextBody)
+	}
+	nextID := uuid.MustParse(operationResourceID(t, nextBody))
+	if status, body := requestJSON(t, http.MethodPost, collection+"/"+nextID.String()+"/approve", fixture.headers("publish", "learning-reimport-approve-002"), map[string]any{"note": "替换旧内容", "activate": true, "enable": true}); status != http.StatusOK {
+		t.Fatalf("activate replacement = %d: %s", status, body)
+	}
+	if status, body := requestJSON(t, http.MethodPost, collection+"/"+contentID.String()+"/retire", fixture.headers("publish", "learning-reimport-retire-001"), map[string]any{"note": "已被替换"}); status != http.StatusOK {
+		t.Fatalf("retire reviewed content = %d: %s", status, body)
+	}
+	if status, body := requestJSON(t, http.MethodPost, collection, fixture.headers("write", "learning-reimport-import-004"), json.RawMessage(pack)); status != http.StatusConflict || !bytes.Contains(body, []byte("learning_content_conflict")) {
+		t.Fatalf("re-import of a retired package = %d %s", status, body)
+	}
+
+	// The refused imports never moved what members read.
+	snapshot, err := fixture.service.BuildLearningEvidence(ctx, fixture.owner, fixture.bankID, time.Now())
+	if err != nil || snapshot.ContentVersionID != nextID {
+		t.Fatalf("refused imports moved the member view: %s %v", snapshot.ContentVersionID, err)
+	}
+	_, listBody := requestJSON(t, http.MethodGet, collection, fixture.headers("read", ""), nil)
+	digest := learningReviewVersionByID(t, decodeLearningReviewVersions(t, listBody), contentID).ContentSHA256
+	var rows int
+	if err := fixture.pool.QueryRow(ctx, `SELECT count(*) FROM quizcraft_learning_content_versions WHERE bank_id=$1 AND content_sha256=$2`, fixture.bankID, digest).Scan(&rows); err != nil || rows != 1 {
+		t.Fatalf("refused imports stored a second row: %d %v", rows, err)
+	}
+}

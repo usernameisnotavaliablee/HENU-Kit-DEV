@@ -143,6 +143,13 @@ func ImportLearningContentDraft(ctx context.Context, query learningQuerier, bank
 	// would poison the surrounding Workshop idempotency transaction.
 	existing, err := learningContentVersionByDigest(ctx, query, bankID, digest)
 	if err == nil {
+		// Only a draft is the same import. An approved or retired package cannot
+		// become a draft again, and the bank's digest is unique, so pretending a
+		// reviewed version is the requested draft (or trying to insert a second
+		// row with the same digest) would both be dishonest.
+		if existing.Status != "draft" {
+			return LearningContentVersionInfo{}, fmt.Errorf("%w: this content package is already %s for the bank", ErrLearningContentConflict, existing.Status)
+		}
 		return existing, nil
 	}
 	if !errors.Is(err, ErrLearningContentMissing) {

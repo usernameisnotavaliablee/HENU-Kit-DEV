@@ -96,9 +96,9 @@ func printHealth(health quizcraft.LearningFeedbackHealth, alerts []string) {
 	fmt.Printf("failures in last 24h: %s\n", formatCounts(health.Failures24h))
 	fmt.Printf("reports by status: %s\n", formatCounts(health.ReportsByStatus))
 	if health.LatestReportAt != nil {
-		fmt.Printf("latest published report: %s\n", health.LatestReportAt.UTC().Format(time.RFC3339))
+		fmt.Printf("latest report record: %s\n", health.LatestReportAt.UTC().Format(time.RFC3339))
 	} else {
-		fmt.Println("latest published report: none")
+		fmt.Println("latest report record: none")
 	}
 	if len(alerts) == 0 {
 		fmt.Println("alerts: none")
