@@ -574,3 +574,83 @@ func TestLearningReportDependencyFailureNeverLeaksUpstreamDetail(t *testing.T) {
 		t.Fatalf("upstream detail reached the browser: %s", response.Body.String())
 	}
 }
+
+// TestLearningReportWriteForwardsOnlyTheCoreReasonsItRenders locks the member
+// facing half of the Core error codes: the two rejections Portal can actually
+// explain travel with their own code and a message of their own, every other
+// rejection keeps the shared practice-command mapping, and nothing widens the
+// browser contract by accident.
+func TestLearningReportWriteForwardsOnlyTheCoreReasonsItRenders(t *testing.T) {
+	body := `{"enabled":true,"interval_days":7,"goal":"exam_review","chapter_ids":["ch01"],"external_analysis_consent":true}`
+	path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/preferences"
+	cases := []struct {
+		name        string
+		coreStatus  int
+		coreBody    string
+		wantStatus  int
+		wantCode    string
+		wantMessage string
+		refusedCode string
+	}{
+		{
+			name:        "outdated consent names the fix",
+			coreStatus:  http.StatusBadRequest,
+			coreBody:    `{"request_id":"req_core_preferences","error":{"code":"learning_consent_outdated","message":"the stored analysis consent is out of date; turn course feedback off, then on again"}}`,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "learning_consent_outdated",
+			wantMessage: "分析授权已过期，请先关闭学习报告，再重新开启",
+		},
+		{
+			name:        "membership gate keeps its own code",
+			coreStatus:  http.StatusForbidden,
+			coreBody:    `{"request_id":"req_core_preferences","error":{"code":"learning_entitlement_required","message":"course feedback requires an active membership"}}`,
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "learning_entitlement_required",
+			wantMessage: "学习报告需要有效的会员权益，请确认会员状态后再试",
+		},
+		{
+			name:        "an unrendered reason keeps the shared mapping",
+			coreStatus:  http.StatusConflict,
+			coreBody:    `{"request_id":"req_core_preferences","error":{"code":"learning_preferences_conflict","message":"preferences changed underneath"}}`,
+			wantStatus:  http.StatusConflict,
+			wantCode:    "practice_command_conflict",
+			wantMessage: "操作内容有更新，请刷新后重试",
+		},
+		{
+			name:        "an injected reason cannot reach the browser",
+			coreStatus:  http.StatusBadRequest,
+			coreBody:    `{"request_id":"req_core_preferences","error":{"code":"<img src=x onerror=alert(1)>"}}`,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "practice_command_invalid",
+			wantMessage: "请求内容不完整，请检查后重试",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(testCase.coreStatus)
+				_, _ = writer.Write([]byte(testCase.coreBody))
+			}))
+			defer core.Close()
+
+			handler := newLearningReportWriteHandler(t, core.URL, true)
+			recorder := httptest.NewRecorder()
+			handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodPut, path, body, "learning-report-idempotency-key"))
+			if recorder.Code != testCase.wantStatus {
+				t.Fatalf("write = %d, want %d: %s", recorder.Code, testCase.wantStatus, recorder.Body.String())
+			}
+			if !strings.Contains(recorder.Body.String(), `"error":"`+testCase.wantCode+`"`) {
+				t.Fatalf("code = %s, want %q", recorder.Body.String(), testCase.wantCode)
+			}
+			if !strings.Contains(recorder.Body.String(), testCase.wantMessage) {
+				t.Fatalf("message = %s, want %q", recorder.Body.String(), testCase.wantMessage)
+			}
+			// Core's own wording must never be relayed to a member verbatim: the
+			// browser message is shown as-is by Portal.
+			if strings.Contains(recorder.Body.String(), "the stored analysis consent") || strings.Contains(recorder.Body.String(), "requires an active membership") {
+				t.Fatalf("Core wording leaked to the browser: %s", recorder.Body.String())
+			}
+		})
+	}
+}

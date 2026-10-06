@@ -884,7 +884,9 @@ func TestQuizCraftLearningReportMemberChainAcrossARealCore(t *testing.T) {
 		status, body := jointCall(t, member, http.MethodPut, jointLearningPath(ids.bank, "/preferences"),
 			jointPreferencesBody(true, "follow_course", []string{}), revokedCookie, "joint-revoked-enable-0001")
 		checks.eq(t, "revoked enable status", status, http.StatusForbidden)
-		checks.eq(t, "revoked enable error", jointDecode(t, "revoked enable", body).Error, "practice_session_forbidden")
+		// Core's own reason reaches the member instead of the practice-flavoured
+		// fallback, which is the whole point of forwarding the code.
+		checks.eq(t, "revoked enable error", jointDecode(t, "revoked enable", body).Error, "learning_entitlement_required")
 		entitlement.assertClean(t)
 		checks.eq(t, "the Core checked the revoked member's lifetime", entitlement.checkedFor(ids.revokedUser), 1)
 

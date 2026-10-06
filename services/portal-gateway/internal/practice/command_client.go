@@ -52,6 +52,29 @@ type CommandResult struct {
 	AnonymousCookie *http.Cookie
 }
 
+// CommandRejection is a Core rejection that still names its reason. The status
+// sentinels stay the classification every caller already switches on (Unwrap
+// keeps errors.Is working), while Code carries Core's own machine-readable code
+// so a member-facing surface can say what to do next instead of showing one
+// generic failure for every rejection.
+type CommandRejection struct {
+	Sentinel error
+	Code     string
+}
+
+func (r *CommandRejection) Error() string { return r.Sentinel.Error() }
+
+func (r *CommandRejection) Unwrap() error { return r.Sentinel }
+
+// RejectedCode returns Core's error code when the rejection carried one.
+func RejectedCode(err error) string {
+	var rejection *CommandRejection
+	if errors.As(err, &rejection) {
+		return rejection.Code
+	}
+	return ""
+}
+
 // NewCommandClient creates the default-off write client. The caller is
 // responsible for not creating it until PORTAL_PRACTICE_COMMANDS_ENABLED=1.
 func NewCommandClient(baseURL, clientID, clientSecret, keyID string) (*CommandClient, error) {
@@ -156,17 +179,17 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 	switch response.StatusCode {
 	case expectedStatus:
 	case http.StatusBadRequest:
-		return CommandResult{}, ErrPracticeCommandBadRequest
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandBadRequest)
 	case http.StatusUnauthorized:
-		return CommandResult{}, ErrPracticeCommandUnauthorized
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandUnauthorized)
 	case http.StatusForbidden:
-		return CommandResult{}, ErrPracticeCommandForbidden
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandForbidden)
 	case http.StatusNotFound:
-		return CommandResult{}, ErrPracticeCommandNotFound
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandNotFound)
 	case http.StatusConflict:
-		return CommandResult{}, ErrPracticeCommandConflict
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandConflict)
 	case http.StatusTooManyRequests:
-		return CommandResult{}, ErrPracticeCommandRateLimited
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandRateLimited)
 	default:
 		if !containsStatus(extraStatuses, response.StatusCode) {
 			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
@@ -182,6 +205,52 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 		return CommandResult{}, ErrPracticeCommandInvalid
 	}
 	return CommandResult{Raw: rawResponse, AnonymousCookie: cookie}, nil
+}
+
+// coreRejection keeps the status sentinel and, when Core named a reason, that
+// reason. The rejection body is always read to the end: besides carrying the
+// code it has to be drained or the keep-alive connection is wasted.
+func coreRejection(response *http.Response, sentinel error) error {
+	code := coreRejectionCode(response.Body)
+	if code == "" {
+		return sentinel
+	}
+	return &CommandRejection{Sentinel: sentinel, Code: code}
+}
+
+// coreRejectionCode reads Core's error envelope and returns only a code that
+// matches the documented machine shape. An upstream body must never be able to
+// push arbitrary text into the browser contract.
+func coreRejectionCode(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, 64<<10))
+	if err != nil {
+		return ""
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(raw, &envelope) != nil {
+		return ""
+	}
+	code := strings.TrimSpace(envelope.Error.Code)
+	if !validCoreErrorCode(code) {
+		return ""
+	}
+	return code
+}
+
+func validCoreErrorCode(value string) bool {
+	if len(value) < 3 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidIdempotencyKey is shared by Gateway's public boundary and its Core

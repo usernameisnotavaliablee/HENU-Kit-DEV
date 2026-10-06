@@ -991,6 +991,20 @@ func (h *Handler) practiceCommand(w http.ResponseWriter, r *http.Request, succes
 }
 
 func (h *Handler) writePracticeCommandFailure(w http.ResponseWriter, r *http.Request, err error) {
+	// Core names the rejections a member can do something about. The status-only
+	// mapping below cannot express those, and one generic message for every
+	// rejection is exactly what leaves a member stuck, so the code is forwarded
+	// for the two cases Portal renders. Codes it does not render keep the shared
+	// mapping, which is also what keeps this from widening the browser contract
+	// for every practice command.
+	switch practice.RejectedCode(err) {
+	case "learning_consent_outdated":
+		writeError(w, r, http.StatusBadRequest, "learning_consent_outdated", "分析授权已过期，请先关闭学习报告，再重新开启")
+		return
+	case "learning_entitlement_required":
+		writeError(w, r, http.StatusForbidden, "learning_entitlement_required", "学习报告需要有效的会员权益，请确认会员状态后再试")
+		return
+	}
 	switch {
 	case errors.Is(err, practice.ErrPracticeCommandBadRequest):
 		writeJSON(w, http.StatusBadRequest, contract.ErrorEnvelope{Error: "practice_command_invalid", Message: "请求内容不完整，请检查后重试", RequestID: requestIDOf(w, r)})

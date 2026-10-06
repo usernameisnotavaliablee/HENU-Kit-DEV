@@ -1,7 +1,11 @@
 package practice
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -106,5 +110,51 @@ func TestValidatePracticeSessionEnvelopeAcceptsEveryContractMode(t *testing.T) {
 	}
 	if err := validatePracticeSessionEnvelope([]byte(fmt.Sprintf(template, "invented"))); err == nil {
 		t.Fatal("unknown mode was accepted")
+	}
+}
+
+// TestCommandRejectionCarriesOnlyCoreCodesTheBrowserContractCanHold locks the
+// boundary between Core's error body and the browser contract: the status
+// sentinel must keep classifying every rejection, and only a code matching the
+// documented machine shape may travel further.
+func TestCommandRejectionCarriesOnlyCoreCodesTheBrowserContractCanHold(t *testing.T) {
+	const bankID = "33333333-3333-4333-8333-333333333333"
+	cases := []struct {
+		name     string
+		status   int
+		body     string
+		sentinel error
+		wantCode string
+	}{
+		{name: "named reason", status: http.StatusBadRequest, body: `{"request_id":"req_core","error":{"code":"learning_consent_outdated","message":"the stored analysis consent is out of date"}}`, sentinel: ErrPracticeCommandBadRequest, wantCode: "learning_consent_outdated"},
+		{name: "membership reason", status: http.StatusForbidden, body: `{"request_id":"req_core","error":{"code":"learning_entitlement_required","message":"course feedback requires an active membership"}}`, sentinel: ErrPracticeCommandForbidden, wantCode: "learning_entitlement_required"},
+		{name: "rate limited keeps its sentinel", status: http.StatusTooManyRequests, body: `{"request_id":"req_core","error":{"code":"rate_limited","message":"too many requests"}}`, sentinel: ErrPracticeCommandRateLimited, wantCode: "rate_limited"},
+		{name: "markup is refused", status: http.StatusBadRequest, body: `{"request_id":"req_core","error":{"code":"<script>alert(1)</script>"}}`, sentinel: ErrPracticeCommandBadRequest},
+		{name: "uppercase is refused", status: http.StatusBadRequest, body: `{"request_id":"req_core","error":{"code":"Learning_Consent_Outdated"}}`, sentinel: ErrPracticeCommandBadRequest},
+		{name: "leading digit is refused", status: http.StatusBadRequest, body: `{"request_id":"req_core","error":{"code":"1_leading_digit"}}`, sentinel: ErrPracticeCommandBadRequest},
+		{name: "overlong is refused", status: http.StatusBadRequest, body: `{"request_id":"req_core","error":{"code":"` + strings.Repeat("a", 65) + `"}}`, sentinel: ErrPracticeCommandBadRequest},
+		{name: "plain text body is refused", status: http.StatusConflict, body: `not json at all`, sentinel: ErrPracticeCommandConflict},
+		{name: "empty body is refused", status: http.StatusNotFound, body: ``, sentinel: ErrPracticeCommandNotFound},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(testCase.status)
+				_, _ = writer.Write([]byte(testCase.body))
+			}))
+			defer core.Close()
+			client, err := NewCommandClient(core.URL, "portal-gateway", strings.Repeat("s", 32), "portal-practice-command-key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.CreateFavoritesSession(t.Context(), bankID, "11111111-1111-4111-8111-111111111111", "req_portal_gateway_1", "favorites-session-key-0001", nil)
+			if !errors.Is(err, testCase.sentinel) {
+				t.Fatalf("sentinel = %v, want %v", err, testCase.sentinel)
+			}
+			if code := RejectedCode(err); code != testCase.wantCode {
+				t.Fatalf("forwarded code = %q, want %q", code, testCase.wantCode)
+			}
+		})
 	}
 }
