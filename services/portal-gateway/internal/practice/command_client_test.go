@@ -113,11 +113,11 @@ func TestValidatePracticeSessionEnvelopeAcceptsEveryContractMode(t *testing.T) {
 	}
 }
 
-// TestCommandRejectionCarriesOnlyCoreCodesTheBrowserContractCanHold locks the
+// TestCoreRejectionCarriesOnlyCoreCodesTheBrowserContractCanHold locks the
 // boundary between Core's error body and the browser contract: the status
 // sentinel must keep classifying every rejection, and only a code matching the
 // documented machine shape may travel further.
-func TestCommandRejectionCarriesOnlyCoreCodesTheBrowserContractCanHold(t *testing.T) {
+func TestCoreRejectionCarriesOnlyCoreCodesTheBrowserContractCanHold(t *testing.T) {
 	const bankID = "33333333-3333-4333-8333-333333333333"
 	cases := []struct {
 		name     string
