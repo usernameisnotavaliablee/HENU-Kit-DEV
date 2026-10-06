@@ -230,6 +230,15 @@ func jointFreshDatabase(t *testing.T, adminURL string) string {
 			t.Fatalf("psql %q failed: %v\n%s", statement, err, output)
 		}
 	}
+	t.Cleanup(func() {
+		// Leaving the scratch database behind breaks the Core integration tests
+		// that create their own isolated quizcraft_v2: they fail on "already
+		// exists" before they test anything. Registered first, so it runs after
+		// the Core process and the server are already gone.
+		if output, err := jointPSQL(t, adminURL, "-c", "DROP DATABASE IF EXISTS "+jointV2Database+" WITH (FORCE)"); err != nil {
+			t.Logf("dropping %s after the joint run failed: %v\n%s", jointV2Database, err, output)
+		}
+	})
 	t.Logf("joint run: recreated local database %s on %s", jointV2Database, parsed.Host)
 	return target.String()
 }

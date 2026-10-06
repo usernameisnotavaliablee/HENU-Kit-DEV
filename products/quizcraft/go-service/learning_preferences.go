@@ -18,6 +18,14 @@ const learningConsentVersion = "v1"
 
 var ErrLearningInvalidPreferences = errors.New("invalid learning report preferences")
 
+// ErrLearningConsentOutdated is the one invalid-preferences case the member can
+// act on: the stored consent belongs to an older generation, so Core refuses an
+// in-place renewal and requires turning course feedback off first. It wraps
+// ErrLearningInvalidPreferences so every existing classifier keeps working, and
+// carries its own identity so the member surface can say what to do instead of
+// showing a generic rejection.
+var ErrLearningConsentOutdated = fmt.Errorf("%w: explicitly renew outdated consent", ErrLearningInvalidPreferences)
+
 const learningPreferenceColumns = `bank_id,enabled,interval_days,goal,chapter_ids,external_analysis_consent,revision,next_due_at,updated_at,consent_version`
 
 type learningStoredPreferences struct {
@@ -111,7 +119,7 @@ func (s *Service) UpdateLearningReportPreferences(ctx context.Context, userID, b
 	consent, consentVersion := input.Enabled && input.ExternalAnalysisConsent, ""
 	if input.Enabled {
 		if old.Value.Enabled && old.ConsentVersion != learningConsentVersion {
-			return contract.LearningReportPreferences{}, fmt.Errorf("%w: explicitly renew outdated consent", ErrLearningInvalidPreferences)
+			return contract.LearningReportPreferences{}, ErrLearningConsentOutdated
 		}
 		if err := validateLearningEnabledScope(ctx, tx, bankID, chapters); err != nil {
 			return contract.LearningReportPreferences{}, err

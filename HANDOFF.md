@@ -527,3 +527,14 @@
   - `review-evidence`：要求 PR body 含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。逐轴评审在 HANDOFF 41/43/44 已做过并整改，但**整分支在当前 head 的双轴重跑没有做**，所以 body 里写的是 `pending` 而不是假 0。
 - 三轴：本轮不改产品代码（只新增 PR 与文档），Standards/Spec 由 `review-evidence` 门禁自身约束；Public-ready Copy: not applicable。
 - 下一步（需要人）：在 fork 上打开 Actions，或在有权限的上游开 PR；然后按 `review-evidence` 要求在 head SHA 上跑完整双轴评审。
+
+### 48 — 会员看得懂的「同意代次过期」：Core 给出独立错误码
+
+- 背景：HANDOFF 44 留下的两个会员可见缺口之一。Core 拒绝「同代次内静默续订」时用的是笼统的 `ErrLearningInvalidPreferences` → HTTP 400 `invalid_learning_request`，会员只会看到一句无法行动的失败，浏览器也没法给出「先关闭再开启」的指引。
+- 改动（Core）：新增哨兵 `ErrLearningConsentOutdated = fmt.Errorf("%w: explicitly renew outdated consent", ErrLearningInvalidPreferences)`——**包住**原哨兵，所以所有既有 `errors.Is(err, ErrLearningInvalidPreferences)` 分类器都不受影响（已由既有测试 `TestLearningReportPreferencesWriteIsValidatedAndIdempotent` 复跑证明），同时在 HTTP 层用 `errors.Is` 优先命中，返回 400 + 新码 `learning_consent_outdated`（其余入参非法仍是 `invalid_learning_request`）。契约无需改：`quizcraft.yaml` 的 `Error.code` 是自由字符串，仓库从未逐码登记，所以没有生成物 diff 与 oasdiff 影响。
+- 新增回归 `TestLearningReportPreferencesOutdatedConsentHasItsOwnCode`（`tests/learning_reports_write_test.go`）：普通非法入参必须保持笼统码 → 把库里 `consent_version` 改成旧代 → 原地续订必须 400 且带新码、且**不能推进已存 revision**（拒绝不能有副作用）→ 走文档化的两步（先关闭再开启）后成功、`consent_version` 回到 `v1`。
+- 变异证明：把 `writeLearningWriteError` 里新码分支删掉 → 该测试立刻红（`400 ... "code":"invalid_learning_request"`），恢复后逐字节相同（`cmp`）再复绿。
+- 顺带修掉本次验证暴露的一个真坑：op 46 的联合验证测试跑完会把临时库 `quizcraft_v2` 留在机器上，而 Core 有两个集成测试（`TestPracticeHTTPCatalogUsesPublishedQuizCraftV2Facts`、`TestBackupRestoreDrillRebuildsAnIsolatedDatabaseAndReportsEvidence`）会自己创建同名隔离库，于是下一次全模块跑就挂在 `database "quizcraft_v2" already exists (SQLSTATE 42P04)`——**不是**本轮改动导致的（先用空库复现确认）。已在联合测试里注册 `t.Cleanup` 把它自己建的库删掉（注册在最前 → 在 Core 进程/server 关闭之后执行），复跑后 `quizcraft_v2` 计数为 0。
+- 验证：`gofmt`/`go vet` 干净；`staticcheck@2026.1 ./...` 0 findings（日志 `.cache/ci-quizcraft/op48-static.log`）；新建库两遍迁移后 `go test -race -count=1 . ./tests ./cmd/server ./cmd/learninghealth` 全绿（`. 1.6s / tests 13.7s`）；网关模块 `gofmt`/`vet`/`go test -race ./...` 全绿（联合测试无 URL 时 SKIP），日志 `.cache/ci-quizcraft/op48-gateway.log`。
+- 三轴：Standards — 沿用既有哨兵 + `errors.Is` 分类模式，无新抽象；Spec — 已把「该拒绝必须可分辨」写进 `docs/development/quizcraft-learning-feedback-spec.md` 偏好与清除仓储一节；Public-ready Copy: not applicable（本轮只改服务端错误码，浏览器文案在下一步）。契约影响为 Minor：网关目前只读状态码、不读 Core 错误正文，所以此时加码不会破坏任何消费方；会员真正看到它需要下一步网关转发 + Portal 渲染。
+- 下一步（op 49/50）：网关 `internal/practice/command_client.go` 把 Core 的错误码随状态一起带回（白名单 + 适配器），Portal 依据 `learning_consent_outdated` 给出「先关闭再开启」的指引，并把 403 `learning_entitlement_required` 从通用失败里分出来。

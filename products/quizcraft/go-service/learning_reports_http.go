@@ -81,6 +81,11 @@ func (service *practiceHTTP) learningCommandOwner(writer http.ResponseWriter, re
 
 func (service *practiceHTTP) writeLearningWriteError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrLearningConsentOutdated):
+		// The member can fix this without support: turn course feedback off, then
+		// on again. It gets its own code so the browser can say exactly that
+		// instead of showing the generic rejection below.
+		writeError(writer, http.StatusBadRequest, "learning_consent_outdated", "the stored analysis consent is out of date; turn course feedback off, then on again")
 	case errors.Is(err, ErrLearningInvalidPreferences), errors.Is(err, ErrLearningInvalidJob):
 		writeError(writer, http.StatusBadRequest, "invalid_learning_request", "the course feedback request is invalid")
 	case errors.Is(err, ErrLearningReportNotFound):

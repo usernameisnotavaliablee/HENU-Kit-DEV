@@ -262,3 +262,74 @@ func publishLearningTestReport(t *testing.T, service *quizcraft.Service, owner, 
 		t.Fatal(err)
 	}
 }
+
+// TestLearningReportPreferencesOutdatedConsentHasItsOwnCode locks the one
+// invalid-preferences case a member can act on. An outdated consent generation
+// must be distinguishable from every other rejection, because the surface has to
+// tell the member to turn course feedback off and on again instead of showing a
+// generic failure; the ordinary invalid case must keep the generic code.
+func TestLearningReportPreferencesOutdatedConsentHasItsOwnCode(t *testing.T) {
+	ctx := context.Background()
+	pool, _, owner, bankID, versions := newLearningLeaseTest(t, "learning-write-outdated-consent")
+	allowedClient, _ := learningRunnerClient(t, func(int32) (bool, int) { return true, http.StatusOK })
+	server := newLearningWriteHandler(t, pool, allowedClient, versions, false)
+	path := learningReportPath("", bankID.String()) + "/preferences"
+
+	enable := []byte(`{"enabled":true,"external_analysis_consent":true,"interval_days":7,"goal":"follow_course","chapter_ids":[]}`)
+	first := newPortalPracticeCommandRequest(t, http.MethodPut, server.URL, path, enable, owner.String(), "learning-outdated-enable-0001")
+	if status, body, _ := sendPortalPracticeCommand(t, first); status != http.StatusOK {
+		t.Fatalf("initial enable = %d %s", status, body)
+	}
+
+	// An ordinary invalid request keeps the generic code and never borrows the
+	// actionable one.
+	invalid := newPortalPracticeCommandRequest(t, http.MethodPut, server.URL, path, []byte(`{"enabled":false,"external_analysis_consent":false,"interval_days":0,"goal":"follow_course","chapter_ids":[]}`), owner.String(), "learning-outdated-invalid-0001")
+	if status, body, _ := sendPortalPracticeCommand(t, invalid); status != http.StatusBadRequest || !bytes.Contains(body, []byte(`"code":"invalid_learning_request"`)) {
+		t.Fatalf("invalid interval = %d %s", status, body)
+	}
+
+	// The stored consent now belongs to an older generation.
+	if _, err := pool.Exec(ctx, `UPDATE quizcraft_learning_report_preferences SET consent_version='v0' WHERE user_id=$1 AND bank_id=$2`, owner, bankID); err != nil {
+		t.Fatal(err)
+	}
+	var before int64
+	if err := pool.QueryRow(ctx, `SELECT revision FROM quizcraft_learning_report_preferences WHERE user_id=$1 AND bank_id=$2`, owner, bankID).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+
+	renewInPlace := newPortalPracticeCommandRequest(t, http.MethodPut, server.URL, path, enable, owner.String(), "learning-outdated-renew-0001")
+	status, body, _ := sendPortalPracticeCommand(t, renewInPlace)
+	if status != http.StatusBadRequest || !bytes.Contains(body, []byte(`"code":"learning_consent_outdated"`)) {
+		t.Fatalf("in-place renewal must be refused with its own code: %d %s", status, body)
+	}
+	var after int64
+	if err := pool.QueryRow(ctx, `SELECT revision FROM quizcraft_learning_report_preferences WHERE user_id=$1 AND bank_id=$2`, owner, bankID).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("a refused renewal must not move the stored revision: %d -> %d", before, after)
+	}
+
+	// The documented two-step renewal is what the member is being told to do.
+	disable := newPortalPracticeCommandRequest(t, http.MethodPut, server.URL, path, learningPreferencesBody(false, false), owner.String(), "learning-outdated-off-0001")
+	if status, body, _ := sendPortalPracticeCommand(t, disable); status != http.StatusOK {
+		t.Fatalf("disable = %d %s", status, body)
+	}
+	reEnable := newPortalPracticeCommandRequest(t, http.MethodPut, server.URL, path, enable, owner.String(), "learning-outdated-on-0001")
+	reEnableStatus, reEnableBody, _ := sendPortalPracticeCommand(t, reEnable)
+	if reEnableStatus != http.StatusOK {
+		t.Fatalf("renewed enable = %d %s", reEnableStatus, reEnableBody)
+	}
+	var stored contract.LearningReportPreferences
+	decodeLearningEnvelope(t, reEnableBody, &stored)
+	if !stored.Enabled || !stored.ExternalAnalysisConsent {
+		t.Fatalf("renewed preferences = %+v", stored)
+	}
+	var consentVersion string
+	if err := pool.QueryRow(ctx, `SELECT consent_version FROM quizcraft_learning_report_preferences WHERE user_id=$1 AND bank_id=$2`, owner, bankID).Scan(&consentVersion); err != nil {
+		t.Fatal(err)
+	}
+	if consentVersion != "v1" {
+		t.Fatalf("renewed consent version = %q, want v1", consentVersion)
+	}
+}
