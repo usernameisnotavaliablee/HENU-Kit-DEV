@@ -654,3 +654,76 @@ func TestLearningReportWriteForwardsOnlyTheCoreReasonsItRenders(t *testing.T) {
 		})
 	}
 }
+
+// TestLearningReportReadDenialsReachTheMemberAsDenials locks the read half of the
+// same contract as the write path: Core denies the newest report and task
+// progress when the membership lapsed, and a member must be told that instead of
+// being told the feature is broken. Only a real dependency fault stays a 503.
+func TestLearningReportReadDenialsReachTheMemberAsDenials(t *testing.T) {
+	paths := map[string]string{
+		"latest report": learningReportsPath("/latest"),
+		"task progress": learningReportsPath("/tasks/" + learningReportTaskID),
+	}
+	cases := []struct {
+		name        string
+		coreStatus  int
+		coreBody    string
+		wantStatus  int
+		wantCode    string
+		wantMessage string
+	}{
+		{
+			name:        "membership denial keeps Core's code",
+			coreStatus:  http.StatusForbidden,
+			coreBody:    `{"request_id":"req_core_learning","error":{"code":"learning_entitlement_required","message":"course feedback requires an active membership"}}`,
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "learning_entitlement_required",
+			wantMessage: "学习报告需要有效的会员权益，请确认会员状态后再试",
+		},
+		{
+			name:        "a denial without a usable code still says why",
+			coreStatus:  http.StatusForbidden,
+			coreBody:    `{"request_id":"req_core_learning","error":{"code":"<script>x</script>"}}`,
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "learning_entitlement_required",
+			wantMessage: "学习报告需要有效的会员权益，请确认会员状态后再试",
+		},
+		{
+			name:        "a dependency fault is still not a denial",
+			coreStatus:  http.StatusInternalServerError,
+			coreBody:    `{"error":"boom"}`,
+			wantStatus:  http.StatusServiceUnavailable,
+			wantCode:    "practice learning reports are temporarily unavailable",
+			wantMessage: "学习报告暂时不可用，请稍后再试",
+		},
+	}
+	for pathName, path := range paths {
+		for _, testCase := range cases {
+			t.Run(pathName+": "+testCase.name, func(t *testing.T) {
+				platform := newLearningReportsPlatform(t, nil, http.StatusOK)
+				defer platform.Close()
+				core := newLearningReportsCore(t, nil, func(writer http.ResponseWriter, _ *http.Request) {
+					writer.Header().Set("Content-Type", "application/json")
+					writer.WriteHeader(testCase.coreStatus)
+					_, _ = writer.Write([]byte(testCase.coreBody))
+				})
+				defer core.Close()
+
+				handler := newLearningReportsHandler(t, platform.URL, core.URL, true, true)
+				response := getLearningReport(t, handler, sessionCookie(t, handler, learningReportUserID), path)
+				if response.Code != testCase.wantStatus {
+					t.Fatalf("read = %d, want %d: %s", response.Code, testCase.wantStatus, response.Body.String())
+				}
+				if !strings.Contains(response.Body.String(), `"error":"`+testCase.wantCode+`"`) {
+					t.Fatalf("code = %s, want %q", response.Body.String(), testCase.wantCode)
+				}
+				if !strings.Contains(response.Body.String(), testCase.wantMessage) {
+					t.Fatalf("message = %s, want %q", response.Body.String(), testCase.wantMessage)
+				}
+				if strings.Contains(response.Body.String(), "requires an active membership") || strings.Contains(response.Body.String(), "<script>") {
+					t.Fatalf("Core wording leaked to the browser: %s", response.Body.String())
+				}
+			})
+		}
+	}
+}

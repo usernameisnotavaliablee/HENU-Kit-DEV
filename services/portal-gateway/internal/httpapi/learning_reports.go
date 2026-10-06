@@ -65,6 +65,17 @@ func (h *Handler) learningReportRead(w http.ResponseWriter, r *http.Request, rea
 			writeError(w, r, http.StatusNotFound, "learning report not found", "暂时没有可查看的学习报告")
 			return
 		}
+		if errors.Is(err, practice.ErrPortalReadForbidden) {
+			// Core denies these reads when the membership lapsed. Saying so is the
+			// difference between a member who can renew and a member who is told
+			// the feature is broken.
+			code := practice.RejectedCode(err)
+			if code == "" {
+				code = "learning_entitlement_required"
+			}
+			writeError(w, r, http.StatusForbidden, code, "学习报告需要有效的会员权益，请确认会员状态后再试")
+			return
+		}
 		// The dependency error stays in the log-only path: the browser message is
 		// shown to members verbatim by Portal, so it must never carry transport or
 		// upstream detail. The request_id in the envelope is enough to correlate.

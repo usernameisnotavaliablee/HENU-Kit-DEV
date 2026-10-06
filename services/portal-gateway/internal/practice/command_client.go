@@ -52,23 +52,23 @@ type CommandResult struct {
 	AnonymousCookie *http.Cookie
 }
 
-// CommandRejection is a Core rejection that still names its reason. The status
-// sentinels stay the classification every caller already switches on (Unwrap
-// keeps errors.Is working), while Code carries Core's own machine-readable code
-// so a member-facing surface can say what to do next instead of showing one
-// generic failure for every rejection.
-type CommandRejection struct {
+// CoreRejection is a Core rejection that still names its reason. Both the command
+// and the read boundary use it: the status sentinels stay the classification
+// every caller already switches on (Unwrap keeps errors.Is working), while Code
+// carries Core's own machine-readable code so a member-facing surface can say
+// what to do next instead of showing one generic failure for every rejection.
+type CoreRejection struct {
 	Sentinel error
 	Code     string
 }
 
-func (r *CommandRejection) Error() string { return r.Sentinel.Error() }
+func (r *CoreRejection) Error() string { return r.Sentinel.Error() }
 
-func (r *CommandRejection) Unwrap() error { return r.Sentinel }
+func (r *CoreRejection) Unwrap() error { return r.Sentinel }
 
 // RejectedCode returns Core's error code when the rejection carried one.
 func RejectedCode(err error) string {
-	var rejection *CommandRejection
+	var rejection *CoreRejection
 	if errors.As(err, &rejection) {
 		return rejection.Code
 	}
@@ -215,7 +215,7 @@ func coreRejection(response *http.Response, sentinel error) error {
 	if code == "" {
 		return sentinel
 	}
-	return &CommandRejection{Sentinel: sentinel, Code: code}
+	return &CoreRejection{Sentinel: sentinel, Code: code}
 }
 
 // coreRejectionCode reads Core's error envelope and returns only a code that

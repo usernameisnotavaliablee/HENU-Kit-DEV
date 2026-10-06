@@ -549,3 +549,15 @@
 - 验证：网关 `gofmt` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` 全绿（日志 `.cache/ci-quizcraft/op49-gateway.log`）；联合验证真实 Core 通过并**自行清掉**临时库（`quizcraft_v2` 计数 0）。
 - 三轴：Standards — 复用既有哨兵 + `errors.Is` 分类，只多一个错误类型与两个纯函数；Spec — 已把「会员能自行处理的两类拒绝必须带 Core 自己的码穿过网关，且只转达会渲染的码」写进 `docs/development/quizcraft-learning-feedback-spec.md`；Public-ready Copy — **新增两条会员可见中文文案**（先关闭再开启 / 需要会员权益），Portal 直接用网关 `message` 渲染，所以这两句要在转 Ready 前过人工文案门禁。
 - 下一步（op 50，证据已在手）：读路径同一类缺陷还没修。Core 的 `portalLatestLearningReport` / `portalLearningReportTask` 也调 `requireLearningLifetime` → 403 `learning_entitlement_required`，而网关读客户端 `internal/practice/learning_reports.go:learningReportRead` 把非 200/404 一律转成 `ErrStatsUnavailable` → 会员看到的是「学习报告暂时不可用，请稍后再试」（谎报依赖故障）。注意 `portalLearningReportPreferences` **不**要求 lifetime（联合验证里撤权会员读设置仍是 200），所以只该改 latest/task 两条读路径与读客户端的 403 分类。之后 op 51 是 Portal 依据这两个码渲染会员区块与续期指引。
+
+### 50 — 读路径也把「会员权益不足」说成会员状态，而不是依赖故障
+
+- 背景（op 49 留下的证据）：Core 的 `portalLatestLearningReport` / `portalLearningReportTask` 会先做实时 lifetime 校验，撤权会员拿到 403 `learning_entitlement_required`；但网关读客户端 `internal/practice/learning_reports.go:learningReportRead` 把非 200/404 一律转成 `ErrStatsUnavailable` → 会员看到的是「学习报告暂时不可用，请稍后再试」，等于把一个**会员状态**谎报成**依赖故障**，人只会去等或来报障。
+- 改动一：`CommandRejection` 更名 `CoreRejection`（同一提交引入、无外部使用者），因为它现在同时服务于命令边界与读边界，名字不该再骗人。
+- 改动二（读客户端）：新增 `case http.StatusForbidden` → `coreRejection(resp, ErrPortalReadForbidden)`——复用既有的读哨兵，不新造一个；正文读完并关闭连接，Core 的码只在形状合法时才留下。
+- 改动三（网关读处理器）：`learningReportRead` 增加 `errors.Is(err, practice.ErrPortalReadForbidden)` 分支 → 403 + Core 的码（没有可用码时回落 `learning_entitlement_required`）+ 会员文案；其余错误仍是 503。故意**不**把任意 403 都当会员问题：只有 Core 明确拒绝时才这么说。
+- 测试：读客户端 4 例表（有码 / 码不可用 / 空正文 / 500 必须仍是不可用），网关读 6 例（最新报告与任务进度两条路径 × 三例，含「依赖故障仍是 503」与「Core 英文原文不外泄」）。变异证明：删掉 403 分支 → 会员状态立刻退化成 `QuizCraft statistics are unavailable`，`cmp` 确认恢复后逐字节相同。
+- 联合验证（真实 Core）+4 条断言：撤权会员读 `/latest` 与 `/tasks/{id}` 都得到 403 `learning_entitlement_required`，而 `/preferences` 仍 200（Core 的偏好读本就不要求 lifetime）。任务 id 故意用一个不存在的 UUID：Core 先查会员再查任务，这条断言顺带固定了这个顺序。共 **54 assertions passed**，四条子路径全 PASS。
+- 验证：网关 `gofmt` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` 全绿（日志 `.cache/ci-quizcraft/op50-gateway.log`）；联合验证自建库已自行清理（`quizcraft_v2` 计数 0）。
+- 三轴：Standards — 复用既有读哨兵与 `errors.Is` 分类，改动集中在两个既有分支里；Spec — 已把「只有最新报告与任务进度受实时门禁，读客户端必须把 403 分类为拒绝」写进 `docs/development/quizcraft-learning-feedback-spec.md`；Public-ready Copy — 没有新增文案（沿用 op 49 的会员权益句），op 49 待审的文案项不变。
+- 下一步（op 51）：Portal 依据这两个码渲染——403 → 会员区块（「需要有效会员权益」+ 账户中心入口），400 `learning_consent_outdated` → 「先关闭再开启」的两步指引；补 e2e 覆盖这两条拒绝路径并重出桌面/移动端截图。

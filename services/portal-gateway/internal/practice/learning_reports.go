@@ -127,6 +127,13 @@ func (c *Client) learningReportRead(ctx context.Context, path, actorUserID, requ
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		_ = resp.Body.Close()
 		return nil, ErrLearningReportNotFound
+	case http.StatusForbidden:
+		// Core gates the newest report and task progress on live membership, so
+		// this is a member state, not a dependency outage. Report it as such and
+		// keep Core's own code when it named one.
+		err := coreRejection(resp, ErrPortalReadForbidden)
+		_ = resp.Body.Close()
+		return nil, err
 	default:
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		_ = resp.Body.Close()

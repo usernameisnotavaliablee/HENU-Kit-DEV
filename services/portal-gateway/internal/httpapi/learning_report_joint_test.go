@@ -894,6 +894,18 @@ func TestQuizCraftLearningReportMemberChainAcrossARealCore(t *testing.T) {
 		status, body = jointCall(t, member, http.MethodGet, jointLearningPath(ids.bank, "/preferences"), "", revokedCookie, "")
 		checks.eq(t, "revoked member may still read settings", status, http.StatusOK)
 		checks.eq(t, "refused enable stored nothing", jointDecode(t, "revoked read", body).data(t, "revoked read")["enabled"], false)
+
+		// The newest report and task progress are lifetime-gated inside Core, so a
+		// revoked member must be told the membership lapsed rather than that the
+		// feature is temporarily broken. Preferences stay readable on purpose.
+		status, body = jointCall(t, member, http.MethodGet, jointLearningPath(ids.bank, "/latest"), "", revokedCookie, "")
+		checks.eq(t, "revoked member's newest report read", status, http.StatusForbidden)
+		checks.eq(t, "revoked newest report read error", jointDecode(t, "revoked latest", body).Error, "learning_entitlement_required")
+		// The task id never has to exist: Core checks the membership before it
+		// looks the task up, which is exactly the ordering this assertion relies on.
+		status, body = jointCall(t, member, http.MethodGet, jointLearningPath(ids.bank, "/tasks/"+jointUUID(t)), "", revokedCookie, "")
+		checks.eq(t, "revoked member's task read", status, http.StatusForbidden)
+		checks.eq(t, "revoked task read error", jointDecode(t, "revoked task", body).Error, "learning_entitlement_required")
 	})
 
 	t.Run("the manual generation guard refuses only new model work", func(t *testing.T) {

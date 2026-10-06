@@ -135,3 +135,49 @@ func TestLearningReportReadsRejectUnmodelledOrForgedCoreShapes(t *testing.T) {
 		})
 	}
 }
+
+// TestLearningReportReadClassifiesCoreDenialAsForbidden locks the read boundary:
+// Core gates the newest report and task progress on live membership, so its 403
+// must not be flattened into "the dependency is down". A member who can renew
+// needs a denial, and only a code matching the machine shape may travel further.
+func TestLearningReportReadClassifiesCoreDenialAsForbidden(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		wantForbid bool
+		wantCode   string
+	}{
+		{name: "membership denial", status: http.StatusForbidden, body: `{"request_id":"req_core","error":{"code":"learning_entitlement_required","message":"course feedback requires an active membership"}}`, wantForbid: true, wantCode: "learning_entitlement_required"},
+		{name: "denial without a usable code", status: http.StatusForbidden, body: `{"request_id":"req_core","error":{"code":"<b>denied</b>"}}`, wantForbid: true},
+		{name: "denial with an empty body", status: http.StatusForbidden, body: ``, wantForbid: true},
+		{name: "dependency fault is not a denial", status: http.StatusInternalServerError, body: `{"error":"boom"}`},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(testCase.status)
+				_, _ = writer.Write([]byte(testCase.body))
+			}))
+			defer server.Close()
+			client, err := NewClient(server.URL, testCatalogClientID, testCatalogSecret, testCatalogKeyID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.LatestLearningReport(context.Background(), testStatsUserID, "req_learning_read_1", testLearningReportBankID)
+			if got := errors.Is(err, ErrPortalReadForbidden); got != testCase.wantForbid {
+				t.Fatalf("forbidden = %t, want %t (%v)", got, testCase.wantForbid, err)
+			}
+			if testCase.wantForbid {
+				if code := RejectedCode(err); code != testCase.wantCode {
+					t.Fatalf("forwarded code = %q, want %q", code, testCase.wantCode)
+				}
+				return
+			}
+			if !errors.Is(err, ErrStatsUnavailable) {
+				t.Fatalf("dependency fault must stay unavailable: %v", err)
+			}
+		})
+	}
+}
