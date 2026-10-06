@@ -512,3 +512,18 @@
 - 结论：会员学习报告链路现在有一条**跨真实服务进程**的可执行证据。Core 在四条路径上的行为与规格/契约声明完全一致，没有发现产品缺陷（原句：`No product bug found`）。这把 `#166` 切流决定从「两侧各自测过」推进到「两侧一起跑过」。
 - 三轴：Standards（测试自持 fixture、显式破坏性开关、断言经真实 HTTP 契约、离线默认 SKIP）；Spec（覆盖 LF-01…LF-06 的会员可见链路与失败/权限/限流路径）；Public-ready Copy: not applicable（无用户可见文案）。
 - 未覆盖（仍待外部输入）：真实模型 provider 冒烟、真实账号全链路、人工内容/语义/文案门禁。
+
+### 47 — 首个 Draft PR（#1）与「真实 CI 在本仓跑不起来」的根因
+
+- 背景：分支从来没有 PR，而 `.github/workflows/*` 的 push 触发器只有 `main`，所以这个功能分支一次 CI 都没跑过。本轮把这条补上：开了一个 Draft PR 让路径过滤的作业真正触发。
+- 结果（PR #1，Draft，`codex/learning-feedback → main`，168 文件）：https://github.com/usernameisnotavaliablee/HENU-Kit-DEV/pull/1
+- **但真实 CI 在本仓根本跑不起来，根因已定位**：
+  - 本仓是 **fork**（`fork=true`，上游 `jry21223/HENU-Kit-DEV`）。GitHub 对 fork 默认关闭 Actions，表现为：`/actions/workflows` 的 `total_count=0`（工作流**一个都没注册**）、`gh workflow list --all` 空、`gh run list` 从建仓至今 0 条、PR 开出来 0 checks。
+  - `gh workflow run quizcraft-go.yml --ref codex/learning-feedback` → `HTTP 404: workflow quizcraft-go.yml not found on the default branch`；已排除令牌权限问题（token 具备 `workflow` scope）与文件缺失问题（`/contents/.github/workflows?ref=main` 列出全部 14 个文件，main 的 `quizcraft-go.yml` 确实带 `workflow_dispatch`）。
+  - 因此 `portal-gateway` / `portal-api` / `deploy-henukit` 这些**只有 PR/push-main 触发**的作业，在当前环境下没有任何办法执行；`quizcraft-go` 也不能靠 dispatch 绕过。
+  - 人工可解的两条路：(a) 在 fork 的 Actions 页面点「I understand my workflows, go ahead and enable them」——PR 保持开着，之后任何一次 push 的 `synchronize` 就会真正触发四个作业；(b) 把 PR 开到上游 `jry21223/HENU-Kit-DEV`（需要那边的权限）。
+- PR body 按模板写全了背景/目标/范围/明确不做/影响模块/契约与迁移/产品边界/品牌与可访问性/安全与隐私/实际验证结果/发布/回滚/Reviewer 重点，并**诚实标注两处会红的治理门禁**（不谎报 0 findings）：
+  - `branch-name`：要求 `^(feature|fix)/<area>/hc-<issue>$`，而本仓 **issues 已禁用**（`gh issue list` → `repository has disabled issues`），历史 `hc-<number>` 无从对应；分支名 `codex/learning-feedback` 是既有的，我没有单方面重命名。
+  - `review-evidence`：要求 PR body 含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。逐轴评审在 HANDOFF 41/43/44 已做过并整改，但**整分支在当前 head 的双轴重跑没有做**，所以 body 里写的是 `pending` 而不是假 0。
+- 三轴：本轮不改产品代码（只新增 PR 与文档），Standards/Spec 由 `review-evidence` 门禁自身约束；Public-ready Copy: not applicable。
+- 下一步（需要人）：在 fork 上打开 Actions，或在有权限的上游开 PR；然后按 `review-evidence` 要求在 head SHA 上跑完整双轴评审。
