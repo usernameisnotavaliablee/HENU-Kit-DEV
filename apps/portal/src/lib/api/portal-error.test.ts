@@ -13,6 +13,15 @@ function expectUserFacingChinese(message: string) {
   expect(message).not.toMatch(/[A-Za-z]/);
 }
 
+const bankID = "10ca9b18-c303-4b7a-ab14-1241e41b665a";
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 const HTML_404 = "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body>Not Found</body></html>";
 
 describe("formatPortalError", () => {
@@ -273,5 +282,73 @@ describe("portalErrorRequestId", () => {
     ).toBeNull();
     expect(portalErrorRequestId(new Error("req_not_a_portal_error"))).toBeNull();
     expect(portalErrorRequestId(undefined)).toBeNull();
+  });
+});
+
+describe("学习报告的两种可行动拒绝", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY", "1");
+    vi.stubEnv("NODE_ENV", "test");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  /** 网关对学习报告写出的两种拒绝，member 能自己处理，文案必须是网关那句而不是兜底。 */
+  const cases = [
+    {
+      status: 400,
+      code: "learning_consent_outdated",
+      serverMessage: "分析授权已过期，请先关闭学习报告，再重新开启",
+      expectText: "先关闭学习报告",
+    },
+    {
+      status: 403,
+      code: "learning_entitlement_required",
+      serverMessage: "学习报告需要有效的会员权益，请确认会员状态后再试",
+      expectText: "会员权益",
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(`按码展示 ${testCase.code} 的网关提示，并保留该码供页面分支`, async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          jsonResponse({
+            error: testCase.code,
+            message: testCase.serverMessage,
+            request_id: "req_learning_denied",
+          }, testCase.status)
+        )
+      );
+
+      const { fetchLearningReportPreferences, formatPortalError, portalErrorCode } = await import("./client");
+      const error = await fetchLearningReportPreferences(bankID).catch((cause: unknown) => cause);
+
+      expect(portalErrorCode(error)).toBe(testCase.code);
+      const message = formatPortalError(error);
+      expectUserFacingChinese(message);
+      expect(message).toContain(testCase.expectText);
+    });
+  }
+
+  it("对没登记的码不给网关文案，避免把内部码写在页面上", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse({ error: "some_unregistered_code", message: "内部的英文细节" }, 400)
+      )
+    );
+
+    const { fetchLearningReportPreferences, formatPortalError, portalErrorCode } = await import("./client");
+    const error = await fetchLearningReportPreferences(bankID).catch((cause: unknown) => cause);
+
+    expect(portalErrorCode(error)).toBe("some_unregistered_code");
+    expect(formatPortalError(error)).not.toContain("内部的英文细节");
+    expectUserFacingChinese(formatPortalError(error));
   });
 });

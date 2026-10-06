@@ -1070,3 +1070,13 @@ export function portalErrorRequestId(err: unknown): string | null {
   if (!(err instanceof PortalApiError) || !err.requestId) return null;
   return REQUEST_ID_PATTERN.test(err.requestId) ? err.requestId : null;
 }
+
+/**
+ * Gateway error envelope 的码，供调用方按码分支而不是按文案猜。目前只在学习报告
+ * 用得上：403 的 learning_entitlement_required 要给出会员入口，400 的
+ * learning_consent_outdated 要给出「先关闭再开启」的指引。
+ */
+export function portalErrorCode(err: unknown): string | null {
+  if (!(err instanceof PortalHttpError) || !err.errorCode) return null;
+  return err.errorCode;
+}

@@ -561,3 +561,14 @@
 - 验证：网关 `gofmt` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` 全绿（日志 `.cache/ci-quizcraft/op50-gateway.log`）；联合验证自建库已自行清理（`quizcraft_v2` 计数 0）。
 - 三轴：Standards — 复用既有读哨兵与 `errors.Is` 分类，改动集中在两个既有分支里；Spec — 已把「只有最新报告与任务进度受实时门禁，读客户端必须把 403 分类为拒绝」写进 `docs/development/quizcraft-learning-feedback-spec.md`；Public-ready Copy — 没有新增文案（沿用 op 49 的会员权益句），op 49 待审的文案项不变。
 - 下一步（op 51）：Portal 依据这两个码渲染——403 → 会员区块（「需要有效会员权益」+ 账户中心入口），400 `learning_consent_outdated` → 「先关闭再开启」的两步指引；补 e2e 覆盖这两条拒绝路径并重出桌面/移动端截图。
+
+### 51 — Portal 按码分支：权益不足给会员入口，授权过期给「先关闭再开启」
+
+- 背景：op 49/50 让网关把两类可行动拒绝原样送到浏览器，但 Portal 只把它们当普通横幅，而且**根本没登记**这两个码。仓库里 `gateway-errors.test.ts` 会扫描网关源码里每个字面量错误码、要求它在白名单或「有意不展示」名单里有决定——所以这两个码不登记就是一条必红的测试。
+- 改动一（登记，三条）：`GATEWAY_USER_MESSAGE_CODES` 加上 `learning_consent_outdated` 与 `learning_entitlement_required`；新增 `portalErrorCode(err)`（与 `portalErrorRequestId` 并列，从 403 的 `PortalForbiddenError` 取码）；`FetchState` 与学习报告命令的 error 变体新增**可选** `code` 字段——可选是为了不动既有的收藏夹等调用方与它们的测试。
+- 改动二（页面分支）：`/practice/reports` 识别 `learning_entitlement_required` 后渲染会员区块（虚线框 + 「去会员中心」→ `/account/membership`），并让同一次拒绝**不再**重复出现在偏好/最新报告/命令三处横幅里；设置面板和「关闭/清除」照旧可用（Core 撤权后仍允许撤回同意，这条不能挡）。`learning_consent_outdated` 不做特殊区块：它的文案本身就是两步指引，而开关就在同一屏。
+- 测试：`gateway-errors.test.ts` 的登记核对过了（变异证明：把两个码从白名单删掉 → 该用例以 `['learning_consent_outdated','learning_entitlement_required']` 失败，`cmp` 确认恢复后逐字节相同）；`portal-error.test.ts` 新增 3 例（按码展示网关中文 + 保留码供分支、没登记的码不给网关文案）。e2e 新增 2 条并全绿：403 → 会员区块可见、链接指 `/account/membership`、通用错误横幅**不存在**；400 代次过期 → 命令行出现「先关闭学习报告」且**不**出现会员区块。
+- 验证（全部本机实跑）：Portal 单测 **38 文件 / 301 用例**全绿；`tsc --noEmit` 退出 0；改动文件 eslint **0 error**（client.ts:322 那条 `no-location-assign` 是既有 warning，不在本次改动行）；`pnpm --filter @henukit/portal build` 通过且两个产物检查脚本通过；学习报告 e2e **9/9**（16.8s）；默认配置受影响的 `error-messages` + `empty-state-actions` **21/21**（21.9s）。
+- 证据：`.cache/screenshots/learning-reports-membership-{desktop,mobile}.png`（桌面 1280、移动 390，`playwright.learning-reports.config.ts` 一条命令产出）。
+- 三轴：Standards — 复用既有 `EmptyBlock`/错误信封与 `formatPortalError` 通道，`code` 为可选字段以免惊动其他调用方；Spec — 已把「按码分支、必须登记、不得重复谎报」写进 `docs/development/quizcraft-learning-feedback-spec.md`；Public-ready Copy — **有**新增会员可见文案（沿用网关两句 + 新按钮「去会员中心」），仍在待人工审阅清单里，没有自行造新句子。
+- 下一步（op 52）：把这两条拒绝路径纳入发布/回滚说明与运维 Runbook（撤权会员看到会员区块、而非 503），并检查 Portal 侧还有哪些 surface 会因为 `learning_*` 码需要分支。

@@ -22,6 +22,10 @@ export const GATEWAY_USER_MESSAGE_CODES: ReadonlySet<string> = new Set([
   // 学习报告：暗态是诚实的 503；404 表示这位会员还没有报告，不是内容缺失。
   "practice learning reports are not enabled",
   "practice learning reports are temporarily unavailable",
+  // 会员能自己处理的两种拒绝，网关写的就是给会员看的中文：授权代次过期要「先关闭再开启」，
+  // 权益不足要去会员页。原样展示，别用「暂时不可用」把它们盖上。
+  "learning_consent_outdated",
+  "learning_entitlement_required",
   "practice statistics are not enabled",
   "practice statistics are temporarily unavailable",
   "practice_command_conflict",

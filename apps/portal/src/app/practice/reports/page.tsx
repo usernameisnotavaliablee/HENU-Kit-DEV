@@ -28,6 +28,9 @@ import LearningReportView from "@/components/practice/learning-report-view";
 
 const reportsEnabled = quizCraftLearningReportsEnabled();
 
+/** 网关对学习报告写出的会员权益不足码：页面据此给会员入口，而不是重试提示。 */
+const MEMBERSHIP_REQUIRED_CODE = "learning_entitlement_required";
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -260,6 +263,18 @@ function ReportsSurface() {
   // generator broke. Saying "try again later" for both would blame the member's
   // request for a dependency the member cannot fix.
   const taskPaused = task?.status === "paused";
+  // 会员权益不足是会员自己能处理的状态（续费/确认会员），不是本功能的故障，所以
+  // 页面给一个明确的出口，而不是让它混在「暂时不可用」里反复重试。
+  const membershipDenied =
+    (preferencesState.status === "error" && preferencesState.code === MEMBERSHIP_REQUIRED_CODE) ||
+    (latest.state.status === "error" && latest.state.code === MEMBERSHIP_REQUIRED_CODE) ||
+    commandFailed?.code === MEMBERSHIP_REQUIRED_CODE;
+  const membershipMessage =
+    preferencesState.status === "error"
+      ? preferencesState.message
+      : latest.state.status === "error"
+        ? latest.state.message
+        : (commandFailed?.message ?? "学习报告需要有效的会员权益，请确认会员状态后再试");
 
   return (
     <main className="mx-auto max-w-site px-5 py-12 md:px-8 md:py-16">
@@ -320,6 +335,15 @@ function ReportsSurface() {
             </p>
           </div>
 
+          {membershipDenied && (
+            <section data-testid="practice-reports-membership" className="mt-10">
+              <EmptyBlock
+                label={membershipMessage}
+                action={{ label: "去会员中心", href: "/account/membership" }}
+              />
+            </section>
+          )}
+
           {preferencesState.status === "loading" && (
             <section data-testid="practice-reports-loading" className="mt-10">
               <LoadingBlock label="正在读取学习报告设置" />
@@ -328,13 +352,15 @@ function ReportsSurface() {
 
           {preferencesState.status === "error" && (
             <>
-              <section data-testid="practice-reports-preferences-error" className="mt-10">
-                <ErrorBanner
-                  message={preferencesState.message}
-                  requestId={preferencesState.requestId}
-                  onRetry={preferences.retry}
-                />
-              </section>
+              {!membershipDenied && (
+                <section data-testid="practice-reports-preferences-error" className="mt-10">
+                  <ErrorBanner
+                    message={preferencesState.message}
+                    requestId={preferencesState.requestId}
+                    onRetry={preferences.retry}
+                  />
+                </section>
+              )}
               {/* Opting out is the member's own data right and Core keeps that
                   write open after revocation, so it must not sit behind the
                   read that just failed. Closing resets the schedule, which only
@@ -384,7 +410,7 @@ function ReportsSurface() {
             />
           )}
 
-          {commandFailed && (
+          {commandFailed && !membershipDenied && (
             <section data-testid="practice-reports-command-error" className="mt-10">
               <ErrorBanner
                 message={commandFailed.message}
@@ -460,7 +486,7 @@ function ReportsSurface() {
             </section>
           )}
 
-          {latest.state.status === "error" && (
+          {latest.state.status === "error" && !membershipDenied && (
             <section data-testid="practice-reports-error" className="mt-10">
               <ErrorBanner
                 message={latest.state.message}

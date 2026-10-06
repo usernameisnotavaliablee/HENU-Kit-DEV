@@ -385,3 +385,79 @@ test("暂停的生成任务不冒充生成失败", async ({ page }) => {
   await expect(page.getByTestId("practice-reports-task-paused")).toBeVisible();
   await expect(page.getByTestId("practice-reports-task-failed")).toHaveCount(0);
 });
+
+test("会员权益不足时给出会员入口，而不是把拒绝说成故障", async ({ page }) => {
+  await mockLearningReportGateway(page);
+  // 最新报告在 Core 里受实时会员门禁：撤权会员拿到 403，而不是 503。
+  await page.route(
+    `**/api/v1/practice/banks/${BANK_ID}/learning-reports/latest`,
+    (route) =>
+      route.fulfill({
+        status: 403,
+        json: {
+          error: "learning_entitlement_required",
+          message: "学习报告需要有效的会员权益，请确认会员状态后再试",
+          request_id: "req_denied",
+        },
+      })
+  );
+  await page.goto("/practice/reports");
+
+  const block = page.getByTestId("practice-reports-membership");
+  await expect(block).toBeVisible();
+  await expect(block).toContainText("会员权益");
+  await expect(block.getByRole("link", { name: "去会员中心" })).toHaveAttribute(
+    "href",
+    "/account/membership"
+  );
+  // 同一个拒绝不能既说「需要会员」又说「暂时不可用」，也不能只给一个重试按钮。
+  await expect(page.getByTestId("practice-reports-error")).toHaveCount(0);
+
+  const screenshotDir = process.env.PLAYWRIGHT_SCREENSHOT_DIR;
+  if (screenshotDir) {
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-membership-desktop.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-membership-mobile.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1280, height: 1400 });
+  }
+});
+
+test("授权代次过期时指引先关闭再开启", async ({ page }) => {
+  await mockLearningReportGateway(page);
+  await page.route(
+    `**/api/v1/practice/banks/${BANK_ID}/learning-reports/preferences`,
+    async (route) => {
+      if (route.request().method() === "PUT") {
+        await route.fulfill({
+          status: 400,
+          json: {
+            error: "learning_consent_outdated",
+            message: "分析授权已过期，请先关闭学习报告，再重新开启",
+            request_id: "req_consent",
+          },
+        });
+        return;
+      }
+      await route.fulfill({ json: preferences });
+    }
+  );
+  await page.goto("/practice/reports");
+  await expect(page.getByTestId("practice-reports-settings")).toBeVisible();
+
+  await page.getByTestId("practice-reports-save").click();
+
+  const failed = page.getByTestId("practice-reports-command-error");
+  await expect(failed).toBeVisible();
+  await expect(failed).toContainText("先关闭学习报告");
+  // 该拒绝不能被会员权益区块抢走：它要的是「先关闭再开启」，不是去会员页。
+  await expect(page.getByTestId("practice-reports-membership")).toHaveCount(0);
+  // 关闭入口仍在，会员照着文案就能自己走出来。
+  await expect(page.getByTestId("practice-reports-settings")).toBeVisible();
+});

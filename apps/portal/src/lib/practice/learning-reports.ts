@@ -13,6 +13,7 @@ import {
   fetchLearningReportPreferences,
   formatPortalError,
   PortalHttpError,
+  portalErrorCode,
   portalErrorRequestId,
   requestLearningReport,
   updateLearningReportPreferences,
@@ -149,7 +150,7 @@ export function useLatestLearningReport(bankID: string | null): {
 export type LearningReportCommand =
   | { status: "idle" }
   | { status: "working"; action: "save" | "request" | "clear" | "practice" }
-  | { status: "error"; message: string; requestId: string | null };
+  | { status: "error"; message: string; requestId: string | null; code?: string | null };
 
 /**
  * Learning-report writes. Every action keeps one idempotency key per logical
@@ -165,6 +166,7 @@ export function useLearningReportCommands(bankID: string | null) {
       status: "error",
       message: formatPortalError(error),
       requestId: portalErrorRequestId(error),
+      code: portalErrorCode(error),
     });
   }, []);
 
