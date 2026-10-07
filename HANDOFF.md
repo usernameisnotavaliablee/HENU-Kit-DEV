@@ -1145,3 +1145,11 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 本机验证：`PYTHONPATH=. python -m pytest -q tests/test_learning_report_contract.py` → **4 passed**（此前是「靠 ruby 过」，现在是「不依赖 ruby 过」）。
 - 同轮的文档合并：根 `AGENTS.md` 并为全仓唯一 agent 文档（97 行，caveman 压缩；17 条经验教训全部保留，新增「CI 现状」记下 14 个 workflow / 只有 2 个支持 `workflow_dispatch` / PR 事件在本 fork 不产生 run / 两条治理门禁的原文要求）；删除 `apps/portal/AGENTS.md` 与 `apps/portal/CLAUDE.md`（`next dev` 自动生成，生成器 `apps/portal/node_modules/next/dist/server/lib/generate-agent-files.js:112-113` 同时写这两个文件）并加进 `.gitignore` → 提交 `ed2c0f27`。
 - 教训：`skipUnless(which(...))` 只兜「工具不存在」，兜不住「工具在但不可用」；跨平台测试宁可只用语言自身的标准库或已装依赖，也别调系统里的第三方解释器。
+
+### 89 — 真 CI 全绿：`quizcraft-go.yml` 13 步全过（run `37659720284`）
+
+- 第三次 dispatch（`gh workflow run quizcraft-go.yml --ref codex/learning-feedback`）的 `verify` 作业 **6m55s 全绿**，包括此前从未跑过的五步：`Verify existing FastAPI remains intact`、`Verify React generated-client shadow flow`、`Verify cutover release switch rollback`、`Build shadow image`、`Scan repository and shadow image`；连同已在第二轮转绿的 `Verify migration round trip and recovery`、`Verify resumable reconciliation CLI recovery`、`Verify QuizCraft contract`、`Vet, test, and build`。
+- 这条绿是靠真 CI 自己逮到的两个必错换来的（本机复现都到不了）：① `sqlc generate` 缺 75 行 models（`772097f0`）；② 契约测试依赖外部 `ruby` 解析 YAML，runner 上 ruby 在但命令退出非零，而 `skipUnless(which("ruby"))` 兜不住「工具在但不可用」（`396ae958`）。
+- 未能取到的一手证据：ruby 那条命令的 stderr 没进 CI 日志（pytest 只回显 `CalledProcessError` 的截断 repr），所以「runner 的 ruby 到底为什么失败」仍未定论——修法是删掉该依赖，不是猜 ruby 版本。
+- 剩下的不是代码问题：`pull-request-governance.yml` 的 `branch-name` 要求 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，本仓 issues 关闭 → 结构上必红（人工决定改分支名还是放宽门禁）；`review-evidence` 需要 PR 正文钉住当前 head 与两条 0 findings；学习报告切流窗口、10 张截图补传仍待人工。
+- PR #2（`codex/learning-feedback` → `main`）的正文据此重写：范围扩到 8 个文件（含 sqlc 生成物、契约测试去 ruby、workflow 的 pip 行、AGENTS.md 合并与 `.gitignore`），验证一节改为引用真 CI 的 run 号与步骤清单。
