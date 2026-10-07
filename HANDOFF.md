@@ -735,10 +735,20 @@
 | §8 依赖 503 | `learning_reports.go:95` | `learningReportRead` 的依赖不可用分支 |
 | §8 暗态 503 | `learning_reports.go:59` 读、`:107` 写 | `learningReportRead` 读、`learningReportWrite` 写 |
 
-五个函数名都核对过：`learningReportRead` 覆盖 `:57-105`（暗态 503、403 兜底、依赖 503 都在其中），`learningReportWrite` 覆盖 `:106-116`，`clearLearningReports` 在 `:142`，429 那行确实在 `writePracticeCommandFailure` 内。另外 429 行原话里的「全站共用文案」警告保留不变。
+五个函数名都核对过：读路径的暗态 503、403 兜底与依赖 503 都在 `learningReportRead` 体内，写的暗态 503 在 `learningReportWrite` 体内，清除路由的 `clearLearningReports` 直接调 `h.practiceCommand`（所以它确实绕过 `learningReportWrite`），429 那句在 `writePracticeCommandFailure` 内。**这一条不写行号**——判据是「在哪个函数体内」，而行号正是这一轮问题的来源。另外 429 行原话里的「全站共用文案」警告保留不变。
 
 同轮更正：HANDOFF 第 59 条里那句「现在按当前 head 逐条重算」在当时是假的（用的是同一次提交改注释前的编号），**已就地更正**并指向本条；`:85` 也改成写 `learningReportRead` 里的比较。HANDOFF 是给后续会话看的日志，一个会误导后人的数字不如就地改掉。
 
 验证：`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（该测试会解析这份矩阵文档，改完仍需通过）；`gofmt -l`、`go vet ./...` 干净；Portal `pnpm test` 301 用例、learning-reports e2e 14 passed 均为本条之前同一 head 上的结果，本条只改文档文字，无代码变化。
 
 下一步：最后一轮确认（期望三轴同时 0），然后把 PR #1 正文的两轴结论与 `Review-Head` 钉到最终 SHA。
+
+### 61 — 评审闭环：三轴归零
+
+最后一轮确认在 `e13fbd39` 上得到：文案轴 **0**（并用集合比对证明矩阵里所有 `「…」` 会员可见串零差异）、规格轴 **0**（五个符号各自解析到正确函数、写点都在其函数体内、余下行号全是未被本分支改动的 Core 文件）、标准轴 1——而那一条落在**本条日志自己**身上：第 60 条里我给两个函数写了「覆盖 :57-105 / :106-116」这种区间，实际函数体更短（多出来的是下一个函数的注释）。两个区间都仍包含被引用的写点，所以没有错误陈述，但**一个论证「行号会漂」的条目不该自带两个行号**。
+
+处理：第 60 条里那两个区间**直接删掉**，判据改成「在哪个函数体内」；矩阵 §8 的 403 行补上 `internal/httpapi/learning_reports.go`，与相邻两行同样带文件路径（同一模块里 `internal/practice` 也有同名方法，虽然 `practice access denied` 全仓只出现一次，加上更省心）。
+
+两轴都建议「再由测试断言被引用的标识符存在」以防第四次漂移。不做：符号名本来就不会漂，加断言是给一个已经不存在的问题加护栏；真正会漂的行号已经全部移出这两节。同理不加「文档-代码一致性测试」。
+
+至此三轴在最终 head 上均为 0，PR #1 正文可以如实写三行门禁。
