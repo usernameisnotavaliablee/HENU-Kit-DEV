@@ -1119,3 +1119,10 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 **新记一个只在本机红的坑（已写进 `docs/DEVELOPMENT.md` §14）**：本机 Node v26 默认开启 experimental webstorage，`pnpm --filter @henukit/console run test` 会挂在 `src/lib/pending-operations.spec.ts` 那条 storage 失败用例（`AssertionError: expected true to be false`，18/19 过）；加 `NODE_OPTIONS=--no-experimental-webstorage` 后 **19/19 全过**。`apps/console` 本分支零改动，CI 用的是 node 22、没有这个开关，所以这不是仓库问题；Console 的 `lint`（vue-tsc）与 `build` 在本机都过。
 
 **没跑到的（逐条点名）**：console-gateway 的 Food 集成步骤（要 `food` 角色库并起 food 服务）、library 的迁移往返（要 `library` 角色库并 `createdb`/`pg_restore`）——两处都需要本机建角色，本轮没建；`shellcheck` 本机没装（该步骤只剩 13 条 `bash -n` 跑了）；systemd-analyze verify、sudo 跨 UID 用例、特权 runner 三处是 Linux/root 专属；`docker pull node:22-alpine`、`docker compose config`、`nginx -t`、镜像构建与扫描四处是 Docker 专属。
+
+### 86 — 用户暂停目标并要求复盘：弯路经验归档进根 AGENTS.md
+
+- 停点：head `9dc8dc3e`（第 85 条复评里 Standards 0 / Spec 0 已回，Copy 未回）；PR #1 正文仍钉在 `0271062f`，**没有**执行 `gh pr edit`，所以 `review-evidence` 的 pin 待下一轮补。
+- 与目标相关的账（开 PR 以来 52 个提交）：11 个代码提交（quizcraft-go 三处必红 + portal-gateway 两处 + portal 文案/守卫三处 + 网关错误码转发两处 + console-gateway 生成物一处）、23 条 HANDOFF 条目、其余为文档与就地更正。真实 CI 一次都没跑过：fork 未启用 Actions、`push` 只触发 `main`、`branch-name` 门禁在 `has_issues: false` 下必然失败。
+- 弯路已归档到根 [AGENTS.md](AGENTS.md) 的「经验教训」一节，分取值与取证 / 本机环境 / 流程三类共 15 条（含被 `tail` 截断取数、管道里取退出码、把条件句写成 CI 事实、日志条目错引、HOME 与 Node 26 两个环境陷阱、以及「先算触发面再决定验什么」）。
+- 下一步（需人工确认）：①把 PR 正文 `Review-Head` 钉到当时 head 并确认 `review-evidence` 通过；②决定启不启用 fork 的 Actions 或改分支名；③`#166` 切流决定。

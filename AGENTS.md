@@ -47,3 +47,28 @@ Bug 修复补回归；覆盖失败、权限、并发与重试路径。共享契�
 不提交密钥、Token、Cookie、真实学生数据或 `资料库/` 内容；不跨服务直连数据库。数据库迁移遵循 expand → migrate → contract。
 
 保留工程入口约定：先咨询 `~/.agents/skills/ask-matt/SKILL.md`，缺失时明确报告。已有代码从 `/grill-with-docs` 开始；多会话经 `/to-spec`、`/to-tickets` 后按依赖逐票 `/implement`。实现遵循 TDD，提交前执行 Standards、Spec、Public-ready Copy 三轴审查；无可见文案改动注明 `Public-ready Copy: not applicable`。Issue、标签、领域规则见 `docs/agents/`；遵守更具体的目录级 `AGENTS.md`。
+
+## 经验教训（2026-10 学习报告分支踩过的弯路，别再走）
+
+### 取值与取证
+- **别从被截断的输出里取数字**：`| tail -5` 切掉了行，曾把 deploy-webhook 的 6 个 `ok` 包写成 5 个。要计数就重跑一遍不打管道，或数原始日志文件。
+- **别在管道里取退出码**：`staticcheck ./... | tail -4` 的退出码是 `tail` 的，门禁判定必须直接跑、直接看 `$?`。
+- **先枚举清单再报数量**：`*/cmd/*contractgen*` 命中 15 个目录，其中 1 个由 `products/quizcraft/go-service/scripts/generate-contract.sh` 驱动（直接 `go run` 的是 14 个）；「全仓 14 个」这类话先数一遍。
+- **按用例分块统计，别数字符串出现次数**：一次失败会重复打印同一句——17 条红里 16 条同因，按块是 seal 14 / prepare 1 / activate 1，按字符串却是 19/1/1。
+- **条件句不要写成 CI 事实**：「本机第一批红了，CI 里后两批也不跑」是错的（CI 有 Docker，三批都跑）。要写「本机因 X 在第一处中止；CI 里会…」。
+- **引用日志条目先定位引入它的提交**：`git log -S'### NN —'`；否则会把第 53/71 条的表格记成第 81 条的。
+- **写完「已做 / 已过 / 都是环境 / 只有 / 全部」立刻回查原物**：本分支绝大多数返工都来自「先写结论、后看证据」。全称断言前逐个打开候选。
+
+### 本机环境（本机 ≠ CI）
+- `HOME` **不能**重定向给需要 Next dev 的浏览器门禁（症状链：`Could not find the Next.js package` → `PageNotFoundError` / `.next` 的 `ENOENT` → Playwright `Timed out waiting 120000ms from config.webServer`）；Go 侧相反，必须显式给 `GOCACHE`/`GOMODCACHE`/`GOPATH`（否则 `failed to initialize build cache`）。两类命令的环境变量互相冲突，没有一套通吃。配方见 `docs/DEVELOPMENT.md` §14。
+- npm 要同时给 `npm_config_cache` **和** `npm_config_logs_dir`，否则脚本以无关错误中止（`npm error Log files were not written…`）。
+- 本机 Node v26 默认开 experimental webstorage，会让 Console 的 `pending-operations.spec.ts` 挂 1 条；加 `NODE_OPTIONS=--no-experimental-webstorage` 即 19/19。CI 固定 node 22（该版本默认不启用）。
+- 无 Docker 时的红必须**点名文件+错误**再归因：`spawnSync docker ENOENT`、`panic: rootless Docker not found`（testcontainers）、空 compose 输出的 `JSON.parse`、materials 的 `fixed Node runtime is unavailable`、缺 `shellcheck`/systemd。只写「环境问题」不算归因。
+- 子代理环境可能与本机不同（如它要 `chromium_headless_shell-1228` 而本机缓存是 1243）：它能 `--list` 数用例但验不了通过，别把它的「跑不了」当证据。
+
+### 流程
+- **先算触发面，再决定验什么**：把每个 workflow 的 `paths:`（`pull_request` 与 `push` 两处）对本次改动做 glob，列出真正会跑的作业。从日志条目出发会漏整条作业——本分支第 4 处必红缺陷（`services/console-gateway` 的 account-portfolio 生成物陈旧）就是这样才被逮到。
+- **改了契约/生成物就重跑所有消费方生成器并 `git diff --exit-code`**：改 `packages/api-contracts/**` 后漏跑一个 `cmd/*contractgen*`，CI 的 `git diff --exit-code` 就红（只改文件头 SHA 也算）。
+- **一个回合只做一个大操作**，commit & push 后再写日志；日志条目要能被仓库证据复核（数字、条目号、文件路径）。
+- **三轴评审的返工几乎都出在计数与口径，不出在代码**：写完先自查「计数 / 全称 / 条件句 / 引用出处」四项，能省 2–3 轮。
+- **分清「文档还能再打磨」与「目标是否达成」**：真实 CI 从未跑过、`branch-name` 门禁必然失败、`#166` 切流均需人工决定；在这些之前继续润色日志不是进展。
