@@ -398,8 +398,59 @@ test("暂停的生成任务不冒充生成失败", async ({ page }) => {
   await mockLearningReportGateway(page, { report: null, taskStatus: "paused" });
   await page.goto("/practice/reports");
   await page.getByTestId("practice-reports-generate").click();
-  await expect(page.getByTestId("practice-reports-task-paused")).toBeVisible();
+  const paused = page.getByTestId("practice-reports-task-paused");
+  await expect(paused).toBeVisible();
   await expect(page.getByTestId("practice-reports-task-failed")).toHaveCount(0);
+  // 暂停的任务只把 run_after 推后，等的是显式重排（spec:69），不能承诺自动重试。
+  await expect(paused).toContainText("条件恢复后再点一次「生成报告」即可重试");
+  await expect(paused).not.toContainText("自动重试");
+
+  const screenshotDir = process.env.PLAYWRIGHT_SCREENSHOT_DIR;
+  if (screenshotDir) {
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-paused-desktop.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-paused-mobile.png`,
+      fullPage: true,
+    });
+  }
+});
+
+test("报告交接失效时给回报告的链接，而不是必然失败的重试", async ({ page }) => {
+  // 没有可读的交接记录：重试仍会读同一个空 sessionStorage，不会成功。
+  await page.goto("/practice/quiz?session_id=missing_handoff&from=report");
+
+  await expect(page.getByText("学习报告的练习会话已失效，请返回学习报告重新发起。")).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回学习报告", exact: true })).toHaveAttribute(
+    "href",
+    "/practice/reports"
+  );
+  await expect(page.getByRole("button", { name: "重试", exact: true })).toHaveCount(0);
+});
+
+test("报告推荐的题目练不了时，给回报告的链接而不是劝人重新生成报告", async ({ page }) => {
+  const sessionID = "report_empty_handoff";
+  await page.addInitScript(
+    ([key, payload]) => window.sessionStorage.setItem(key, payload),
+    [
+      `henukit.practice.session.v1:${sessionID}`,
+      JSON.stringify({ session_id: sessionID, mode: "report", questions: [] }),
+    ] as const
+  );
+
+  await page.goto(`/practice/quiz?session_id=${sessionID}&from=report`);
+
+  await expect(page.getByText("这份报告暂时没有可练习的题目")).toBeVisible();
+  await expect(page.getByText("报告推荐的题目暂时练不了（可能已下架或不在当前范围）。")).toBeVisible();
+  await expect(page.getByText("可以重新生成报告后再试。")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "返回学习报告", exact: true })).toHaveAttribute(
+    "href",
+    "/practice/reports"
+  );
 });
 
 test("会员权益不足时给出会员入口，而不是把拒绝说成故障", async ({ page }) => {

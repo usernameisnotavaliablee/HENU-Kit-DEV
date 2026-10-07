@@ -81,7 +81,7 @@ export default function LearningReportSettings({
           <span className="text-sm leading-7">
             定期为我生成这门课的学习报告
             <span className="mt-1 block text-ink/60">
-              只有你主动开启后才会生成；随时可以关闭，也可以清除已经生成的报告。
+              只有你主动开启后才会生成；取消勾选并保存即关闭，也可以清除已经生成的报告。
             </span>
           </span>
         </label>
@@ -95,9 +95,9 @@ export default function LearningReportSettings({
             className="mt-1 h-5 w-5"
           />
           <span className="text-sm leading-7">
-            允许把最少的作答统计和题目样本交给外部模型，用于生成观察和讲解
+            允许把最少的作答统计和题目样本交给外部模型，用于判断需要优先加强的内容并给出可能的原因
             <span className="mt-1 block text-ink/60">
-              只包含题目内容和你在这门课里的作答表现，不含账户信息；不开这一项就不会生成报告。
+              只包含题目内容、课程标签、你选择的学习目标和你在这门课里的作答表现，不含账户信息；不开这一项就不会生成报告。
             </span>
           </span>
         </label>

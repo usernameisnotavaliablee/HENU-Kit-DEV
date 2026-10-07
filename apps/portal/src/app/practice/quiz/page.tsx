@@ -570,12 +570,15 @@ export default function QuizPage() {
     return <PracticeState title="请先选择题库" detail={loadError ?? "请从题库目录选择练习后开始。"} />;
   }
   if (loadState === "error") {
+    // 报告交接失败重试没有意义：sessionStorage 里那次读取已经用掉了，再读还是空。
+    const reportHandoff = sessionOriginFromLocation() === "report";
     return (
       <PracticeState
         title="练习暂时不可用"
         detail={loadError ?? "暂时无法创建练习会话，请稍后重试。"}
-        actionLabel="重试"
-        onAction={retrySessionLoad}
+        actionLabel={reportHandoff ? "返回学习报告" : "重试"}
+        actionHref={reportHandoff ? "/practice/reports" : undefined}
+        onAction={reportHandoff ? undefined : retrySessionLoad}
       />
     );
   }
@@ -592,7 +595,9 @@ export default function QuizPage() {
       return (
         <PracticeState
           title="这份报告暂时没有可练习的题目"
-          detail="报告推荐的题目可能已经下架，可以重新生成报告后再试。"
+          detail="报告推荐的题目暂时练不了（可能已下架或不在当前范围）。"
+          actionLabel="返回学习报告"
+          actionHref="/practice/reports"
         />
       );
     }
@@ -1055,11 +1060,14 @@ function PracticeState({
   title,
   detail,
   actionLabel,
+  actionHref,
   onAction,
 }: {
   title: string;
   detail: string;
   actionLabel?: string;
+  /** 去别处用链接，就地改条件才用 onAction（与 components/data-state.tsx 同一约定）。 */
+  actionHref?: string;
   onAction?: () => void;
 }) {
   return (
@@ -1073,7 +1081,12 @@ function PracticeState({
           <h1 className="mt-5 text-2xl font-medium md:text-3xl">{title}</h1>
           <p className="mt-4 max-w-xl text-sm leading-7 text-ink/70">{detail}</p>
           <div className="mt-8 flex flex-wrap gap-4">
-            {actionLabel && onAction && (
+            {actionLabel && actionHref && (
+              <TransitionLink href={actionHref} className="border border-ink bg-ink px-6 py-3 font-mono text-sm text-paper transition-colors hover:border-accent hover:bg-accent hover:text-ink">
+                {actionLabel}
+              </TransitionLink>
+            )}
+            {actionLabel && !actionHref && onAction && (
               <button type="button" onClick={onAction} className="border border-ink bg-ink px-6 py-3 font-mono text-sm text-paper transition-colors hover:border-accent hover:bg-accent hover:text-ink">
                 {actionLabel}
               </button>

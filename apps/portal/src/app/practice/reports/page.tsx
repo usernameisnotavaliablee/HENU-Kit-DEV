@@ -44,7 +44,7 @@ type CatalogState =
   | { status: "ready"; banks: QuizCraftCatalogBank[] }
   | { status: "error"; message: string; requestId: string | null };
 
-function Header() {
+function Header({ canManage = true }: { canManage?: boolean }) {
   return (
     <div data-block data-enter>
       <p className="font-mono text-xs tracking-[0.3em] text-ink/60">
@@ -56,8 +56,8 @@ function Header() {
         学习报告
       </h1>
       <p className="mt-4 max-w-2xl text-sm leading-7 text-ink/65">
-        根据你在这门课里的作答，指出下一步练什么，并给出可核对的依据。只有你主动开启并同意后才会生成，
-        随时可以关闭或清除。
+        根据你在这门课里的作答，指出下一步练什么，并给出可核对的依据。只有你主动开启并同意后才会生成
+        {canManage ? "，随时可以关闭或清除。" : "。"}
       </p>
     </div>
   );
@@ -474,7 +474,7 @@ function ReportsSurface() {
           {taskPaused && (
             <section data-testid="practice-reports-task-paused" className="mt-10">
               <EmptyBlock
-                label="学习报告暂时不可用（会员状态或课程内容还没准备好），条件恢复后会自动重试，也可以稍后再点一次生成"
+                label="学习报告暂时不可用（会员状态或课程内容还没准备好）；条件恢复后再点一次「生成报告」即可重试"
                 action={{ label: "去刷题", href: "/practice" }}
               />
             </section>
@@ -499,7 +499,7 @@ function ReportsSurface() {
           {readState.status === "ready" && !report && (
             <section data-testid="practice-reports-empty" className="mt-10">
               <EmptyBlock
-                label="这门课还没有学习报告；设置已开启时，点上方「生成报告」即可生成"
+                label="这门课还没有学习报告；开启定期生成并勾选授权后，点上方「生成报告」即可"
                 action={{ label: "去刷题", href: "/practice" }}
               />
             </section>
@@ -526,7 +526,7 @@ export default function ReportsPage() {
   if (!reportsEnabled) {
     return (
       <main className="mx-auto max-w-site px-5 py-12 md:px-8 md:py-16">
-        <Header />
+        <Header canManage={false} />
         <section data-testid="practice-reports-disabled" className="mt-10">
           <EmptyBlock
             label="学习报告暂未开放，先去刷题"
