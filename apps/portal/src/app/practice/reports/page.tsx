@@ -44,7 +44,11 @@ type CatalogState =
   | { status: "ready"; banks: QuizCraftCatalogBank[] }
   | { status: "error"; message: string; requestId: string | null };
 
-function Header({ canManage = true }: { canManage?: boolean }) {
+/**
+ * canManage 由调用方显式给出：只有会员面开着并且选了课程时，页面上才真的有
+ * 关闭/清除控件；未登录与暗态分支都不该承诺「随时可以关闭或清除」。
+ */
+function Header({ canManage }: { canManage: boolean }) {
   return (
     <div data-block data-enter>
       <p className="font-mono text-xs tracking-[0.3em] text-ink/60">
@@ -229,7 +233,7 @@ function ReportsSurface() {
   if (readState.status === "anonymous" || preferencesState.status === "anonymous") {
     return (
       <main className="mx-auto max-w-site px-5 py-12 md:px-8 md:py-16">
-        <Header />
+        <Header canManage={false} />
         <section
           data-testid="practice-reports-unauthenticated"
           className="mt-10 border border-ink/25 p-6"
@@ -278,7 +282,7 @@ function ReportsSurface() {
 
   return (
     <main className="mx-auto max-w-site px-5 py-12 md:px-8 md:py-16">
-      <Header />
+      <Header canManage={selectedBank !== null && !membershipDenied} />
 
       {catalog.status === "loading" && (
         <section data-testid="practice-reports-loading" className="mt-10">
@@ -496,7 +500,7 @@ function ReportsSurface() {
             </section>
           )}
 
-          {readState.status === "ready" && !report && (
+          {readState.status === "ready" && preferencesState.status === "ready" && !report && (
             <section data-testid="practice-reports-empty" className="mt-10">
               <EmptyBlock
                 label="这门课还没有学习报告；开启定期生成并勾选授权后，点上方「生成报告」即可"

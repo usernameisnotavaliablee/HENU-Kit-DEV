@@ -1003,8 +1003,11 @@ func (h *Handler) writePracticeCommandFailure(w http.ResponseWriter, r *http.Req
 	case "learning_consent_outdated":
 		writeError(w, r, http.StatusBadRequest, "learning_consent_outdated", "分析授权已过期，请先关闭学习报告，再重新开启")
 		return
-	case learningEntitlementRequiredCode:
-		writeError(w, r, http.StatusForbidden, learningEntitlementRequiredCode, "学习报告需要有效的会员权益，请确认会员状态后再试")
+	case "learning_entitlement_required":
+		// 这里故意用字面量而不是 learningEntitlementRequiredCode：Portal 的
+		// gateway-errors.test.ts 按 `writeError(..., "code")` 的字面量扫描，
+		// 换成常量会让这个会员可见 code 从「每个 code 都有文案决定」的守护里消失。
+		writeError(w, r, http.StatusForbidden, "learning_entitlement_required", "学习报告需要有效的会员权益，请确认会员状态后再试")
 		return
 	}
 	switch {

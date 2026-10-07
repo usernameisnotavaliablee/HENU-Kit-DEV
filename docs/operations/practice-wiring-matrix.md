@@ -111,7 +111,7 @@
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。
-  回退后**清除接口仍可用**（`DELETE .../learning-reports` 是唯一豁免暗态门的写路由，`learning_reports.go:137` 不经 `learningReportWrite`）：
+  回退后**清除接口仍可用**（`DELETE .../learning-reports` 是唯一豁免暗态门的写路由，`learning_reports.go:138（`clearLearningReports`）` 不经 `learningReportWrite`）：
   会员必须还能撤回同意并清除报告，Core 侧这条路由本来就不校验会员与学习内容审核（只要求该课程有已发布版本）。其余写路由（含 `PUT .../preferences` 的关闭）在暗态下仍是 503——
   网关不解析请求体，无法在不读 body 的前提下区分「关闭」与「开启」；要撤回同意就用清除。
 
@@ -123,7 +123,7 @@
 |---|---|---|---|
 | 400 `learning_consent_outdated` | Core（`learning_reports_http.go:88`），网关转达 | 存库的分析授权代次落后于当前版本，且会员请求**开启** | 横幅：「分析授权已过期，请先关闭学习报告，再重新开启」（关闭再开启两步自愿、可自查） |
 | 403 `learning_entitlement_required` | Core（`requireLearningLifetime`，`:296`），网关转达 | 实时会员权益校验不过 | 会员区块：「学习报告需要有效的会员权益，请确认会员状态后再试」+「去会员中心」入口。**只有这个码**会被读路径按名转达；Core 没给码或给了别的码时读路由落 `practice access denied`（`:86`），不会替 Core 断言会员问题 |
-| 429 `practice_command_rate_limited` | 网关（`handler.go:1020`，Core 429 转达） | 手动生成超过 `QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 10/小时/会员/课程） | 横幅：「操作太频繁了，请稍后再试」。**不是配额，也别当故障**。注意这句文案是**全站练习命令共用**的（会话、作答、收藏写等都会用到），不是学习报告专属，改它会波及所有刷题命令 |
+| 429 `practice_command_rate_limited` | 网关（`handler.go:1022`，Core 429 转达） | 手动生成超过 `QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 10/小时/会员/课程） | 横幅：「操作太频繁了，请稍后再试」。**不是配额，也别当故障**。注意这句文案是**全站练习命令共用**的（会话、作答、收藏写等都会用到），不是学习报告专属，改它会波及所有刷题命令 |
 | 503 `practice learning reports are temporarily unavailable` | 网关（`learning_reports.go:92`） | 依赖不可用、凭据缺失、账号/权益服务报错 | 横幅：暂时不可用，稍后再试（唯一的「重试」语义） |
 | 503 `practice learning reports are not enabled` | 网关（`:56` 读、`:104` 写） | 暗态开关关闭或客户端未接线。**清除接口不在此列**（唯一豁免，见 §7） | 同一句「学习报告暂时不可用，请稍后再试」——**与上面共用文案，值班必须看码**：这个码代表「没开」，不是「挂了」 |
 | 404 `learning report not found` | 网关（Core 404 映射） | 该课程确实还没有报告 | 空态 + 「生成报告」入口，不是错误 |

@@ -14,6 +14,9 @@ import (
 // by name: it is the code Portal renders as the membership entry. Any other 403
 // keeps the shared practice mapping, because a code Portal cannot look up costs
 // the member the actionable message and leaves only a generic denial.
+//
+// Only comparisons use it. Write sites keep the literal on purpose so the
+// Portal scan in gateway-errors.test.ts still finds this member-visible code.
 const learningEntitlementRequiredCode = "learning_entitlement_required"
 
 // learningReportPreferences reads the signed-in owner's course-scoped feedback

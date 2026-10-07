@@ -259,6 +259,17 @@ test("会员可以查看设置与报告，并按建议开始练习", async ({ pa
   );
 });
 
+test("设置卡的授权说明与模型实际做的事一致", async ({ page }) => {
+  await mockLearningReportGateway(page);
+  await page.goto("/practice/reports");
+
+  const settings = page.getByTestId("practice-reports-settings");
+  // 模型只给标签/假设；观察文案由服务器按统计拼、讲解取自已审核内容包（spec:43/45）。
+  await expect(settings).toContainText("用于判断需要优先加强的内容并给出可能的原因");
+  // 外发里还有课程标签与会员自己选的学习目标（LearningModelInput）。
+  await expect(settings).toContainText("课程标签、你选择的学习目标");
+});
+
 test("保存设置会带着会员的选择写入", async ({ page }) => {
   await mockLearningReportGateway(page);
   let body = "";
@@ -418,6 +429,16 @@ test("暂停的生成任务不冒充生成失败", async ({ page }) => {
       fullPage: true,
     });
   }
+});
+
+test("设置读不到时不再指向不在屏上的生成按钮", async ({ page }) => {
+  await mockLearningReportGateway(page, { report: null, preferencesStatus: 503 });
+  await page.goto("/practice/reports");
+
+  // 读不到设置时页面给的是关闭/清除块，生成按钮不存在，空态就不该出现。
+  await expect(page.getByTestId("practice-reports-opt-out")).toBeVisible();
+  await expect(page.getByTestId("practice-reports-generate")).toHaveCount(0);
+  await expect(page.getByTestId("practice-reports-empty")).toHaveCount(0);
 });
 
 test("报告交接失效时给回报告的链接，而不是必然失败的重试", async ({ page }) => {

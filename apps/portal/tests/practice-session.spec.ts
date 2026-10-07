@@ -347,3 +347,16 @@ test("Practice quiz without a real bank selection remains an honest empty state"
   await expect(page.getByText("请先从题库目录选择一组练习后开始。")).toBeVisible();
   expect(commandRequests).toBe(0);
 });
+
+
+test("收藏练习的交接失效时给回收藏夹，而不是必然失败的重试", async ({ page }) => {
+  // 交接记录只存在于 sessionStorage 那一份，重试读的还是它。
+  await page.goto("/practice/quiz?session_id=missing_favorites_handoff");
+
+  await expect(page.getByText("收藏练习会话已失效，请返回收藏夹重新发起。")).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回收藏夹", exact: true })).toHaveAttribute(
+    "href",
+    "/practice/favorites"
+  );
+  await expect(page.getByRole("button", { name: "重试", exact: true })).toHaveCount(0);
+});

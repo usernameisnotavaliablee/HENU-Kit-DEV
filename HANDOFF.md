@@ -685,3 +685,23 @@
 截图：本机 `.cache/screenshots/` 现 10 张（新增 `learning-reports-paused-{desktop,mobile}.png`，因为暂停态文案是本次改的第三处会员可见文字；桌面图人工确认 F1/F2/F3/F6/F10 五处新文案都按预期渲染）。
 
 待人工签字的会员可见文案（本操作新增/变更）：上述 1/2/3/4/5/6/7/8 的全部新串 + 词汇项。
+
+### 58 — 三轮评审的 9 项全部处理（含一处「我把守护改弱了」的回退）
+
+三轮复评在最终 head `d15a0961` 上给出：文案轴 2 项新发现 + 一个钉子缺口、标准轴 0 硬伤 / 3 判断项、规格轴 4 项。逐条处理如下。
+
+**规格轴 N4 是最重要的一条（我自己的修复造成的守护回退）**：op 56 把写路径的两处 `"learning_entitlement_required"` 改成常量后，`apps/portal/src/lib/api/gateway-errors.test.ts` 的前向扫描（正则匹配 `writeError(..., "code")` 字面量）就再也看不到这个 code 了——`gatewayCodes` 59→58，于是把这个会员可见 code 从 `GATEWAY_USER_MESSAGE_CODES` 里删掉**不再会让测试变红**（spec:87 正是用这个测试兜底）。评审给了两条路（扩展扫描支持常量赋值 / 保留一处字面量），我选后者：把写路径恢复成字面量，并在 `handler.go` 与常量声明处都写清「写点故意用字面量、否则 Portal 的扫描看不到这个 code」。**已复核该 code 重新对守护可见**（用同一正则扫非测试 Go 源码：命中）。
+
+其余：
+1. **文案 N1（F6 的残留其实没关）**：空态块原本没按设置读取状态门控，于是「报告 404 + 设置 5xx」时会员读到「点上方『生成报告』即可」而屏上没有该按钮。改为 `preferencesState.status === "ready" && !report`，并补该组合的测试（存在 opt-out 块、生成按钮与空态都为 0）。HANDOFF 57 第 4 条里「文案不再指向不存在的按钮」当时**不成立**，此处更正。
+2. **文案 N2（同一个死胡同只修了一半）**：收藏夹来源的交接失效仍只给「重试」。现在按来源分派：report → 「返回学习报告」，其余（含收藏夹）→ 「返回收藏夹」→ `/practice/favorites`，并在 `practice-session.spec.ts` 补测试。
+3. **标准 N1（注释机制写错）**：`readPracticeSessionHandoff` 是纯 `getItem`，**没有**「读一次就用掉」这回事；重试失败的真实原因是记录本来就不存在/不可解析。注释改为真实原因（行为本来就对）。
+4. **标准 N2（新增的 actionHref 与仓库约定机制不一致）**：`PracticeState` 改成与 `components/data-state.tsx` 的 `EmptyAction` 同形的**判别联合** `action?: {label,href} | {label,onClick}`（按 `"href" in action` 收窄），重复的长 className 提成 `practiceStateActionClass`。顺带发现并删掉真正的死代码：`setLoadState("error")` 全仓只有一处调用（交接读取失败），所以那个「重试」从来没有成功过——`retrySessionLoad`、只服务于它的 `restart` state 与 effect 依赖一并移除（行为和测试均不变）。
+5. **标准 N3（canManage 语义与我写的不符）**：`canManage` 改为**必填**、三个调用点各自显式传值；真实条件是 `selectedBank !== null && !membershipDenied`（设置卡与 opt-out 块都要有选中课程，会员被拒时两者都不渲染）。**更正 HANDOFF 57 第 5 条**：当时写的「该半句只在实际有控件的分支出现」不准确——未登录分支与未选课分支当时也会渲染它；现在不会。
+6. **文案钉子缺口**：给此前无钉子的项补上——设置卡的模型职责/外发范围两条断言（`设置卡的授权说明与模型实际做的事一致`）、暗态分支页头不得承诺关闭/清除（`empty-state-actions.spec.ts`）、以及 N1 的组合用例。
+7. **规格 N1/N2（文档行号漂移）**：运维矩阵的 `learning_reports.go:137` → `:138`（并附函数名 `clearLearningReports`，行号再漂也能对上）与 `handler.go:1020` → `:1022`。
+8. **规格 N3（白名单枚举过期）**：spec:42 的外发白名单补上「会员自己选的学习目标」（`LearningModelInput.Goal` 确实外发，`learning_analysis.go:93`）。
+
+验证：`gofmt -l` 干净、`go vet ./...` 干净、`go test -race -count=1 ./internal/httpapi` ok；Portal `pnpm test` 38 文件 / 301 用例、`tsc --noEmit` 干净、`eslint` 0 error；`playwright --config playwright.learning-reports.config.ts` **13 passed**（含 2 个新用例）；`playwright tests/empty-state-actions.spec.ts tests/practice-session.spec.ts` **15 passed**（含暗态页头与收藏夹两条新用例）。
+
+下一步：在新 head 上请三轴做**收尾复评**，全绿后把 PR #1 正文的 `Review-Head`/两轴结论更新为最终 SHA（正文更新不改文件，因此不会再动 head）。
