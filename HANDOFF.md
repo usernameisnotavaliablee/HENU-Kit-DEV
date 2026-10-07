@@ -1124,7 +1124,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 - 停点：head `9dc8dc3e`（第 85 条复评里 Standards 0 / Spec 0 已回，Copy 未回）；PR #1 正文仍钉在 `0271062f`，**没有**执行 `gh pr edit`，所以 `review-evidence` 的 pin 待下一轮补。
 - 与目标相关的账，窗口取 `c6238afe..9dc8dc3e`（51 个提交；把 `c6238afe` 本身算进来是 52）：其中 13 个改过非 `.md` 文件（11 个标题是 `fix`/`feat`，另两个是 `docs(gateway)` 与 `test(portal-gateway)`），新增 38 条 HANDOFF 条目（第 48–85 条），其余是文档与就地更正。13 个代码提交按缺陷归类为 11 处：quizcraft-go 三处必红、portal-gateway 两处、portal 文案与守卫三处、网关拒绝码转发两处、console-gateway 生成物一处。真实 CI 一次都没跑过：当时 fork 未启用 Actions、`push` 只触发 `main`、`branch-name` 门禁在 `has_issues: false` 下必然失败。
-- 弯路已归档到根 [AGENTS.md](AGENTS.md) 的「经验教训」一节，分取值与取证 / 本机环境 / 流程三类（当时 17 条；后续提交又补了新条目，现为 19 条——**日志里别钉行号与条数，它们随提交变**）（含被 `tail` 截断取数、管道里取退出码、把条件句写成 CI 事实、日志条目错引、HOME 与 Node 26 两个环境陷阱、以及「先算触发面再决定验什么」）。
+- 弯路已归档到根 [AGENTS.md](AGENTS.md) 的「经验教训」一节，分取值与取证 / 本机环境 / 流程三类（当时 17 条；此节随后仍在增补，写这条时已 20 条——**日志里别钉条数与行号，它们随提交变**）（含被 `tail` 截断取数、管道里取退出码、把条件句写成 CI 事实、日志条目错引、HOME 与 Node 26 两个环境陷阱、以及「先算触发面再决定验什么」）。
 - 下一步（需人工确认）：①把 PR 正文 `Review-Head` 钉到当时 head 并确认 `review-evidence` 通过；②决定启不启用 fork 的 Actions 或改分支名；③`#166` 切流决定。
 - 补记（暂停之后）：用户在 fork 上启用了 Actions 并把 PR #1 合入 `main`（合并提交 `29c7c6a8`，合的是 `0271062f`，比本分支晚的三处没进去），于是 `main` 上 `console-gateway` 的契约步骤因生成物陈旧而必红；据此开 PR #2（`c19184c0` → `main`），并用 `gh workflow run quizcraft-go.yml --ref main` 取得本仓库**第一次真实 CI 运行**（run `37657421506`）。
 
@@ -1143,13 +1143,20 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 根因：该文件 `setUpClass` 用 `subprocess.run(['ruby','-rjson','-ryaml','-e','puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), [], [], true))'])` 读 `packages/api-contracts/openapi/quizcraft.yaml`，并用 `@unittest.skipUnless(shutil.which("ruby"))` 兜底。本机 macOS 有 ruby 2.6 → 一直绿；CI runner 上 ruby 存在但这条命令退出非零（pytest 只回显了 `CalledProcessError` 的截断 repr，ruby 的 stderr 没落进日志），`skipUnless` 兜不住「工具在但不可用」。
 - 修法（ponytail：删依赖而非猜 ruby 版本）：测试改用 Python 自己的 `yaml.safe_load(CONTRACT.read_text(encoding='utf-8'))`，删掉 `json` / `subprocess` / `shutil` 三个 import 与那个 skip 装饰器；`pyyaml` 与 `pytest` 一样只装在 CI 的 pip 行（[`.github/workflows/quizcraft-go.yml`](.github/workflows/quizcraft-go.yml) 第 165 行），**不进** `requirements.txt`，免得为一条测试给生产加依赖。
 - 本机验证：`PYTHONPATH=. python -m pytest -q tests/test_learning_report_contract.py` → **4 passed**（此前是「靠 ruby 过」，现在是「不依赖 ruby 过」）。
-- 同轮的文档合并：根 `AGENTS.md` 并为全仓唯一 agent 文档（97 行，caveman 压缩；当时的 17 条经验教训全部保留（此后又补了 sqlc 独立二进制与 SHA 注释格式两条，现为 19 条），新增「CI 现状」记下 14 个 workflow / 只有 2 个支持 `workflow_dispatch` / PR 事件在本 fork 不产生 run / 两条治理门禁的原文要求）；删除 `apps/portal/AGENTS.md` 与 `apps/portal/CLAUDE.md`（`next dev` 自动生成，生成器 `apps/portal/node_modules/next/dist/server/lib/generate-agent-files.js:112-113` 同时写这两个文件）并加进 `.gitignore` → 提交 `ed2c0f27`。
+- 同轮的文档合并：根 `AGENTS.md` 并为全仓唯一 agent 文档（97 行，caveman 压缩；当时的 17 条经验教训全部保留（此后又补了 sqlc 独立二进制、SHA 注释格式、dispatch 缺口与 gh 缓存绕法四条，写这条时 20 条），新增「CI 现状」记下 14 个 workflow / 只有 2 个支持 `workflow_dispatch` / PR 事件在本 fork 不产生 run / 两条治理门禁的原文要求）；删除 `apps/portal/AGENTS.md` 与 `apps/portal/CLAUDE.md`（`next dev` 自动生成，生成器 `apps/portal/node_modules/next/dist/server/lib/generate-agent-files.js:112-113` 同时写这两个文件）并加进 `.gitignore` → 提交 `ed2c0f27`。
 - 教训：`skipUnless(which(...))` 只兜「工具不存在」，兜不住「工具在但不可用」；跨平台测试宁可只用语言自身的标准库或已装依赖，也别调系统里的第三方解释器。
 
 ### 89 — 真 CI 全绿：`quizcraft-go.yml` 13 步全过（run `37659720284`）
 
 - 第三次 dispatch（`gh workflow run quizcraft-go.yml --ref codex/learning-feedback`）的 `verify` 作业 **6m55s 全绿**，包括第二轮从未通过的五步——`Verify existing FastAPI remains intact` 在第二轮跑过并失败（ruby 缺陷就是这么逮到的），另四步是头一回运行：`Verify existing FastAPI remains intact`、`Verify React generated-client shadow flow`、`Verify cutover release switch rollback`、`Build shadow image`、`Scan repository and shadow image`；连同已在第二轮转绿的 `Verify migration round trip and recovery`、`Verify resumable reconciliation CLI recovery`、`Verify QuizCraft contract`、`Vet, test, and build`。
 - 这条绿是靠真 CI 自己逮到的两个必错换来的（本机复现都到不了）：① `sqlc generate` 缺 75 行 models（`772097f0`）；② 契约测试依赖外部 `ruby` 解析 YAML，runner 上 ruby 在但命令退出非零，而 `skipUnless(which("ruby"))` 兜不住「工具在但不可用」（`396ae958`）。
-- 未能取到的一手证据：ruby 那条命令的 stderr 没进 CI 日志（pytest 只回显 `CalledProcessError` 的截断 repr），所以「runner 的 ruby 到底为什么失败」仍未定论——修法是删掉该依赖，不是猜 ruby 版本。
+- 未能取到的一手证据：ruby 那条命令的 stderr 没进 CI 日志——原因是测试自己 `subprocess.run(..., capture_output=True)` 把它吞了且从不打印 `result.stderr`（`CalledProcessError.__str__` 本来就不含 stderr，所以加 `-vv` 也没用），于是「runner 的 ruby 到底为什么失败」仍未定论；正确的下一步是先把 stderr 打进日志，而当时的修法是删掉该依赖、不猜 ruby 版本。
 - 剩下的不是代码问题：`pull-request-governance.yml` 的 `branch-name` 要求 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，本仓 issues 关闭 → 结构上必红（人工决定改分支名还是放宽门禁）；`review-evidence` 需要 PR 正文钉住当前 head 与两条 0 findings；学习报告切流窗口、10 张截图补传仍待人工。
 - PR #2（`codex/learning-feedback` → `main`）的正文已据此重写（`gh pr edit 2` 落盘）：范围是 10 个文件（含 sqlc 生成物、契约测试去 ruby、workflow 的 pip 行、AGENTS.md 合并与 `.gitignore`），验证一节改为引用真 CI 的 run 号与步骤清单。
+
+### 90 — 给本 PR 真正触发的两个作业加 `workflow_dispatch`：三个作业首次全部真绿
+
+- 结构性缺口：本 PR 同时触发 `console-gateway.yml`（`services/console-gateway/**`）与 `portal-gateway.yml`（`products/quizcraft/go-service/**`，为跨服务联合测试刻意加的路径），而这两个文件原先都没有 `workflow_dispatch`，本 fork 的 PR 事件又产生 0 run ⇒ 本 PR 的核心修复（console-gateway 的 account-portfolio 生成物）在真 CI 上**零证据**。给两个文件各加一行 `workflow_dispatch`。
+- 加了之后在 head `a802b5c2` 同时 dispatch 三个作业，全部第一次跑通：`QuizCraft Go` ✓、`Console Gateway` ✓ 4m34s（含五个生成器 + `git diff --exit-code`）、`Portal Gateway` ✓ `verify` 1m26s + `joint` 1m13s（真 QuizCraft Core 二进制对 Gateway 的联合测试）。
+- 此后只有文档提交（本条与 AGENTS.md 的两处口径），代码与 workflow 内容与 `a802b5c2` 相同。
+- 同轮按 Standards / Copy 轴改的口径：第 86/88 条不再钉经验教训的条数与行号（17 → 写这条时 20 条，它们随提交变）；第 89 条把「ruby 的 stderr 没进日志」的归因改对——是测试自己 `subprocess.run(..., capture_output=True)` 吞了它，`CalledProcessError.__str__` 本就不含 stderr，所以加 `-vv` 无用，正确做法是先把 stderr 打进日志；AGENTS.md 补两条本机事实（`XDG_CACHE_HOME=/tmp/ghcache gh run view --log-failed` 绕开不可写的 `~/.cache/gh`；node 22 是 12/14 个 workflow 的 pin）。

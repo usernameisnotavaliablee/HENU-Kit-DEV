@@ -84,9 +84,10 @@
 
 - `HOME` **不能**重定向给需要 Next dev 的浏览器门禁（`Could not find the Next.js package` → `PageNotFoundError` / `.next` 的 `ENOENT` → Playwright `Timed out waiting 120000ms from config.webServer`）；Go 侧相反，必须显式给 `GOCACHE`/`GOMODCACHE`/`GOPATH`，否则 `failed to initialize build cache`。两套重定向互斥 → 配方见 `docs/DEVELOPMENT.md` §14。
 - npm 要同时给 `npm_config_cache` 与 `npm_config_logs_dir`，否则以 `npm error Log files were not written…` 中止；语境与反例见 `docs/DEVELOPMENT.md` §14。
-- 本机 Node 26 默认开 experimental webstorage → `apps/console` 的 `src/lib/pending-operations.spec.ts` 挂 1 条；加 `NODE_OPTIONS=--no-experimental-webstorage` 即 19/19。CI 固定 node 22。
+- 本机 Node 26 默认开 experimental webstorage → `apps/console` 的 `src/lib/pending-operations.spec.ts` 挂 1 条；加 `NODE_OPTIONS=--no-experimental-webstorage` 即 19/19。CI 固定 node 22（14 个 workflow 里 12 个 pin 22，`portal-summary.yml` 与 `pull-request-governance.yml` 不装 Node）。
 - 无 Docker 时的红必须点名文件 + 错误再归因：`spawnSync docker ENOENT`、`panic: rootless Docker not found`（testcontainers）、`JSON.parse` 空 compose 输出、materials 的 `fixed Node runtime is unavailable`、缺 `shellcheck`/systemd。「环境问题」不算归因。
 - 需要 Docker 的步骤先找该工具的独立二进制：`sqlc` 官方 release 是纯 Go 静态二进制，可直接复现 `docker run sqlc/sqlc:1.31.0 generate`（`go install …@v1.31.0` 因 go.mod 带 replace 指令不可行）。真 CI 第一次（run `37657421506`，main）就红在只有 Docker 那半跑得到的 `sqlc generate` 缺 75 行。
+- `gh` 写不了 `~/.cache/gh` 时，`gh run view --log-failed <id>` 直接失败；给个可写的缓存目录就能拿到原始日志：`XDG_CACHE_HOME=/tmp/ghcache gh run view --log-failed <id>`。
 - 子代理环境可能与本机不同（它要 `chromium_headless_shell-1228`，本机缓存 1243）：依赖本机缓存/二进制的门禁（浏览器 e2e）它只能 `--list` 数用例、验不了通过 → 别把它的「跑不了」当证据；它跑得了的门禁照样给出精确数。
 
 ### 流程
