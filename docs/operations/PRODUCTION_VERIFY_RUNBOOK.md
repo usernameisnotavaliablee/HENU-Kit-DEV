@@ -495,12 +495,84 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 | §8 | 支付（WeChat 键 / EasyPay / 订单表） | 通过/失败/待人工 | | D3 决策输入 |
 | §9 | 残留（study-api 404 / 10086 / 旧容器） | 通过/失败/待人工 | | |
 | §10 | 证据归档 | 通过 | | `$LOG` 路径 |
+| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401；worker=0 时 queued 必须为 0 |
 
 **回填动作（核验完成后，在仓库内执行）：**
 1. 更新 `docs/operations/CURRENT_PRODUCTION_STATE.md` §6「待服务器核验清单」：已核验项打勾并写证据日期；把「仓库无法自答、必须服务器回答」的结论写进 §1–§4 相应小节。
 2. 更新 `docs/migrations/ALL_NEW_STACK_CUTOVER.md` M0 清单与 D6 决策行：服务器核验执行人回填完成。
 3. 若发现 `release.yml` 契约与服务器 env 不一致（§2.4 有 MISSING），先修服务器 env 或记录「release 契约未覆盖」结论，再决定是否回同步仓库 `.env.henukit.example`。
 4. 本 Runbook 不修改任何生产对象；任何修复动作走既有变更流程（`henukit-local-deploy.md` §7 或 release 发布流程），不在核验会话内执行。
+
+---
+
+## §11 学习报告（暗态默认）：只读取证（约 4 分钟）
+
+**目的**：会员侧「学习报告」出厂**全程暗态**（四个开关默认 0）。本节只确认生产**仍是暗态**；切流后则确认已按顺序打开、且没有异常积压。开关语义、回退顺序、403/429/503 的分工与会员可见文案口径见 `practice-wiring-matrix.md` §7/§8 与 `quizcraft-learning-feedback-spec.md` LF-07，**本节只讲「在服务器上怎么只看不动」**。
+
+**本节附加安全规则**：下面所有请求都**不带会员会话 Cookie**（暗态门与鉴权都在网关进程内，未认证请求不会触达 Core）。**绝不要**在核验会话里用真实会员 Cookie 调 `DELETE`——那会真的清掉该会员已生成的报告。
+
+```bash
+echo "== 11.1 学习报告开关的生效值（五个都不是密钥，可直接记录）==" | tee -a "$LOG"
+for k in PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS \
+         NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS \
+         QUIZCRAFT_LEARNING_WORKER_ENABLED QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL \
+         QUIZCRAFT_LEARNING_MANUAL_LIMIT; do
+  printf '%s=%s\n' "$k" "$(grep -hE "^${k}=" "$ENV_FILE" | tail -1 | cut -d= -f2-)"
+done | tee -a "$LOG"
+# 浏览器开关烘进 Portal 构建产物：只改 env 不生效，必须重建镜像（回退顺序第 ② 步）
+docker inspect henukit-portal-1 --format '{{range .Config.Env}}{{println .}}{{end}}' \
+  | grep -E '^NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=' | tee -a "$LOG"
+```
+
+**暗态期望值**：前两个为 `0`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=0`、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`（`..._SCHEDULER_INTERVAL` 默认 `10m` 但在 worker 关闭时不生效，见 11.4）。
+
+```bash
+echo "== 11.2 路由取证（不带 Cookie；暗态门在鉴权之前，所以暗态下能直接看到 503）==" | tee -a "$LOG"
+B=https://henukit.cn/api/v1/practice/banks/00000000-0000-0000-0000-000000000000
+probe_lr() { # $1=名称 $2=期望码 $3...=curl 参数
+  local name=$1 want=$2; shift 2
+  local code; code=$(curl -sk -o /tmp/lr.out -w '%{http_code}' "$@")
+  if [ "$code" = "$want" ]; then echo "[PASS] $name -> $code（期望$want）"; else echo "[FAIL] $name -> $code（期望$want）"; fi
+  head -c 200 /tmp/lr.out; echo
+}
+# 读路由（偏好/最新报告/任务）与写路由（生成、保存偏好）：暗态 = 503 practice learning reports are not enabled
+probe_lr "读：偏好" 503 "$B/learning-reports/preferences" | tee -a "$LOG"
+probe_lr "写：生成报告" 503 -X POST "$B/learning-reports" | tee -a "$LOG"
+# 唯一豁免：清除路由。未认证 → 401 not authenticated（暗态与切流后都一样）
+#   → 若这里变 503：豁免被收窄（会员在回退期间无法撤回数据）；若变 2xx/404：没鉴权就真的删了，属事故
+probe_lr "清除（未认证，不发 Cookie）" 401 -X DELETE "$B/learning-reports" | tee -a "$LOG"
+```
+
+**判读**：暗态下前两条必须 `503`（该码同时覆盖「开关关闭」与「Core 客户端未接线」，见矩阵 §8，不要据此判定服务故障）；第三条必须是 `401`。切流后再跑，前两条应变为 `401`（未认证先于业务校验），第三条仍是 `401`。
+
+```bash
+echo "== 11.3 积压与失败（切流后才有意义；暗态下应恒为 0）==" | tee -a "$LOG"
+# 本 Runbook 的 DBQ 只连 docker postgres，而学习报告表在宿主机 postgres 的 quizcraft_v2 库，
+# 所以这里不提供 psql 直查；改用仓库自带只读健康检查（计数是成本代理，不是计费）：
+#   QUIZCRAFT_V2_DATABASE_URL='<只读连接串，不写入日志>' go run ./cmd/learninghealth -json -fail-on-alert
+echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learninghealth（-queued-behind 默认 30m，-failure-budget 默认 0）" | tee -a "$LOG"
+```
+
+**通过判据**：
+- 11.1 五个键存在且为暗态期望值（切流后应与既定切流计划一致）；
+- 11.2 三条状态码符合上述判读；
+- 11.3 无告警、`queued`/`running` 不增长（暗态下应为 0）；
+- 任一不符 → `[FAIL]`，按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
+
+**11.4 worker=0 的含义（避免误判「任务积压」）**：`cmd/server/learning_provider.go` 只在 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1` 时才构造 worker 设置（其中包含自动排期间隔），因此 **worker 关闭时调度器根本不存在**，不会有任何自动任务入队——暗态下的 `queued` 必然为 0，出现任务行就说明有人开过 worker。`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0` 是给「worker 开着但不自动扫」用的（回退顺序第 ④ 步）。
+
+**11.5 切流/回退顺序速查（语义与理由见矩阵 §7，此处只列变量与生效方式）**：
+
+| 步骤 | 变量 | 暗态 / 开启 | 生效方式 |
+|---|---|---|---|
+| ① | `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` / `1` | 重启 gateway |
+| ② | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` / `1` | **重建 Portal 镜像** |
+| ③ | `QUIZCRAFT_LEARNING_WORKER_ENABLED` | `0` / `1` | 重启 QuizCraft 容器 |
+| ④ | `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL` | `0` / `10m` | 重启 QuizCraft 容器 |
+
+回退顺序固定为 ① → ② → ③ → ④；回退期间**清除接口仍可用**（会员撤回数据权利），已发布报告、偏好、任务与审核记录都不会被删除。
+
+**证据记录**：11.1 五行键值与 Portal 容器 env 行、11.2 三个状态码与各自响应体前 200 字节、11.3 的 `learninghealth` 摘要。
 
 ---
 
@@ -521,6 +593,7 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 | 9 | platform 库实际应用到的迁移版本 | §5 | platform-core 无 `schema_migrations` 表，迁移由 deploy helper 显式应用，仓库无法推断服务器状态 |
 | 10 | 旧 FastAPI（:10086）/systemd quizcraft-go.service（:10089）/旧容器是否还在跑、`/study-api/healthz` 是否 404 | §9 | 仓库只知「应退役、Go core 已容器化（方案 2）」，现场状态未知 |
 | 11 | 验收 smoke 主域口径（superhuazai.me vs henukit.cn）以哪个为准 | §4 | M4 §6 已标注需统一，两口径都要现场记录 |
+| 12 | 生产 env 里四个学习报告开关与 `QUIZCRAFT_LEARNING_MANUAL_LIMIT` 的实际值；宿主机 `quizcraft_v2` 的只读连接方式 | §11 | 仓库只知示例契约（`0/0/0/10m/10`）与 `cmd/learninghealth` 的用法，服务器实际值不可知 |
 
 ---
 

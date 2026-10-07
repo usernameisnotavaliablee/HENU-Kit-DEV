@@ -93,7 +93,7 @@
 | D3 | 支付通道 | 微信 Native / EasyPay / 冻结订单 | ✅ **已确认（2026-08-17）：当前走 EasyPay**，微信 Native 不接入；account-portfolio EasyPay 通道需生产接线并开启 |
 | D4 | 会员/积分（VIP）是否在 V1 启用 | 启用 / 保持隐藏候选 | ✅ **已确认（2026-08-17）：会员在用（终身 VIP + 普通两档）**；memberships 数据迁入 account-portfolio 且不丢权益；points 随 D2 关闭 |
 | D5 | 旧身份绑定 | ADR-0013 已定：旧 QuizCraft 身份不自动映射 | ✅ **已确认（2026-08-17）：不做旧身份映射** |
-| D6 | 服务器核验执行人 | 你上服务器回填 M0 清单（或授权脚本自动采集） | ✅ **Runbook 已交付**：`docs/operations/PRODUCTION_VERIFY_RUNBOOK.md`（520 行 11 节，预计 40 分钟，root + 只读库账户） |
+| D6 | 服务器核验执行人 | 你上服务器回填 M0 清单（或授权脚本自动采集） | ✅ **Runbook 已交付**：`docs/operations/PRODUCTION_VERIFY_RUNBOOK.md`（预计 40 分钟，root + 只读库账户；含 §11 学习报告暗态只读取证） |
 
 ## 3. 执行顺序与依赖
 

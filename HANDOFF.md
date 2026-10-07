@@ -785,3 +785,18 @@
 **PR #1 正文**（本条所在提交之后执行，不改 head）：把背景里过期的 38 个提交/168 文件/1.9 万行、`50 assertions passed`、298 用例、7 个 e2e 全部换成当前数字（56 个提交、172 文件、+20654/-240），补齐「联合链路已进 CI 且不可静默跳过」「三条 429/暗态/豁免的变异证据」「回滚期间清除豁免的边界」三块，并把门禁三行钉到**本条所在提交**的 SHA。正文更新本身不产生提交，所以不会再动 head。
 
 **仍然只能由人做的**（与 HANDOFF 55/57 的签字清单一致）：在 fork 上启用 Actions 或把 PR 开到上游（否则 14 个作业永远跑不到）；复核会员可见文案签字清单（含 `/practice` CTA 用「去刷题」还是「去题库」这一处词汇选择）；`#166` 的切流决定；真实模型 provider 冒烟与真实账号全链路；内容/语义闸门；以及确认根 `AGENTS.md` 那处 49+/58- 的重写意图（早于本分支，不归我改）。
+
+### 64 — 补上 op 53/54 记下的真实缺口：生产核验手册没有任何学习报告项
+
+`PRODUCTION_VERIFY_RUNBOOK.md`（40 分钟、逐条复制粘贴的生产核验流程）此前只有 §2 的 key 矩阵里出现过 `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 这个名字，**没有一节讲学习报告怎么核**。新增 `## §11 学习报告（暗态默认）：只读取证`（附 §10 汇总表一行 + 附录「必须服务器回答」第 12 条），并把 `ALL_NEW_STACK_CUTOVER.md` D6 行里那句「520 行 11 节」的计数去掉（计数是最容易漂的一类引用，这一轮已经吃过三次亏）。
+
+**写之前先核过的事实**（避免手册里出现假命令/假期望）：
+
+1. **暗态门在鉴权之前**：`learningReportRead`/`learningReportWrite` 都先查 `h.learningReportsEnabled` 再 `readSession`。所以**不带 Cookie** 的生产请求在暗态下就应当看到 **503 `practice learning reports are not enabled`**——核验不需要真账号，也不需要任何写操作。切流后同一路径应变成 **401**。
+2. **清除豁免可以零风险取证**：豁免路由未认证时走到 `practiceCommand` → `practiceCommandActor` 失败 → **401 `not authenticated`**，不会触达 Core。于是三条状态码构成一个判别器：读/写写路由暗态 503、清除 401。若清除变 503 = 豁免被收窄（回退期间会员无法撤回数据）；若清除变 2xx/404 = 鉴权被绕过，属事故。（手册里写明**绝不要**带真实会员 Cookie 跑那条 DELETE。）
+3. **worker=0 时没有调度器**：`cmd/server/learning_provider.go` 只在 `WORKER_ENABLED=1` 时才构造 worker 设置（含自动排期间隔）。我原本差点写成「暗态下计划任务仍会入队、只是没人做」——那是错的：worker 关闭时调度器根本不存在，所以暗态下 `queued` **必然为 0**，出现任务行就说明有人开过 worker。这条直接写进 11.4，免得值班把「积压」当故障。
+4. 五个键的暗态期望值取自 `.env.henukit.example` 与 `scripts/ops/tests/learning-feedback-dark.test.mjs` 的断言（`0/0/0/10m/10`），`cmd/learninghealth` 的四个 flag 与 `QUIZCRAFT_V2_DATABASE_URL` 取自 spec LF-07。
+
+**没关掉的缺口（如实写进附录第 12 条）**：本 Runbook 的 `DBQ` 只连 docker postgres，而学习报告表在**宿主机 postgres 的 `quizcraft_v2`**，所以 §11 不提供 psql 直查——改用仓库自带的只读 `cmd/learninghealth`，并标注 `[MANUAL]`：需要在能访问该库的运维机上跑。服务器上 `quizcraft_v2` 的只读连接方式只有现场能确认，这正是附录存在的意义。
+
+验证：`practice-wiring-matrix.md` §7/§8、spec LF-07、`cmd/learninghealth` 的 flag、七条路由（读三条 + 写四条）与容器名（compose project `henukit` → `henukit-portal-1`）逐条对照过；`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（该测试会解析矩阵文档）；本轮只改文档，无代码变化。
