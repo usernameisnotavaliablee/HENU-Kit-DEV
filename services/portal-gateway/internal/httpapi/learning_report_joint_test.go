@@ -750,6 +750,12 @@ func jointPreferencesBody(enabled bool, goal string, chapters []string) string {
 func TestQuizCraftLearningReportMemberChainAcrossARealCore(t *testing.T) {
 	adminURL := strings.TrimSpace(os.Getenv("QUIZCRAFT_JOINT_DATABASE_URL"))
 	if adminURL == "" {
+		// This is the only PostgreSQL-backed evidence for the learning-report
+		// chain, so a job that is supposed to run it must fail rather than count a
+		// skip as a pass. A developer without PostgreSQL still gets the skip.
+		if os.Getenv("QUIZCRAFT_JOINT_REQUIRED") == "1" {
+			t.Fatal("QUIZCRAFT_JOINT_REQUIRED=1 but QUIZCRAFT_JOINT_DATABASE_URL is unset: the joint real-Core learning-report chain is required here and must not be skipped")
+		}
 		t.Skip("set QUIZCRAFT_JOINT_DATABASE_URL (a local postgres:// maintenance URL) to run the joint real-Core learning-report chain")
 	}
 

@@ -10,6 +10,12 @@ import (
 	"henukit.dev/portal-gateway/internal/practice"
 )
 
+// learningEntitlementRequiredCode is the one Core denial the read path forwards
+// by name: it is the code Portal renders as the membership entry. Any other 403
+// keeps the shared practice mapping, because a code Portal cannot look up costs
+// the member the actionable message and leaves only a generic denial.
+const learningEntitlementRequiredCode = "learning_entitlement_required"
+
 // learningReportPreferences reads the signed-in owner's course-scoped feedback
 // preferences for one bank. Missing preferences are the Core's disabled
 // defaults, so this read never invents a local default.
@@ -66,14 +72,18 @@ func (h *Handler) learningReportRead(w http.ResponseWriter, r *http.Request, rea
 			return
 		}
 		if errors.Is(err, practice.ErrPortalReadForbidden) {
-			// Core denies these reads when the membership lapsed. Saying so is the
-			// difference between a member who can renew and a member who is told
-			// the feature is broken.
-			code := practice.RejectedCode(err)
-			if code == "" {
-				code = "learning_entitlement_required"
+			// Core denies these reads when the membership lapsed, and that is the
+			// only reason this path can name. Saying so is the difference between a
+			// member who can renew and a member who is told the feature is broken.
+			// A 403 Core did not explain — or explained with a code Portal does not
+			// render — stays a denial but falls back to the shared practice wording:
+			// asserting a membership problem we did not verify would send the member
+			// to check something that is fine.
+			if practice.RejectedCode(err) == learningEntitlementRequiredCode {
+				writeError(w, r, http.StatusForbidden, learningEntitlementRequiredCode, "学习报告需要有效的会员权益，请确认会员状态后再试")
+				return
 			}
-			writeError(w, r, http.StatusForbidden, code, "学习报告需要有效的会员权益，请确认会员状态后再试")
+			writeError(w, r, http.StatusForbidden, "practice access denied", "暂无练习权限。如有疑问，请到账户中心提交工单。")
 			return
 		}
 		// The dependency error stays in the log-only path: the browser message is
@@ -118,9 +128,15 @@ func (h *Handler) requestLearningReport(w http.ResponseWriter, r *http.Request) 
 }
 
 // clearLearningReports withdraws the owner's derived reports and queued work.
+//
+// It is deliberately the one learning write that ignores the cutover gate.
+// Withdrawing data and consent has to stay possible after the feature is turned
+// off in a rollback, and clearing already revokes both: Core's clear route sets
+// enabled=false and external_analysis_consent=false without checking membership
+// or content. Everything else stays 503 while dark.
 func (h *Handler) clearLearningReports(w http.ResponseWriter, r *http.Request) {
 	bankID := chi.URLParam(r, "bank_id")
-	h.learningReportWrite(w, r, http.StatusOK, false, func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
+	h.practiceCommand(w, r, http.StatusOK, false, false, "请先登录后再使用学习报告", func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
 		return h.practiceCommands.ClearLearningReports(ctx, bankID, actorUserID, requestID, idempotencyKey, anonymousCookie)
 	})
 }

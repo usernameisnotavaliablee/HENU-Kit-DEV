@@ -76,7 +76,8 @@
 | `GET /api/v1/practice/favorites`、`/banks/{bank_id}/favorites`、`/feedback/{feedback_id}/status` | Core actor-bound 读（V2 客户端） | 503 |
 | `GET /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`/latest`、`/tasks/{task_id}` | Core actor-bound 读（V2 客户端，学习报告镜像类型） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或缺客户端）；Core 无报告时透传 404；**撤权会员的 `/latest` 与 `/tasks/{id}` 是 403 `learning_entitlement_required`，不是 503**（Core 先校验实时会员权益再查报告，所以没有报告也先给 403；偏好读不受会员门禁，仍是 200） |
 | `POST /api/v1/practice/sessions`、`.../answers`、`/feedback`、favorites 写 | Core 命令（命令客户端） | 503 |
-| `PUT /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`POST /banks/{bank_id}/learning-reports`、`DELETE /banks/{bank_id}/learning-reports`、`POST .../results/{report_id}/practice-sessions` | Core 命令（命令客户端；需 `Idempotency-Key`） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或命令客户端缺失）；会员能自行处理的拒绝带 Core 的码原样转达：`learning_consent_outdated`（400）、`learning_entitlement_required`（403）、`practice_command_rate_limited`（429，手动生成超限） |
+| `PUT /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`POST /banks/{bank_id}/learning-reports`、`POST .../results/{report_id}/practice-sessions` | Core 命令（命令客户端；需 `Idempotency-Key`） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或命令客户端缺失）；会员能自行处理的拒绝带 Core 的码原样转达：`learning_consent_outdated`（400）、`learning_entitlement_required`（403）、`practice_command_rate_limited`（429，手动生成超限） |
+| `DELETE /api/v1/practice/banks/{bank_id}/learning-reports` | Core 命令（命令客户端；需 `Idempotency-Key`） | **唯一豁免暗态门的写路由**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 时仍转发（回退后会员必须还能清除报告并撤回同意）。缺登录/命令客户端时仍是 401/503 |
 | `GET /api/v1/practice/banks`、`/schools`、`/lists/{id}`、`/leaderboard` | **已下线**（ADR-0036，portal-api 直读删除） | 404 + 迁移提示 |
 
 排行隐私契约：公开排行响应只含 `rank / nickname / system_avatar / correct_answer_count`，
@@ -110,6 +111,9 @@
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。
+  回退后**清除接口仍可用**（`DELETE .../learning-reports` 是唯一豁免暗态门的写路由，`learning_reports.go:137` 不经 `learningReportWrite`）：
+  会员必须还能撤回同意并清除报告，Core 侧这条路由本来就不校验会员与内容。其余写路由（含 `PUT .../preferences` 的关闭）在暗态下仍是 503——
+  网关不解析请求体，无法在不读 body 的前提下区分「关闭」与「开启」；要撤回同意就用清除。
 
 ## 8. 学习报告的会员侧拒绝：谁写的、会员看到什么、值班怎么办
 
@@ -118,10 +122,10 @@
 | 会员看到的状态码 | 谁写的 | 触发条件 | 会员侧表现 |
 |---|---|---|---|
 | 400 `learning_consent_outdated` | Core（`learning_reports_http.go:88`），网关转达 | 存库的分析授权代次落后于当前版本，且会员请求**开启** | 横幅：「分析授权已过期，请先关闭学习报告，再重新开启」（关闭再开启两步自愿、可自查） |
-| 403 `learning_entitlement_required` | Core（`requireLearningLifetime`，`:296`），网关转达 | 实时会员权益校验不过 | 会员区块：「学习报告需要有效的会员权益，请确认会员状态后再试」+「去会员中心」入口 |
+| 403 `learning_entitlement_required` | Core（`requireLearningLifetime`，`:296`），网关转达 | 实时会员权益校验不过 | 会员区块：「学习报告需要有效的会员权益，请确认会员状态后再试」+「去会员中心」入口。**只有这个码**会被读路径按名转达；Core 没给码或给了别的码时读路由落 `practice access denied`（`:86`），不会替 Core 断言会员问题 |
 | 429 `practice_command_rate_limited` | 网关（`handler.go:1020`，Core 429 转达） | 手动生成超过 `QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 10/小时/会员/课程） | 横幅：「操作太频繁了，请稍后再试」。**不是配额，也别当故障** |
-| 503 `practice learning reports are temporarily unavailable` | 网关（`learning_reports.go:82`） | 依赖不可用、凭据缺失、账号/权益服务报错 | 横幅：暂时不可用，稍后再试（唯一的「重试」语义） |
-| 503 `practice learning reports are not enabled` | 网关（`:50` 读、`:94` 写） | 暗态开关关闭或客户端未接线 | 同一句「学习报告暂时不可用，请稍后再试」——**与上面共用文案，值班必须看码**：这个码代表「没开」，不是「挂了」 |
+| 503 `practice learning reports are temporarily unavailable` | 网关（`learning_reports.go:92`） | 依赖不可用、凭据缺失、账号/权益服务报错 | 横幅：暂时不可用，稍后再试（唯一的「重试」语义） |
+| 503 `practice learning reports are not enabled` | 网关（`:56` 读、`:104` 写） | 暗态开关关闭或客户端未接线。**清除接口不在此列**（唯一豁免，见 §7） | 同一句「学习报告暂时不可用，请稍后再试」——**与上面共用文案，值班必须看码**：这个码代表「没开」，不是「挂了」 |
 | 404 `learning report not found` | 网关（Core 404 映射） | 该课程确实还没有报告 | 空态 + 「生成报告」入口，不是错误 |
 
 实时会员门禁的位置（读代码确认，不是推测）：`portalUpdateLearningReportPreferences` **只在 `input.Enabled` 为真时**校验（`:213`），

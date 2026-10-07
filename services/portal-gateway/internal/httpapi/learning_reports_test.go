@@ -337,7 +337,6 @@ func TestLearningReportWritesStayDarkUntilTheGateIsOn(t *testing.T) {
 	}{
 		{http.MethodPut, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/preferences", `{"enabled":true}`},
 		{http.MethodPost, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports", ""},
-		{http.MethodDelete, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports", ""},
 		{http.MethodPost, "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports/results/" + learningReportID + "/practice-sessions", ""},
 	}
 	for _, write := range writes {
@@ -349,6 +348,44 @@ func TestLearningReportWritesStayDarkUntilTheGateIsOn(t *testing.T) {
 	}
 	if coreCalls.Load() != 0 {
 		t.Fatalf("dark learning-report writes reached Core %d times", coreCalls.Load())
+	}
+}
+
+// TestLearningReportClearStaysReachableWhileDark is the rollback promise: after
+// the cutover flag is turned off, a member who already has reports must still be
+// able to withdraw them and their consent. Core's clear route revokes both, so
+// the Gateway must not answer its own 503 for that one route.
+func TestLearningReportClearStaysReachableWhileDark(t *testing.T) {
+	var coreCalls atomic.Int32
+	core := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		coreCalls.Add(1)
+		expectedPath := strings.Replace(practice.ClearPortalLearningReportsPath, "{bank_id}", learningReportBankID, 1)
+		if request.Method != http.MethodDelete || request.URL.Path != expectedPath {
+			t.Fatalf("Core request = %s %s, want DELETE %s", request.Method, request.URL.Path, expectedPath)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"request_id":"req_core_clear","data":{"cleared":true,"revision":4}}`))
+	}))
+	defer core.Close()
+
+	handler := newLearningReportWriteHandler(t, core.URL, false)
+	path := "/api/v1/practice/banks/" + learningReportBankID + "/learning-reports"
+	recorder := httptest.NewRecorder()
+	handler.Router().ServeHTTP(recorder, authenticatedPracticeCommandRequest(t, handler, http.MethodDelete, path, "", "learning-report-idempotency-key"))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"cleared":true`) {
+		t.Fatalf("dark clear = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if coreCalls.Load() != 1 {
+		t.Fatalf("dark clear reached Core %d times, want 1", coreCalls.Load())
+	}
+	// Everything else on the surface stays dark in the same configuration.
+	dark := httptest.NewRecorder()
+	handler.Router().ServeHTTP(dark, authenticatedPracticeCommandRequest(t, handler, http.MethodPost, path, "", "learning-report-idempotency-key"))
+	if dark.Code != http.StatusServiceUnavailable {
+		t.Fatalf("dark request = %d, want 503", dark.Code)
+	}
+	if coreCalls.Load() != 1 {
+		t.Fatalf("a dark request still reached Core: %d calls", coreCalls.Load())
 	}
 }
 
@@ -681,12 +718,22 @@ func TestLearningReportReadDenialsReachTheMemberAsDenials(t *testing.T) {
 			wantMessage: "学习报告需要有效的会员权益，请确认会员状态后再试",
 		},
 		{
-			name:        "a denial without a usable code still says why",
+			name:        "a denial without a usable code keeps the shared mapping",
 			coreStatus:  http.StatusForbidden,
 			coreBody:    `{"request_id":"req_core_learning","error":{"code":"<script>x</script>"}}`,
 			wantStatus:  http.StatusForbidden,
-			wantCode:    "learning_entitlement_required",
-			wantMessage: "学习报告需要有效的会员权益，请确认会员状态后再试",
+			wantCode:    "practice access denied",
+			wantMessage: "暂无练习权限。如有疑问，请到账户中心提交工单。",
+		},
+		{
+			// Portal renders the membership entry by code, so forwarding a code it
+			// cannot look up would leave the member with a generic denial instead.
+			name:        "an unrendered denial code falls back to the shared mapping",
+			coreStatus:  http.StatusForbidden,
+			coreBody:    `{"request_id":"req_core_learning","error":{"code":"learning_something_else","message":"course feedback is not available for this bank"}}`,
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "practice access denied",
+			wantMessage: "暂无练习权限。如有疑问，请到账户中心提交工单。",
 		},
 		{
 			name:        "a dependency fault is still not a denial",
