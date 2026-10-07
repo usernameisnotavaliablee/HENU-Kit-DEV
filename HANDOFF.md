@@ -995,22 +995,22 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 ### 81 — staticcheck / govulncheck 也补上了：分支主模块的检查比它的兄弟模块少
 
-第 71/75 条补的是测试面和构建面；这轮补**静态分析面**——CI 里 `staticcheck@2026.1` 与 `govulncheck@v1.6.0` 是 Go 作业的常规步骤，而我从没在这一头跑过。
+第 71/75 条补的是测试面和构建面；这轮补**静态分析面**——Go 作业里常跑的 `staticcheck@2026.1` 与 `govulncheck@v1.6.0`（覆盖并不统一，见下面第 2 条），我从没在这一头跑过。
 
 工具用 CI 的同一版本 `go install` 进工作区（`staticcheck@2026.1`、`govulncheck@v1.6.0`，需网络）。结果：
 
 | 模块 | staticcheck | govulncheck |
 | --- | --- | --- |
-| `services/portal-gateway` | 20 条：18 条 `ST1005` 落在 `career`/`foodposts`/`librarydownload`/`cmd/contractgen`（既有上游代码）、1 条 `ST1005` 在 `handler.go:1050`（既有，jry21223 2026-08-07）、**1 条 `S1009` 落在本分支** | No vulnerabilities found |
+| `services/portal-gateway` | 修复前 24 条 = `ST1005` 23 条（`cmd/contractgen` 10、`internal/librarydownload` 4、`internal/foodposts` 4、`internal/career` 4、`internal/httpapi/handler.go:1050` 1——该行未被本分支触碰，blame `jry21223 2026-08-07`）+ **`S1009` 1 条在本分支**；修后 23 条全为 `ST1005` | No vulnerabilities found（另有 3 条在 required modules 里、代码未调用） |
 | `services/account-portfolio` | 干净 | 同上 |
 | `products/quizcraft/go-service` | 干净（此前的 `SA1012` 已在更早轮次修掉） | 同上 |
 
-那 1 条分支内的 `S1009` 是 `internal/practice/learning_reports.go:285` 的 `QuestionIDs == nil || len(QuestionIDs) == 0`——nil 检查被 `len()==0` 覆盖。**只修这一条**：另外 19 条都不在本分支改动面上（同文件里那些 `== nil || len(x) > N` 形式**不是**同类问题，nil 检查在那里是有意义的语义）。修完 gofmt / vet / `staticcheck ./internal/practice/` / 该包测试全绿；因为是**动了代码**，又在改动后的状态上重跑了两项：
+那 1 条分支内的 `S1009` 是 `internal/practice/learning_reports.go:285` 的 `QuestionIDs == nil || len(QuestionIDs) == 0`——nil 检查被 `len()==0` 覆盖。**只修这一条**：另外 23 条都不在本分支改动面上（同文件里那些 `== nil || len(x) > N` 形式**不是**同类问题，nil 检查在那里是有意义的语义）。修完 gofmt / vet / `staticcheck ./internal/practice/` / 该包测试全绿；因为是**动了代码**，又在改动后的状态上重跑了两项：
 网关全模块 `go test -race -count=1 ./...`（10 个包全 ok）与旗舰联合作业 `…MemberChainAcrossARealCore`（**54 assertions passed**，4 个子用例全过，1.75s，真实 Core + 13 迁移两遍）。
 
 **两条值得记的环境与结构事实**：
 
-1. **staticcheck 需要一个可写的 `HOME`**（它写 `$HOME/Library/Caches/staticcheck`）。第一次跑就撞上：沙箱里该路径不可写，它报 `failed to initialize build cache … operation not permitted` 就退出——而我当时把它放在 `| tail -15` 管道里，`$?` 拿到的是 `tail` 的 0，**看起来像通过**。这与第 71 条记的 npm `~/.npm/_logs` 是同一类陷阱（工具写不了自己的缓存目录 → 静默假绿），已把配方（`HOME=$PWD/.cache/fakehome`）写进 `docs/DEVELOPMENT.md` §14。
-顺带补跑了根 `test:libraryctl`（`node --test scripts/libraryctl/tests/*.test.mjs`，此前从未跑过）：**13/13 通过**。
+1. **staticcheck 需要一个可写的 `HOME`**（它写 `$HOME/Library/Caches/staticcheck`）。第一次跑就撞上：沙箱里该路径不可写，它报 `failed to initialize build cache … operation not permitted` 就退出——而我当时把它放在 `| tail -15` 管道里，`$?` 拿到的是 `tail` 的 0，**看起来像通过**。这与第 71 条记的 npm `~/.npm/_logs` 是同一类陷阱（工具写不了自己的缓存目录 → 静默假绿），配方已写进 `docs/DEVELOPMENT.md` §14，就是这行：`mkdir -p .cache/fakehome && HOME=$PWD/.cache/fakehome staticcheck ./...`。
+2. **分支的主模块反而检查更少**：兄弟模块的 Go 作业跑五步（`gofmt -d . | tee; test ! -s`、`go vet`、staticcheck、govulncheck、`go test -race`，见 `account-portfolio.yml:98-105` 与 `quizcraft-go.yml:140-147`），而 `portal-gateway.yml:63-67` 只有 `go vet` 与 `go test -race`——**缺 gofmt、staticcheck、govulncheck 三步**。它在 `services/` 下是改动最大的模块（16 文件 / +3509；整体上 `products/quizcraft/go-service` 更大：67 文件 / +10290）。这两个工具在 CI 里也不统一：12 个跑 `go test` 的 workflow 中 staticcheck 出现在 9 个、govulncheck 6 个、两者都跑 5 个，而 `portal-gateway.yml` 与 `portal-api.yml` 一个都没有。我没有改 CI（会引入一个在此 fork 上无法验证的新门禁），但这条适合人工决定——注意直接加上 staticcheck 会**立刻红**：那 23 条既有 `ST1005` 得先定策略（修掉 / 排除 `ST1005` / 建基线）。
 
-2. **分支的主模块反而检查更少**：`account-portfolio.yml:103-104` 与 `quizcraft-go.yml:145-146` 都跑 staticcheck + govulncheck，而 `portal-gateway.yml` 的 Go 步骤只有 `go vet ./...` + `go test -race ./...`——本分支改动最多的模块正是它。我没有改 CI（那会引入一个我无法在 fork 上验证的新门禁），但这条适合给人类决定：要不要把这两个步骤补进 gateway 作业。
+顺带补跑了根 `test:libraryctl`（`node --test scripts/libraryctl/tests/*.test.mjs`，此前从未跑过）：**13/13 通过**。
