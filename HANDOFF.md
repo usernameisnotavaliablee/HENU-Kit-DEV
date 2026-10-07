@@ -1077,7 +1077,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 ### 84 — Portal 十步浏览器门禁整组跑通（486 条），deploy 作业的契约批只剩 Docker／systemd 环境红
 
-第 83 条只跑了「被本分支改到的那几个 spec」。这一轮把 `deploy-henukit.yml` 里 Portal 的**全部十个** `test:e2e:` 步骤**整组**跑了一遍——该文件 23 个 spec 的 responsive 组是上一轮唯一没整组跑过的（上轮只挑了我改到的四个）：
+第 83 条只跑了「被本分支改到的那几个 spec」。这一轮把 `deploy-henukit.yml` 里 Portal 的**全部十个** `test:e2e:` 步骤**整组**跑了一遍——上一轮只在 responsive 组（23 个 spec）里挑了我改到的四个 spec 跑，所以 responsive 是上一轮唯一「碰过却只挑文件跑」的组；navigation / account / food / stats / quizcraft-catalog / qq-binding / library-download 这七组上一轮根本没跑：
 
 | 步骤（脚本） | 结果 |
 | --- | --- |
@@ -1094,9 +1094,9 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 合计 **486 条浏览器用例**，加上另一个作业里 oauth 那条链的 Portal 7 + Console 7。十个步骤全是整组跑的，不是挑文件——所以「本分支的 Portal 源码改动没有把别的页面跑坏」这句话现在有覆盖面，而不只是「我改过的那几个 spec 没坏」。第 83 条的配方（真实 `HOME` + 显式 Go 缓存）在这十组上没再出岔子。
 
-顺带补了第一个作业 `validate-release-contract`（`:23`）的两步——它此前只在第 81 条那张表里出现过摘要，这轮按原文命令整批跑了一遍（`git diff` 证明第 81 条之后本分支只动过文档，所以顺带复核那些解析文档的守卫）：
+顺带补了第一个作业 `validate-release-contract`（`:23`）的两步。这个作业在第 53 条（`:610`）逐条跑过那 18 个文件，第 81 条（`:889`）那张表里也有一行摘要，所以这一轮是重跑加逐条归因（`git diff` 证明第 81 条那个提交 `4c2095fd` 之后本分支只动过文档，因此顺带复核了那些解析文档的守卫）：
 
-- `Verify artifact and runtime boundaries`：**118 个用例，95 passed / 15 failed / 8 skipped**。15 条红的归属是精确的：4 条在 `deploy-henukit-workflow.test.mjs`（该文件本分支改过——加了「CI 也跑 quizcraft-catalog / practice / learning-reports / qq-binding 这四个组」的断言，那条断言本身是过的），报错都是 `spawnSync docker ENOENT`（渲染 compose、起 HENU 镜像要 docker CLI）；另外 **11 条正好是 `getwork-node-rollback.test.mjs` 的全部用例**（该文件本分支没碰过），现象是它读不到 fixture 写在临时目录里的 `calls` 记录（`ENOENT … /getwork-rollback-*/calls`）、以及若干 `actual: null` 的进程状态——那套用例从第 59 行起自己造一个假的 `systemctl` 往 `calls` 里写记录，本机（macOS，无 systemd）走不到那一步。8 条 skipped 是 Docker 门控的设计内跳过：`import-henukit-materials-preflight.test.mjs:22` 写的是 `dockerAvailable ? test : test.skip`。
+- `Verify artifact and runtime boundaries`（`:29-65`）把三次 `node --test` 塞进同一个 `set -euo pipefail` 函数，第一批在本机就是红的，`set -e` 让这一步停在那里——三批是分开跑的：第一批（`:33-51` 的 18 个文件）**118 用例 / 95 过 / 15 红 / 8 跳过**；第二批（`:56-57` 的 `package-henukit-runtime.test.mjs`，`--test-concurrency=1`）**6 / 5 / 1**，那条红是 `JSON.parse` 拿到空的 compose 输出；第三批（`:62-63` 的 `watch-henukit-actions.test.mjs`，同参数）**86 / 86 / 0**。合计 **210 用例 / 186 过 / 16 红 / 8 跳过**，而还原到 CI 的语义也更清楚：第一批红，后两批在 CI 里同样不会执行。16 条红的归属精确：4 条在 `deploy-henukit-workflow.test.mjs`（该文件本分支改过——加了「CI 也跑 quizcraft-catalog / practice / learning-reports / qq-binding 这四个组」的断言，那条断言本身是过的），报错都是 `spawnSync docker ENOENT`（渲染 compose、起 HENU 镜像要 docker CLI）；另外 **11 条正好是 `getwork-node-rollback.test.mjs` 的全部用例**（该文件本分支没碰过），现象是它读不到 fixture 写在临时目录里的 `calls` 记录（`ENOENT … /getwork-rollback-*/calls`）、以及若干 `actual: null` 的进程状态——那套用例从第 59 行起自己造一个假的 `systemctl` 往 `calls` 里写记录，本机（macOS，无 systemd）走不到那一步。8 条 skipped 是 Docker 门控的设计内跳过，分布在三个文件：`import-henukit-materials-preflight.test.mjs:22`（5 条）、`materials-study-migration.test.mjs:20`（2 条）、`import-legacy-portal-food-images.test.mjs:193`（1 条），三处都是同一句 `dockerAvailable ? test : test.skip`。
 - `Reject Account mock and fallback sources`：`node scripts/ops/check-account-production-boundary.mjs` → **PASS**（要求真实网关、生产路径里没有 Account mock 来源），这条与代码同源、直接对本分支成立。
 
 于是这个作业在本机的红/跳过全部能归到 Docker 或 Linux systemd 两个环境缺口上，没有一条与本分支的改动有关。
