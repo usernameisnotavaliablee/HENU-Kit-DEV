@@ -1045,16 +1045,16 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 把 CI 里逐条列出的 down 迁移改写成 `for v in 13 … 1` 循环时，我用了 `0000${v}_`，于是个位数版本变成 `00009` 而仓库里是 `000009` → `psql: No such file or directory`。CI 原文是显式列全名的，所以仓库无问题；教训是**把显式清单改写成循环，等于新造了一个需要自己验证的产物**。
 - 另外，合并脚本里我漏把 `.cache/go-path/bin` 加进 `PATH`，于是 `staticcheck` 那行只打了 `command not found` 就跳过；因为写法是 `staticcheck ./... && echo "staticcheck: clean"`，缺工具时表现为**少一行 echo**而不是红。那行 echo 就是为此刻意留的可见性。
 
-### 83 — Portal 的浏览器门禁：四个 e2e 组跑通，并定位「重定向 HOME 会让 Next dev 起不来」
+### 83 — Portal 的浏览器门禁：本分支改到的四组都跑了（三组全过，oauth gate 本机可跑的四段全过），并定位「重定向 HOME 会让 Next dev 起不来」
 
-前几轮补的是 Go 侧的测试/构建/静态分析与 QuizCraft 的浏览器面（那是 Vite），**Portal 这一侧的浏览器门禁一直没跑过**——而它恰恰是本功能会员可见的那一半。`deploy-henukit.yml` 里 Portal 的 e2e 分四组，本分支改到的 spec 正好横跨四组：
+前几轮补的是 Go 侧的测试/构建/静态分析与 QuizCraft 的浏览器面（那是 Vite）；Portal 这边此前只跑过本功能自己那套用例（本轮跑之前 `.cache/screenshots/` 里的截图是 17:16 落的，本轮那次把它们覆盖成了 22:56），把本分支改到的四个组都拉起来跑是这一轮做的——而 Portal 恰恰是本功能会员可见的那一半。Portal 的 e2e 在 `deploy-henukit.yml` 里共**十**个步骤（`apps/portal/package.json` 里另有 11 个 `test:e2e:*` 脚本，多出来的那个走 gate），本分支改到的 spec 落在其中四组：
 
 | CI 步骤 | 本机结果 |
 | --- | --- |
 | `Verify learning report settings, generation and clearing`（`:132` → `test:e2e:learning-reports`） | **14 passed**（18.5s）——这就是本功能自己的浏览器套件（设置与报告渲染、保存设置带幂等键、生成排队、清除二次确认、暂停任务不冒充失败、权益不足给会员入口、授权代次过期等） |
 | `Verify responsive Portal layout`（`:91`）里被本分支改过的四个 spec | **110 passed**（30.3s）：`sub-site-nav`（P-06 入口与左缘对齐）、`page-titles`、`touch-targets`、`empty-state-actions` |
 | `Verify Practice session, swipe, and transition behavior`（`:130` → `test:e2e:practice`） | **11 passed**（14.1s） |
-| 第三个作业的 `Verify cumulative Account Center continuation journeys`（`:162`，跑的是 `scripts/ops/oauth-continuation-release-gate.sh run`） | 该 gate 的五段里，本机能跑的四段全过：`node --test scripts/tests/oauth-continuation-journey.test.mjs`（pass 4 / fail 0）、platform-core `./internal/httpapi` 的 bounded-schema 用例（ok）、Portal 的 Playwright（**7 passed**，真实 portal-gateway fixture `go run ./test/oauth-continuation-fixture` + 平台 fixture，含 360px 键盘路径）、Console 的 Playwright（**7 passed**）；剩下一段 platform-core `./tests` 要 Docker **加** Redis——它同时要 `PLATFORM_CORE_TEST_DATABASE_URL` 与 `PLATFORM_CORE_TEST_REDIS_ADDR`，而本机 6379 上没有服务，所以这个 gate 的 receipt 在本机生不出来 |
+| `oauth-continuation` 作业的 `Verify cumulative Account Center continuation journeys`（`:162`，跑的是 `scripts/ops/oauth-continuation-release-gate.sh run`） | 该 gate 的五段里，本机能跑的四段全过：`node --test scripts/tests/oauth-continuation-journey.test.mjs`（pass 4 / fail 0）、platform-core `./internal/httpapi` 的 bounded-schema 用例（ok）、Portal 的 Playwright（**7 passed**，真实 portal-gateway fixture `go run ./test/oauth-continuation-fixture` + 平台 fixture，含 360px 键盘路径）、Console 的 Playwright（**7 passed**）；剩下一段 platform-core `./tests` 要 Docker **加** Redis——它同时要 `PLATFORM_CORE_TEST_DATABASE_URL` 与 `PLATFORM_CORE_TEST_REDIS_ADDR`，而本机 6379 上没有服务，所以这个 gate 的 receipt 在本机生不出来 |
 
 `tests/learning-reports.spec.ts` 现在是 **14 个用例**（该文件此前在日志里记的是 5 例，后续轮次又长了）。截图证据链这次是新鲜的：`.cache/screenshots/` 下 10 张（桌面 + 移动，含空态、会员入口、暂停、opt-out）由本轮运行重写（22:56），正合 AGENTS.md「前端改动附桌面和移动端截图」。
 
@@ -1063,11 +1063,11 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 **这个 gate 还有两个操作性约束**（不是缺陷，但会让人以为跑不了）：它要求 checkout **完全干净**（`git status --porcelain --untracked-files=all` 必须为空，我改到一半的文档就会让它直接拒跑，得先 stash），并且拒绝把 receipt 写到符号链接目录里——`/tmp` 在 macOS 上就是符号链接，所以 `--output /tmp/…` 会报 `gate receipt parent must be an existing non-symlink directory`，得用仓库里 `mkdir -p release-gates` 那种真实目录。
 
 **根因：`HOME` 重定向会让 Next dev 起不来。** 四个组一开始全部超时，报的是同一串：
-`PageNotFoundError: route not found /page` → `.next/dev/server/pages/_app/build-manifest.json` 的 `ENOENT` → Playwright `Timed out waiting 120000ms from config.webServer`。我先按「陈旧 `.next`（生产构建与 dev 产物混在一起 + 遗留 `dev/lock`）」处理，删掉 `.next` 重跑，**照样失败**——所以那不是原因。真正的定位是逐个变量做对照（每轮都删 `.next`、同一端口、只看根路径状态码）：
+`Could not find the Next.js package (next/package.json)`（日志第一行）→ `PageNotFoundError: route not found /page` → `.next/dev/server/pages/_app/build-manifest.json` 的 `ENOENT` → Playwright `Timed out waiting 120000ms from config.webServer`。我先按「陈旧 `.next`（生产构建与 dev 产物混在一起 + 遗留 `dev/lock`）」处理，删掉 `.next` 重跑，**照样失败**——所以那不是原因。真正的定位是逐个变量做对照（每轮都删 `.next`、同一端口、只看根路径状态码）：
 
 | 环境 | 根路径 |
 | --- | --- |
-| `HOME=$PWD/.cache/fakehome` | **HTTP 500**，日志里 160 行报错 |
+| `HOME=$PWD/.cache/fakehome` | **HTTP 500**，日志里匹配那两类报错的行有 160 行 |
 | 只重定向 `npm_config_cache` | HTTP 200，零报错 |
 | 什么都不重定向 | HTTP 200，零报错 |
 
