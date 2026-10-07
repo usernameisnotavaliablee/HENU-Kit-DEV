@@ -1123,6 +1123,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 ### 86 — 用户暂停目标并要求复盘：弯路经验归档进根 AGENTS.md
 
 - 停点：head `9dc8dc3e`（第 85 条复评里 Standards 0 / Spec 0 已回，Copy 未回）；PR #1 正文仍钉在 `0271062f`，**没有**执行 `gh pr edit`，所以 `review-evidence` 的 pin 待下一轮补。
-- 与目标相关的账（开 PR 以来 52 个提交）：11 个代码提交（quizcraft-go 三处必红 + portal-gateway 两处 + portal 文案/守卫三处 + 网关错误码转发两处 + console-gateway 生成物一处）、23 条 HANDOFF 条目、其余为文档与就地更正。真实 CI 一次都没跑过：fork 未启用 Actions、`push` 只触发 `main`、`branch-name` 门禁在 `has_issues: false` 下必然失败。
-- 弯路已归档到根 [AGENTS.md](AGENTS.md) 的「经验教训」一节，分取值与取证 / 本机环境 / 流程三类共 15 条（含被 `tail` 截断取数、管道里取退出码、把条件句写成 CI 事实、日志条目错引、HOME 与 Node 26 两个环境陷阱、以及「先算触发面再决定验什么」）。
+- 与目标相关的账，窗口取 `c6238afe..9dc8dc3e`（52 个提交）：其中 13 个改过非 `.md` 文件（11 个标题是 `fix`/`feat`，另两个是 `docs(gateway)` 与 `test(portal-gateway)`），新增 38 条 HANDOFF 条目（第 48–85 条），其余是文档与就地更正。13 个代码提交按缺陷归类为 11 处：quizcraft-go 三处必红、portal-gateway 两处、portal 文案与守卫三处、网关拒绝码转发两处、console-gateway 生成物一处。真实 CI 一次都没跑过：当时 fork 未启用 Actions、`push` 只触发 `main`、`branch-name` 门禁在 `has_issues: false` 下必然失败。
+- 弯路已归档到根 [AGENTS.md](AGENTS.md) 的「经验教训」一节，分取值与取证 / 本机环境 / 流程三类共 17 条（7 + 5 + 5，位于 `AGENTS.md` 第 51–74 行）（含被 `tail` 截断取数、管道里取退出码、把条件句写成 CI 事实、日志条目错引、HOME 与 Node 26 两个环境陷阱、以及「先算触发面再决定验什么」）。
 - 下一步（需人工确认）：①把 PR 正文 `Review-Head` 钉到当时 head 并确认 `review-evidence` 通过；②决定启不启用 fork 的 Actions 或改分支名；③`#166` 切流决定。
+- 补记（暂停之后）：用户在 fork 上启用了 Actions 并把 PR #1 合入 `main`（合并提交 `29c7c6a8`，合的是 `0271062f`，比本分支晚的三处没进去），于是 `main` 上 `console-gateway` 的契约步骤因生成物陈旧而必红；据此开 PR #2（`c19184c0` → `main`），并用 `gh workflow run quizcraft-go.yml --ref main` 取得本仓库**第一次真实 CI 运行**（run `37657421506`）。
