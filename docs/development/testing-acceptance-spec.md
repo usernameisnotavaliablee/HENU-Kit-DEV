@@ -33,6 +33,24 @@
 - 浏览器：Chromium、Firefox、WebKit；移动端至少 360px 和 390px。
 - Mock：Platform OpenAPI Mock、Quiz Legacy Fake、DirectMail Fake、学校页面 Fixtures、Deploy Dry-run。
 - 测试数据必须可创建、隔离和清理；不得使用真实学生敏感数据作为常规 Fixture。
+- **无 Docker 的本机等价复现**（容器不可用时，下面这些失败是环境缺失，不是缺陷信号）：
+  - 契约漂移无需 Docker：`go run ./cmd/contractgen`（`services/account-portfolio`）或
+    `go run ./cmd/contractgen && go run ./cmd/quizcraftcontractgen`（`services/portal-gateway`）或
+    `bash products/quizcraft/go-service/scripts/generate-contract.sh` 之后 `git diff --exit-code`。
+    判据是「生成器确实重写了文件且 diff 为空」，而不是「命令退出 0」——生成器静默失败时 diff 同样为空。
+    只有 `internal/store` 的 `sqlc generate`（CI 用 `sqlc/sqlc:1.31.0`）必须 Docker。
+  - 两个集成测试包在无 Docker 时会 **panic**（`rootless Docker not found`），指向本机 PostgreSQL 即可正常跑：
+    `ACCOUNT_PORTFOLIO_TEST_DATABASE_URL=postgres://…`（`services/account-portfolio`，TestMain 自己应用迁移）；
+    `QUIZCRAFT_TEST_DATABASE_URL=postgres://…`（`products/quizcraft/go-service`，此逃生口**不会**应用迁移，
+    需先按序执行 `db/migrations/*.up.sql`，否则用例在空库上失败）。
+    `products/quizcraft/go-service/cmd/reconcile` 的 `TestReconcileCLIBlocksARealPartialImportThenResumesTheSameRun`
+    没有逃生口，必须 Docker。
+  - 运维测试目录**不可整体一起跑**：`scripts/ops/tests/watch-henukit-actions.test.mjs` 与
+    `scripts/ops/tests/package-henukit-runtime.test.mjs` 必须 `node --test --test-concurrency=1 <file>` 单独执行。
+    跨文件负载会把「成功的激活」压成 1 秒超时，得到假失败（CI 的 `deploy-henukit` 作业里对这两条命令有同样的注释说明）。
+  - 依赖 Docker 的断言会报 `spawnSync docker ENOENT`（compose 渲染类）、`fixed Node runtime is unavailable`（材料密封类）
+    或由此衍生的空输出解析错误：`deploy-henukit-workflow.test.mjs` 的 4 条 compose 断言与 `package-henukit-runtime.test.mjs`
+    的 1 条即属此类。
 
 ## 4. Phase 0–1 验收
 

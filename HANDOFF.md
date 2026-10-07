@@ -872,3 +872,25 @@
 顺带把内层「①②」换成「其一/其二」：外层步骤已经占用了 ①②③④，内层 ② 紧接外层 ② 出现在同一渲染行，而这条目的正是「顺序不能换」。
 
 教训（第三次同一类）：**别在文档里写「只在 X 出现」这种全称否定**——我能证明的永远只是「我查过的那些地方没有」。这轮三次翻车（`release_build_args`、Console 守卫、platform client）都是全称断言太满，而每次负责决策的那半句都是对的。以后写「没有/只在」一律降级成「在我核过的这几处没有」，并顺手列出核过的文件。
+
+### 71 — 把三条从没在本机跑过的 CI 作业补上（无 Docker），并记下两个「假失败」陷阱
+
+fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/workflows/` 的**原文命令**逐条复现，第一次覆盖了此前完全没跑过的面：契约生成器、`services/account-portfolio`、QuizCraft 的 Python 与整模块 Go。结论：**代码面全绿，46 条失败全部是环境缺失**，没有一条落在本分支改动面上。
+
+| 面 | 命令（本机等价） | 结果 |
+| --- | --- | --- |
+| 契约漂移 ×3 | gateway `contractgen`+`quizcraftcontractgen`；account-portfolio `contractgen`；quizcraft `generate-contract.sh`（Go + 生成 TS） | 生成文件被**重写**（mtime 当场更新）且 `git diff --exit-code` 为空 → 真·无漂移；仅 `internal/store` 的 `sqlc` 需 Docker |
+| account-portfolio | gofmt、`go vet`、`go test -race -count=1 ./...`（`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL` 指本机库） | 全绿，含本分支新增的 `tests/quizcraft_entitlement_test.go`（tests 包 27s） |
+| QuizCraft Go | gofmt、vet、`go test -count=1 ./...`（`QUIZCRAFT_TEST_DATABASE_URL` + 手工按序迁移） | 除 `cmd/reconcile` 外全绿（`tests` 92.8s）；root 包另跑 `-race` 3.2s 绿 |
+| quizcraft `cmd/reconcile` | 同上 | `panic: rootless Docker not found`——该包本分支 **0 文件**改动，且其 harness 没有逃生口，属环境 |
+| Portal | `pnpm --filter @henukit/portal test` / `tsc --noEmit` / eslint | 38 文件 **301 用例全绿**；类型干净；lint 0 error / 3 warning，与基线逐条一致（在 base worktree 上跑同一 lint 也是 3 warnings） |
+| QuizCraft Python | venv + `requirements.txt` + pytest 跑 CI 的 7 文件清单；`py_compile server.py db_storage.py`；CI 另两条 python 脚本 | **13 passed**（含本分支新增的 `test_learning_report_contract.py`、`test_learning_feedback_inventory.py`）；`py_compile` 与两条脚本通过 |
+| 网关 | gofmt、vet、`go test -race -count=1 ./...` | 10 个包全绿（`internal/httpapi` 7.9s） |
+| 运维测试 | `learning-feedback-dark`、`deploy-henukit-workflow`、`watch-henukit-actions`、`package-henukit-runtime`、`check-account-production-boundary.mjs` | 3/3、14/18（4 条 `spawnSync docker ENOENT`）、**86/86**、5/6（1 条 compose 渲染需 Docker）、PASS |
+
+**两个假失败陷阱（都写进了 `docs/development/testing-acceptance-spec.md` §3）**：
+
+1. **运维测试目录不能整体一起跑**。我第一轮直接 `node --test scripts/ops/tests/`，`watch-henukit-actions` 里一条回滚用例报 `expected /rolled back/`，看着像本分支引入的回归。查 CI 才发现 `deploy-henukit` 作业早就写了两行 `node --test --test-concurrency=1 <file>`，注释是「跨文件负载会把成功的激活压成 1 秒超时」。单独跑该文件 **86/86 通过**，在 base worktree 上单独跑也通过——纯属我的调用方式错。
+2. **两个集成包的 Docker 缺失会 panic，不是用例失败**。`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL` / `QUIZCRAFT_TEST_DATABASE_URL` 是现成的逃生口（CI 的 testcontainers 分支才用容器）；注意 quizcraft 这个逃生口**不会**应用迁移，必须先手工按序执行 `db/migrations/*.up.sql`，否则空库上照样红。整目录串行 329 用例的 46 条失败也全是这类（材料密封的固定 Node runtime 不可用 9 条、docker ENOENT、Linux 工具与路径缺失、getwork 回滚需 systemd 等）。
+
+判据也补了一条：契约检查的证据是「生成器确实重写了文件 + diff 为空」，而不是「命令退出 0」——生成器静默失败（例如 `npx` 因沙箱写不了 `~/.npm/_logs` 而中断）时 diff 同样为空，我第一遍就被这个骗过一次，改用工作区内的 npm cache 重跑才拿到真信号。
