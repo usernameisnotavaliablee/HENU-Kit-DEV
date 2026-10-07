@@ -1015,7 +1015,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 顺带补跑了根 `test:libraryctl`（`node --test scripts/libraryctl/tests/*.test.mjs`，此前从未跑过）：**13/13 通过**。
 
-### 82 — quizcraft-go 作业九步逐条过了一遍：唯一不通过的是 reconcile、两步需 Docker；集成测试包原不必 Docker
+### 82 — quizcraft-go 作业九步逐条过了一遍：reconcile 一步因 Docker 不通过、另两步因 Docker 未跑；集成测试包原不必 Docker
 
 第 71/75/81 条分别补了测试面、构建面、静态分析面，但**都只看自己认定的清单**。这轮反过来做一遍：把 `quizcraft-go.yml` 那九步逐条过一遍，能跑的按原文复现、跑不了的说明为什么。结论是这一步确实还有没跑过的，而且其中一步我一直以为「必须 Docker」，其实不必。
 
@@ -1030,7 +1030,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 | `Verify cutover release switch rollback`（`:181`） | `bash -n` 三个脚本 + 两个 python 断言脚本 + `test-switch-cutover-release.sh` 全过 |
 | `Build shadow image` / `Scan repository and shadow image`（`:189`、`:191`） | 需 Docker，未跑 |
 
-**这一步的收获是 `tests` 包**：`products/quizcraft/go-service/tests` 的 `TestMain` 只看 `QUIZCRAFT_TEST_DATABASE_URL` 是否已有值——有值就直接 `m.Run()`，完全跳过 testcontainers（`tests/main_test.go:20-22`）。所以那个包并非「必须 Docker」，只需先手工备库。照此跑出来：**111 个顶层用例全过**（`-race`，13.8s），其中名字含 `Learning` 的用例 **50 个**（按 `TestLearning*` 前缀数则是 44 个），落在本分支改动过的测试文件里的有 48 个、另 2 个在未改动的 `practice_test.go`；该包被本分支改动的测试文件共 **18 个**。`services/account-portfolio` 的逃生口（`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL`）同样可用，三个包全过（`tests` 3.4s）——它的 `TestMain` 无论是否设变量都会 `ApplyMigrations`，而且该包用 `tests/main_test.go:742` 的 `clearAccountPortfolio` 在用例内 TRUNCATE，所以同一个库本次实测可以反复复用（是那个 helper 在起作用，不是 `ApplyMigrations`——它只做幂等的建表）。
+**这一步的收获是 `tests` 包**：`products/quizcraft/go-service/tests` 的 `TestMain` 只看 `QUIZCRAFT_TEST_DATABASE_URL` 是否已有值——有值就直接 `m.Run()`，完全跳过 testcontainers（`tests/main_test.go:20-22`）。所以那个包并非「必须 Docker」，只需先手工备库。照此跑出来：**111 个顶层用例全过**（`-race`，13.8s），其中名字含 `Learning` 的用例 **50 个**（按 `TestLearning*` 前缀数则是 44 个），落在本分支改动过的测试文件里的有 48 个、另 2 个在未改动的 `practice_test.go`；该包被本分支改动的测试文件共 **18 个**。`services/account-portfolio` 的逃生口（`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL`）同样可用，三个包全过（`tests` 3.4s）——它的 `TestMain` 无论是否设变量都会 `ApplyMigrations`，而且该包用 `tests/main_test.go:742` 的 `clearAccountPortfolio` 在用例内 TRUNCATE，所以同一个库本次实测可以反复复用（是那个 helper 在起作用：`ApplyMigrations` 只做幂等的 schema 变更——建表、改表与幂等种子行，不删任何行）。
 
 那个逃生口有两个坑，都写进了 `docs/development/testing-acceptance-spec.md` §3：
 
