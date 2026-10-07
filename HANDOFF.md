@@ -705,3 +705,18 @@
 验证：`gofmt -l` 干净、`go vet ./...` 干净、`go test -race -count=1 ./internal/httpapi` ok；Portal `pnpm test` 38 文件 / 301 用例、`tsc --noEmit` 干净、`eslint` 0 error；`playwright --config playwright.learning-reports.config.ts` **13 passed**（含 2 个新用例）；`playwright tests/empty-state-actions.spec.ts tests/practice-session.spec.ts` **15 passed**（含暗态页头与收藏夹两条新用例）。
 
 下一步：在新 head 上请三轴做**收尾复评**，全绿后把 PR #1 正文的 `Review-Head`/两轴结论更新为最终 SHA（正文更新不改文件，因此不会再动 head）。
+
+### 59 — 收尾复评的硬伤：我上一轮的 canManage 修复其实是死的
+
+收尾复评（head `f4c16146`）：文案轴 **0 条**（两条非文案小疵）、规格轴 2 条、标准轴 **1 硬伤 + 2 判断项**。
+
+**硬伤 H1（我的修复无效）**：`selectedBank` 的类型是 `QuizCraftCatalogBank | undefined`（`find` 不会返回 null），所以在 `strict` 下我刚写的 `selectedBank !== null` **恒为真**。结果是目录加载中、目录读取失败、目录里没有课程这三种「屏上根本没有控件」的状态仍然显示「随时可以关闭或清除」——正是 N3 要修的那个过度承诺，而且我上一轮在 HANDOFF 58 里写的「未选课分支现在不会渲染它」**在效果上是假的**。改为 `selectedBank !== undefined && !membershipDenied`，并补了会咬人的钉子：目录 mock 覆盖成 `banks: []` 的用例断言 `practice-reports-no-bank` 可见 + 该半句数为 0。**变异验证**：把条件改回 `!== null` 后该用例失败（Expected 0 / Received 1），再改回来——不是同义反复。同时补上文案轴指出的「存在侧」钉子：会员面用例断言该半句可见（暗态用例只钉了不出现，全站硬写 `false` 也能全绿）。
+
+其余：
+1. **两条轴的同一处漂移（标准 J1 / 规格 F1）**：运维矩阵的行号在 op 58 里又错了——因为那次提交自己就往两个 Go 文件里各加了 3 行注释，把它们下面的引用整体推后了 3 行（包括我"修好"的那两个）。现在按当前 head 逐条重算：`learning_reports.go:141`（并保留函数名 `clearLearningReports`，且修掉 `:114` 那处反引号嵌套导致的坏 markdown）、`:59` 读 / `:107` 写、`:89`、`:95`、`handler.go:1025`。
+2. **标准 J2（注释与三行以下的代码矛盾）**：`learning_reports.go` 的读路径 403 原来也是把常量当 `writeError` 的 code 传的，于是「只有比较用它」是假的。**读路径也改用字面量**：常量只留给 `:85` 的比较，注释随之为真，而且这个会员可见 code 现在有两个字面量锚点，Portal 的扫描更不容易再瞎。
+3. **HANDOFF 58 第 5 条的更正**（本文开头）：未登录分支当时的判断是对的（确有控件在屏外），但未选课/目录失败分支确实仍然过度承诺，直到本轮才算修好。
+
+验证：`gofmt -l` 干净、`go vet ./...` 干净、`go test -race -count=1 ./internal/httpapi` ok；Portal `pnpm test` 38 文件 / 301 用例；`playwright --config playwright.learning-reports.config.ts` **14 passed**；变异验证见上。
+
+下一步：在新 head 上再请标准/规格两轴确认这两条关闭（文案轴已 0），然后更新 PR #1 正文并把 `Review-Head` 钉到最终 SHA。

@@ -15,8 +15,9 @@ import (
 // keeps the shared practice mapping, because a code Portal cannot look up costs
 // the member the actionable message and leaves only a generic denial.
 //
-// Only comparisons use it. Write sites keep the literal on purpose so the
-// Portal scan in gateway-errors.test.ts still finds this member-visible code.
+// Only the comparison below uses it: every write site spells the literal on
+// purpose, because the Portal scan in gateway-errors.test.ts looks for
+// `writeError(..., "code")` literals and would stop guarding this code.
 const learningEntitlementRequiredCode = "learning_entitlement_required"
 
 // learningReportPreferences reads the signed-in owner's course-scoped feedback
@@ -83,7 +84,7 @@ func (h *Handler) learningReportRead(w http.ResponseWriter, r *http.Request, rea
 			// asserting a membership problem we did not verify would send the member
 			// to check something that is fine.
 			if practice.RejectedCode(err) == learningEntitlementRequiredCode {
-				writeError(w, r, http.StatusForbidden, learningEntitlementRequiredCode, "学习报告需要有效的会员权益，请确认会员状态后再试")
+				writeError(w, r, http.StatusForbidden, "learning_entitlement_required", "学习报告需要有效的会员权益，请确认会员状态后再试")
 				return
 			}
 			writeError(w, r, http.StatusForbidden, "practice access denied", "暂无练习权限。如有疑问，请到账户中心提交工单。")

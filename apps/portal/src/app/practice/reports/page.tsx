@@ -282,7 +282,7 @@ function ReportsSurface() {
 
   return (
     <main className="mx-auto max-w-site px-5 py-12 md:px-8 md:py-16">
-      <Header canManage={selectedBank !== null && !membershipDenied} />
+      <Header canManage={selectedBank !== undefined && !membershipDenied} />
 
       {catalog.status === "loading" && (
         <section data-testid="practice-reports-loading" className="mt-10">

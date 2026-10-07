@@ -268,6 +268,20 @@ test("设置卡的授权说明与模型实际做的事一致", async ({ page }) 
   await expect(settings).toContainText("用于判断需要优先加强的内容并给出可能的原因");
   // 外发里还有课程标签与会员自己选的学习目标（LearningModelInput）。
   await expect(settings).toContainText("课程标签、你选择的学习目标");
+  // 有控件时这句话必须在：暗态用例只钉了「不出现」，全站硬写成 false 也能全绿。
+  await expect(page.getByText("随时可以关闭或清除。")).toBeVisible();
+});
+
+test("没选到课程时页头不承诺关闭与清除", async ({ page }) => {
+  await mockLearningReportGateway(page);
+  // 覆盖上面的目录 mock：目录里没有课程可选时，页面上没有任何关闭/清除控件。
+  await page.route("**/api/v1/practice/catalog", (route) =>
+    route.fulfill({ json: { ...catalog, banks: [] } })
+  );
+  await page.goto("/practice/reports");
+
+  await expect(page.getByTestId("practice-reports-no-bank")).toBeVisible();
+  await expect(page.getByText("随时可以关闭或清除。")).toHaveCount(0);
 });
 
 test("保存设置会带着会员的选择写入", async ({ page }) => {
