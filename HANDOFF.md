@@ -1014,3 +1014,33 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 2. **分支的主模块反而检查更少**：兄弟模块那个步骤（`- name: Vet, test, and build`）除 `go vet` 与 `go test -race` 外，还跑 `gofmt -d . | tee; test ! -s`、staticcheck、govulncheck，并编译各自的 CLI 二进制（`account-portfolio.yml:96-108` 到编译为止，没有任何一步执行过那些产物；`quizcraft-go.yml:138-162` 更长——发布 SHA 嵌入校验，以及 importbank / reconcile / migrate / backuprestore 四个工具的 `-h` 帮助输出不泄密断言，那些二进制真的会被跑起来）；而 `portal-gateway.yml:62-67` 的「Vet and test」只有 `go vet` 与 `go test -race`——**没有对应门禁的是 gofmt、staticcheck、govulncheck 三项**（不数条数：两条 `run:` 块里的命令行数不同，且都不是 gateway 该照搬的部分）。编译本身不缺口：gateway 二进制由发布镜像构建覆盖（`deploy-henukit.yml:9-13` 同样在 `pull_request` 上触发，19 项镜像清单含 `portal-gateway`，`services/portal-gateway/Dockerfile:9` 跑 `go build … ./cmd/server`）。它在 `services/` 下是改动最大的模块（16 文件 / +3509；整体上 `products/quizcraft/go-service` 更大：67 文件 / +10290）。这两个工具在 CI 里也不统一：12 个跑 `go test` 的 workflow 中 staticcheck 出现在 9 个、govulncheck 6 个、两者都跑 5 个，而 `portal-gateway.yml` 与 `portal-api.yml` 一个都没有。我没有改 CI（会引入一个在此 fork 上无法验证的新门禁），但这条适合人工决定——注意直接加上 staticcheck 会**立刻红**：那 23 条既有 `ST1005` 得先定策略（修掉 / 排除 `ST1005` / 建基线）。
 
 顺带补跑了根 `test:libraryctl`（`node --test scripts/libraryctl/tests/*.test.mjs`，此前从未跑过）：**13/13 通过**。
+
+### 82 — quizcraft-go 那个作业的九步全部落地：集成测试包原不必 Docker
+
+第 71/75/81 条分别补了测试面、构建面、静态分析面，但**都只看自己认定的清单**。这轮反过来做一遍：把 `quizcraft-go.yml` 那九步逐条按原文复现，哪一步没跑过就跑哪一步。结论是这一步确实还有没跑过的，而且其中一步我一直以为「必须 Docker」，其实不必。
+
+| 步骤（`quizcraft-go.yml`） | 本机复现结果 |
+| --- | --- |
+| `Verify migration round trip and recovery`（`:69`） | 全序列通过：`cmd/migrate` 幂等两次、拒绝非 V2 目标；`backuprestore` 演练；迁移计数断言（按目录实际文件数）13 == schema_migrations 记录数；`000007` 的 down 被拒且行与 CHECK 约束都在；down 链 `000013 → 000001` 全过；重放 `000001–000008` up + `migrate` 后 `000009/000010/000011` 记录齐全、`latest_attempt_id` 为 NOT NULL；`pg_dump`/`pg_restore` 恢复演练与对恢复库的逐表 `to_regclass` 断言全过 |
+| `Verify resumable reconciliation CLI recovery`（`:121`） | **不通过，且是唯一不通过项**：`TestReconcileCLIBlocksARealPartialImportThenResumesTheSameRun` 无逃生口，`rootless Docker not found` |
+| `Verify QuizCraft contract`（`:124`） | `sqlc generate` 那半需要 Docker；契约生成器此前已复现为无漂移 |
+| `Vet, test, and build`（`:138`） | 该步命令全过：gofmt / vet / staticcheck / govulncheck 干净；importbank、server、settleranking、reconcile、migrate、backuprestore 六个二进制编出，发布 SHA 经 `strings` 校验确实嵌入，其中 importbank / reconcile / migrate / backuprestore 的 `-h` 泄密断言全过 |
+| `Verify existing FastAPI remains intact`（`:163`） | CI 原文命令：`py_compile` + 七个测试文件 **13 passed** |
+| `Verify React generated-client shadow flow`（`:169`） | `lint` 与 `test:syntax` 干净；三个浏览器套件 **10 / 1 / 2 passed**（practice、practice:production 的 writes 路径、legacy-ranking 在 #166 前 fail-closed） |
+| `Verify cutover release switch rollback`（`:181`） | `bash -n` 三个脚本 + 两个 python 断言脚本 + `test-switch-cutover-release.sh` 全过 |
+| `Build shadow image` / `Scan repository and shadow image`（`:189`、`:191`） | 需 Docker，未跑 |
+
+**这一步的收获是 `tests` 包**：`products/quizcraft/go-service/tests` 的 `TestMain` 只看 `QUIZCRAFT_TEST_DATABASE_URL` 是否已有值——有值就直接 `m.Run()`，完全跳过 testcontainers（`tests/main_test.go:20-22`）。所以那个包并非「必须 Docker」，只需先手工备库。照此跑出来：**111 个顶层用例全过**（`-race`，13.8s），其中本分支的 `Learning*` 有 **50 个**，该包被本分支改动的测试文件 **18 个**。`services/account-portfolio` 的逃生口（`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL`）同样可用，三个包全过（`tests` 3.4s）——它的 `TestMain` 无论逃生口与否都会 `ApplyMigrations`，所以可以反复复用同一个库。
+
+那个逃生口有两个坑，都写进了 `docs/development/testing-acceptance-spec.md` §3：
+
+1. 它**不会**替你应用迁移（只有容器分支里有那个循环），空库上直接用会失败——这一点更早的轮次已经记过。
+2. 它**不能跨运行复用同一个库**：同一 preset 库第二次直接跑会得到一批秒级失败（`TestExplicitImportIsStableVersionedAndReported`、`TestRequireEmptyTargetRejectsFactsInAnyQuizCraftTable` 等），因为 CI 的 testcontainers 每次给的是全新容器。正确姿势是每次 `dropdb`/`createdb` 后按序把 13 个 up 迁移各跑两遍，再跑用例；`account-portfolio` 不受此限。
+
+顺带把两个兄弟作业里此前只「声称」跑过的部分也真跑了：quizcraft-go 的 6 个二进制与 account-portfolio 的 3 个二进制都编得出，SHA 嵌入有 `strings` 证据，四条 `-h` 泄密断言全过。
+
+**两处是我自己的脚本错，不是仓库错**，但都值得记：
+
+- `bash script.sh | tail -20` 让管道退出码取自 `tail`，脚本实际在中途 `exit 1` 我也拿到了 `exit code 0`——这是第 81 条 staticcheck 那个 `| tail` 假绿的同一形态，第二次栽在同一处。这次没被骗是因为我不信那个 0，去查了库状态（该 drop 的库还在、该建的库没建），才发现只跑到一半。**凡是要拿退出码，就别把命令接在 `| tail` 后面。**
+- 把 CI 里逐条列出的 down 迁移改写成 `for v in 13 … 1` 循环时，我用了 `0000${v}_`，于是个位数版本变成 `00009` 而仓库里是 `000009` → `psql: No such file or directory`。CI 原文是显式列全名的，所以仓库无问题；教训是**把显式清单改写成循环，等于新造了一个需要自己验证的产物**。
+- 另外，合并脚本里我漏把 `.cache/go-path/bin` 加进 `PATH`，于是 `staticcheck` 那行只打了 `command not found` 就跳过；因为写法是 `staticcheck ./... && echo "staticcheck: clean"`，缺工具时表现为**少一行 echo**而不是红。那行 echo 就是为此刻意留的可见性。
