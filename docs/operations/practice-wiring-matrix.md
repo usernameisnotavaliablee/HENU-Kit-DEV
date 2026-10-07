@@ -112,7 +112,7 @@
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。
   回退后**清除接口仍可用**（`DELETE .../learning-reports` 是唯一豁免暗态门的写路由，`learning_reports.go:137` 不经 `learningReportWrite`）：
-  会员必须还能撤回同意并清除报告，Core 侧这条路由本来就不校验会员与内容。其余写路由（含 `PUT .../preferences` 的关闭）在暗态下仍是 503——
+  会员必须还能撤回同意并清除报告，Core 侧这条路由本来就不校验会员与学习内容审核（只要求该课程有已发布版本）。其余写路由（含 `PUT .../preferences` 的关闭）在暗态下仍是 503——
   网关不解析请求体，无法在不读 body 的前提下区分「关闭」与「开启」；要撤回同意就用清除。
 
 ## 8. 学习报告的会员侧拒绝：谁写的、会员看到什么、值班怎么办

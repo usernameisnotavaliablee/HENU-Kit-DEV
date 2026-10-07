@@ -8,6 +8,10 @@ on:
       - packages/api-contracts/openapi/portal-gateway.yaml
       - packages/api-contracts/openapi/account-portfolio.yaml
       - packages/api-contracts/openapi/quizcraft.yaml
+      # The joint job runs a real QuizCraft Core binary against this Gateway, so a
+      # Core-only change has to run it too. Without this the cross-service chain
+      # would only ever run when the Gateway side happened to change as well.
+      - products/quizcraft/go-service/**
       - .github/workflows/portal-gateway.yml
   push:
     branches: [main]
@@ -17,6 +21,10 @@ on:
       - packages/api-contracts/openapi/portal-gateway.yaml
       - packages/api-contracts/openapi/account-portfolio.yaml
       - packages/api-contracts/openapi/quizcraft.yaml
+      # The joint job runs a real QuizCraft Core binary against this Gateway, so a
+      # Core-only change has to run it too. Without this the cross-service chain
+      # would only ever run when the Gateway side happened to change as well.
+      - products/quizcraft/go-service/**
       - .github/workflows/portal-gateway.yml
 
 permissions:

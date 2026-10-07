@@ -269,7 +269,9 @@ func (h *Handler) Router() chi.Router {
 	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", h.learningReportTask)
 	// Learning-report writes reuse the practice command credential and the
 	// idempotency-key contract; like the reads they register unconditionally and
-	// fail closed (503) while the learning surface or the command client is off.
+	// fail closed (503) while the learning surface or the command client is off;
+	// the clear route is the one exception, so withdrawing data survives a rollback
+	// (see docs/operations/practice-wiring-matrix.md §7).
 	r.Put("/api/v1/practice/banks/{bank_id}/learning-reports/preferences", h.updateLearningReportPreferences)
 	r.Post("/api/v1/practice/banks/{bank_id}/learning-reports", h.requestLearningReport)
 	r.Delete("/api/v1/practice/banks/{bank_id}/learning-reports", h.clearLearningReports)
@@ -1001,8 +1003,8 @@ func (h *Handler) writePracticeCommandFailure(w http.ResponseWriter, r *http.Req
 	case "learning_consent_outdated":
 		writeError(w, r, http.StatusBadRequest, "learning_consent_outdated", "分析授权已过期，请先关闭学习报告，再重新开启")
 		return
-	case "learning_entitlement_required":
-		writeError(w, r, http.StatusForbidden, "learning_entitlement_required", "学习报告需要有效的会员权益，请确认会员状态后再试")
+	case learningEntitlementRequiredCode:
+		writeError(w, r, http.StatusForbidden, learningEntitlementRequiredCode, "学习报告需要有效的会员权益，请确认会员状态后再试")
 		return
 	}
 	switch {

@@ -639,3 +639,26 @@
 - 截图证据（本机产出在 `.cache/screenshots/`，不入库）：跑 learning-reports 配置刷新了 `learning-reports-{desktop,mobile}`、`learning-reports-opt-out-*`、`learning-reports-membership-*`；另外给此前**没有截图**的空态补了 `learning-reports-empty-{desktop,mobile}.png`（在既有「还没有报告时给出去处」用例里按仓库既有 pattern 加桌面/移动两次 `page.screenshot`）。人工看图确认：「允许把最少的作答统计和题目样本交给外部模型…」「改课程范围、目标或授权后，已生成的报告会失效，需要重新生成」与空态新文案都按预期渲染。
 - 三轴（本操作范围）：Standards — 沿用相邻文案写法与既有 EmptyBlock 约定，无新约定；Spec — 文案改为与 spec 的外发白名单（统计 + 题目样本、不含自由文本）一致，未改任何行为或契约；Public-ready Copy — 本操作**就是** Copy 轴整改，5 条全落地、1 条带证据驳回，会员可见文案清单已在上方列出待人工签字。
 - 下一步（op 56）：三轴复评最终状态（评审证据要挂在最终 head 上），然后才把 PR #1 正文从 `pending` 更新；Standards 硬伤 ①（两条提交信息）与 `AGENTS.md` 范围问题仍留人工决定。
+
+### 56 — 三轴二轮复评（修证据挂在最终 head 上）+ 复评小修
+
+三个只读子代理（标准/规格/文案）在 committed head `2d755fb5` 上做**第二轮复评**，范围是首轮评审点 `67ba73c7` 之后的修复（`git diff 67ba73c7...HEAD`，11 文件），并要求逐条判定首轮「已接受待修」的发现是否真的修好了。结论：
+
+- **标准轴：0 硬伤、6 处判断项**。三条首轮接受项确认**真的修好**，且关键断言**经变异测试证明会咬人**：把读路径改回「任意 code 都转发」（在临时目录的模块副本里跑，GOCACHE 也在临时目录）→ 恰好 4 个期望子测试 FAIL 并打印泄漏 `"error":"learning_something_else"`；把暗态门加回 `clearLearningReports` → `dark clear = 503`；把豁免放宽到 `learningReportWrite` → 暗态写测试与清除测试的 POST 半边同时 FAIL，即**豁免被钉在恰好一条路由**上。残留风险只是社会性的：将来新增路由若直接调 `practiceCommand` 会静默绕过（枚举型测试 `learning_reports_test.go:326-355` 只覆盖有人记得加进去的路由）。联合测试的 skip 面也确认被这一处守卫收口：整个包**只有一处 `t.Skip`**（`learning_report_joint_test.go:759`），其余前置条件本来就是 `t.Fatal`；两种跑法都验过（`QUIZCRAFT_JOINT_REQUIRED=1` 无 URL → FAIL；不设 → SKIP）。
+- **规格轴：4 项，全是低severity，无行为缺陷**。c1/c2 判定**真正解决**：读路径只按名转发 `learning_entitlement_required`，其余回落到 `practice access denied`（与 `handler.go:1234` 字节相同，且 `gateway-errors.ts:16` 已注册）；清除路由确实绕过暗态门、其余写路由仍 503，并且清除真的同时撤销同意（`learning_preferences.go:214` 置 `enabled=false`/`external_analysis_consent=false`/`consent_version=''`，`:218` 删任务）。**子代理独立跑通了真实联合链路**（本机 PG 16.15：重建 `quizcraft_v2`、两遍 13 个迁移、真实 Core 二进制，「54 assertions passed」、4 个子测试全 PASS，用完清理），与我在 op 54 的记录互相印证。它还顺手把仓库里所有 `t.Skip`/`test.skip` 与 14 个 workflow 的 env 对了一遍：**没有别的必需集成测试在静默跳过**。
+- **文案轴：10 项**（含 2 项新发现的「说法不实」），留到 op 57 批次处理，见下。
+
+本轮实际落地的复评小修（6 文件，无行为改动）：
+1. `.github/workflows/portal-gateway.yml`：两个 `paths` 列表补 `products/quizcraft/go-service/**`。二轮**两个轴独立指出**同一处：新 `joint` 作业是唯一的真实 Core 证据，但 Core 单独改动不会触发本 workflow → 这条跨服务链路只在网关侧也恰好改动时才跑。这正是「本轮之前刚做的修复」里的覆盖漏洞。
+2. `docs/development/quizcraft-learning-feedback-spec.md:77` 步骤①：「Gateway 读/写学习报告即时 503」与同一段末尾的清除豁免自相矛盾 → 改为「读与除清除外的写路由即时 503……清除是唯一豁免，见本条目末」。
+3. `docs/development/quizcraft-learning-feedback-spec.md:77` + `docs/operations/practice-wiring-matrix.md`：「Core 侧不校验会员与内容」不精确——`portalClearLearningReports` 会走 `learningPublishedBank`，课程没有已发布版本就 404 `bank_not_found` → 改成「不校验会员与学习内容审核（只要求该课程有已发布版本）」。
+4. `services/portal-gateway/internal/httpapi/learning_reports.go`：清除路由的 Go 注释同样漏了「仍要求课程有已发布版本」，同步补上（规格轴 F2）。
+5. `services/portal-gateway/internal/httpapi/handler.go:270-272`：路由表注释仍承诺四条学习写路由「fail closed (503) while … off」，对 DELETE 已不成立 → 补一句「清除路由是唯一例外，见运维矩阵 §7」。
+6. `services/portal-gateway/internal/httpapi/handler.go:1004-1005`：op 54 新引入的常量 `learningEntitlementRequiredCode` 只在读路径用了，同一包写路径仍内联同一字符串 → 两处改用常量（同包同码两种写法，2 行）。
+7. `apps/portal/tests/touch-targets.spec.ts:94`：注释还写「空状态与『去题库』链接」，op 55 已改成「去刷题」（断言只认文本所以测试照样绿，注释静默过期）→ 同步。
+
+验证：`gofmt -l` 干净；`go vet ./...` 干净；`go test -race -count=1 ./internal/practice ./internal/httpapi` 两个包 ok（practice 1.7s / httpapi 4.2s）。（沙箱里必须先导出 `GOCACHE/GOMODCACHE/GOPATH` 到仓库 `.cache/`，否则默认 `~/Library/Caches/go-build` 报 operation not permitted。）
+
+**op 57 待办（文案批次，来自二轮文案轴）**：① 「用于生成观察和讲解」不实——观察句由服务端按统计拼模板、讲解来自已审核内容包，规范明确模型**不能**返回统计与讲解（spec:43/45）→ 改为「用于判断需要优先加强的内容并给出可能的原因」；② 「只包含题目内容和你在这门课里的作答表现」漏了实际外发的 `policy_version`/`goal`/`tags`（`learning_analysis.go:23-31`）→ 补全；③ 暂停态文案「条件恢复后会自动重试」超出产品——paused 只把 `run_after` 推后 5 分钟（`learning_leases.go:260`），要显式重排（spec:69）→ 改成「再点一次生成」；④ 空态「点上方『生成报告』」在设置读失败时那个按钮不在屏上，且漏了必需的授权勾选 → 补条件；⑤ 暗态分支只给「暂未开放」空块，而页头承诺「随时可以关闭或清除」→ 暗态分支收掉这半句（复用既有 opt-out 块需要拆 hook，不值）；⑥ 题库/刷题标签方向（见下，倾向驳回但列人工签）；⑦ quiz 页报告交接失败态给了必然失败的「重试」，应给「返回学习报告」；⑧ 另有 2 条低优先（不可达的过期文案、限流语义的再生成建议）。
+
+**需要人工决定的一条词汇**：`href="/practice"` 的 CTA 标签，二轮文案轴认为该用目的地自己的名字「去题库」（面包屑/同页正文/收藏夹空态都用题库），而 `docs/product/DESIGN_SYSTEM.md:39,199` 把「去刷题」记录为**任务语言**、且明写「资料库『去刷题』进入 QuizCraft」。我倾向保留 op 55 的统一结果「去刷题」（有文档依据 + 与同区数据/排行榜空态一致），但这是会员可见词汇，按 `AGENTS.md` 属于人工签字项。

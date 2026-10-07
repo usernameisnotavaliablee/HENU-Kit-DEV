@@ -133,7 +133,8 @@ func (h *Handler) requestLearningReport(w http.ResponseWriter, r *http.Request) 
 // Withdrawing data and consent has to stay possible after the feature is turned
 // off in a rollback, and clearing already revokes both: Core's clear route sets
 // enabled=false and external_analysis_consent=false without checking membership
-// or content. Everything else stays 503 while dark.
+// or content review; it still requires the course to have a published version.
+// Everything else stays 503 while dark.
 func (h *Handler) clearLearningReports(w http.ResponseWriter, r *http.Request) {
 	bankID := chi.URLParam(r, "bank_id")
 	h.practiceCommand(w, r, http.StatusOK, false, false, "请先登录后再使用学习报告", func(ctx context.Context, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie) (practice.CommandResult, error) {
