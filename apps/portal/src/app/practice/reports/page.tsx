@@ -300,7 +300,7 @@ function ReportsSurface() {
         <section data-testid="practice-reports-no-bank" className="mt-10">
           <EmptyBlock
             label="先在题库目录里选一门课，学习报告按课程分别生成"
-            action={{ label: "去题库", href: "/practice" }}
+            action={{ label: "去刷题", href: "/practice" }}
           />
         </section>
       )}
@@ -432,7 +432,7 @@ function ReportsSurface() {
               </button>
               {!canGenerate && (
                 <p className="font-mono text-xs text-ink/60">
-                  勾选「定期生成」并同意后即可生成报告。
+                  勾选上面的两个选项后即可生成报告。
                 </p>
               )}
               <ClearReportsButton
@@ -499,7 +499,7 @@ function ReportsSurface() {
           {readState.status === "ready" && !report && (
             <section data-testid="practice-reports-empty" className="mt-10">
               <EmptyBlock
-                label="这门课目前没有可读的学习报告（改过设置后旧报告会失效）。设置已开启时，点「生成报告」重新生成"
+                label="这门课还没有学习报告；设置已开启时，点上方「生成报告」即可生成"
                 action={{ label: "去刷题", href: "/practice" }}
               />
             </section>
@@ -530,7 +530,7 @@ export default function ReportsPage() {
         <section data-testid="practice-reports-disabled" className="mt-10">
           <EmptyBlock
             label="学习报告暂未开放，先去刷题"
-            action={{ label: "去题库", href: "/practice" }}
+            action={{ label: "去刷题", href: "/practice" }}
           />
         </section>
       </main>

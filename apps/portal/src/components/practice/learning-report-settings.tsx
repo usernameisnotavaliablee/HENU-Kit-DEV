@@ -17,7 +17,7 @@ const INTERVAL_OPTIONS = [3, 7, 14, 30];
 
 /**
  * The member's own settings. Enabling generation and handing the minimized
- * answer summary to an outside model are two separate choices: Core refuses to
+ * statistics and question samples to an outside model are two separate choices: Core refuses to
  * generate without the second one, so this form never implies otherwise.
  */
 export default function LearningReportSettings({
@@ -95,7 +95,7 @@ export default function LearningReportSettings({
             className="mt-1 h-5 w-5"
           />
           <span className="text-sm leading-7">
-            允许把最少的作答摘要交给外部模型，用于生成观察和讲解
+            允许把最少的作答统计和题目样本交给外部模型，用于生成观察和讲解
             <span className="mt-1 block text-ink/60">
               只包含题目内容和你在这门课里的作答表现，不含账户信息；不开这一项就不会生成报告。
             </span>
@@ -185,7 +185,7 @@ export default function LearningReportSettings({
           </p>
         )}
         <p className="font-mono text-xs text-ink/60">
-          设置版本 v{preferences.revision}：改课程范围、目标或授权会让已生成的报告失效
+          改课程范围、目标或授权后，已生成的报告会失效，需要重新生成
         </p>
       </div>
     </section>

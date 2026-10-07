@@ -288,6 +288,22 @@ test("还没有报告时给出去处，而不是空面板", async ({ page }) => 
   await expect(empty).toBeVisible();
   await expect(empty.getByRole("link")).toBeVisible();
   await expect(page.getByTestId("practice-reports-report")).toHaveCount(0);
+
+  // The empty state names the fix that is on this page, so its wording is
+  // evidence too: capture it in both viewports like the other report states.
+  const screenshotDir = process.env.PLAYWRIGHT_SCREENSHOT_DIR;
+  if (screenshotDir) {
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-empty-desktop.png`,
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({
+      path: `${screenshotDir}/learning-reports-empty-mobile.png`,
+      fullPage: true,
+    });
+  }
 });
 
 test("生成报告会排队并跟随任务进度", async ({ page }) => {
