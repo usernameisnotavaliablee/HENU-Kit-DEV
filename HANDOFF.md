@@ -846,3 +846,18 @@
 4. **浏览器入口是构建期开关**：`release_build_args` 目前不含该键 → 产物恒为 Dockerfile 默认 0；开启必须改那段 release env 并重建镜像，而且同一次改动**必须**让 `learning-feedback-dark.test.mjs` 变红——那正是设计意图（切流是一次显式的、会让绊线响的改动），要同步把断言改成期望已开启。
 
 补完这条后，`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 仍 3 pass：新段落刻意避开回退四步的原文字符串，所以断言里那四个 `indexOf` 的首现位置没有被挪动（这条测试同时在守护回退顺序，改文档时容易踩）。
+
+### 69 — 规格轴抓到一条「关于守卫的断言」：Console 只在注释里，不在名单里
+
+第 68 条我写了「权益 secret 与 ClientID 不得与 Portal/**Console**/汇总/平台任何客户端共用（`learning_entitlement.go` 有明确的复用拒绝）」。规格轴逐键核了那个校验列表，我复验成立：
+
+- 名单实际是六套 secret（`QUIZCRAFT_AUTH_HMAC_SECRET`、`QUIZCRAFT_CUTOVER_EVIDENCE_SECRET`、Portal catalog/command、`SUMMARY`、`PLATFORM`）与四个 ClientID（同四家），**没有 Console 项**——整个 Go 服务里 `grep CONSOLE_` 为空；
+- 而 Console 的凭据是另一套：`.env.henukit.example` 的 `CONSOLE_PLATFORM_CLIENT_ID=console-gateway` / `_SECRET`。也就是说**共用 Console 凭据会干干净净地启动**，我的括号把一个不存在的拦截说成"明确的复用拒绝"；
+- 那段代码自己的注释写的是「never reused for Portal, Console or the QuizCraft session」——**注释有 Console，实现没有**。这是本次最该留给人看的一处：注释承诺的守卫比实现对一条。
+- 另一个附带发现：名单里的 `QUIZCRAFT_PLATFORM_CLIENT_ID/SECRET` 只出现在 go-service 自己的 `.env.example`，单仓 `.env.henukit.example` 与两个 compose 都没有定义/传递，所以这一项在当前栈里等于不起作用（要么补接线，要么认了）。
+
+改法（本轮）：把括号改成**代码实际拦的名单**（逐键列出），并把上述两条差距写成「两个提醒」，让选凭据的人知道不能指望这条守卫拦 Console。是否把 `CONSOLE_PLATFORM_CLIENT_ID/SECRET` 加进守卫、以及 `QUIZCRAFT_PLATFORM_CLIENT_*` 要不要接线，**留给人定**（改守卫会让当前能启动的配置开始失败，属安全面行为变更，不在文档轮次里顺手做）。
+
+顺手按规格轴未计入的提醒把 ④ 的「产物恒为 0」限定为「**发布产物**恒为 0（本地 compose 构建可传该 arg，不是发布路径）」——单仓 compose 确实会传同一个 build arg，原句读起来像"任何构建都是 0"。
+
+验证：`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（文档解析守卫仍过）；`grep CONSOLE_` 在 Go 服务里为空；`QUIZCRAFT_PLATFORM_CLIENT` 只在 `products/quizcraft/go-service/.env.example` 命中。

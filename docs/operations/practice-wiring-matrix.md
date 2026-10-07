@@ -110,12 +110,16 @@
   超限为 429 `rate_limited`（网关转 429 `practice_command_rate_limited`）。这是成本/滥用保护，不是配额；计划任务的请求永不被拒，但其任务计入窗口工作量。
 - **开启前置（顺序不能换，全部 fail-fast）**：① 先把模型供应商三元组 `QUIZCRAFT_LEARNING_PROVIDER_URL` / `_API_KEY` / `_MODEL`
   与签名权益客户端四键 `QUIZCRAFT_LEARNING_ENTITLEMENT_URL` / `_CLIENT_ID` / `_KEY_ID` / `_SECRET` **一次配齐**——两处都是
-  「全配或全不配」，只配一半会在启动时被判为不安全配置；权益 secret 与 ClientID 不得与 Portal/Console/汇总/平台任何客户端共用
-  （`cmd/server/learning_entitlement.go` 有明确的复用拒绝）。② 再开 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1`：顺序反了或凭据漏配，
+  「全配或全不配」，只配一半会在启动时被判为不安全配置；权益 secret 与 ClientID 有复用拒绝，但**只拦代码里点名的那些键**：六套 secret（`QUIZCRAFT_AUTH_HMAC_SECRET`、
+  `QUIZCRAFT_CUTOVER_EVIDENCE_SECRET`、Portal catalog/command、`SUMMARY`、`PLATFORM`）与四个 ClientID（同上四家），
+  外加「provider 的 API key 不等于权益 secret」（`cmd/server/learning_entitlement.go` / `learning_provider.go`）。两个提醒：
+  ① 该文件注释写「never reused for Portal, **Console** or the QuizCraft session」，但名单里**没有 Console 项**（Console 用另一套
+  `CONSOLE_PLATFORM_CLIENT_ID/SECRET`），所以别指望这条守卫拦住 Console 复用——加不加由人定，见 TODO；
+  ② `QUIZCRAFT_PLATFORM_CLIENT_*` 只在 go-service 自己的 `.env.example` 里，单仓 compose/env 并未定义，这一项在当前栈里不起作用。② 再开 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1`：顺序反了或凭据漏配，
   `cmd/server/main.go` 直接 `fail(...)` 退出——**QuizCraft Core 起不来，整个刷题链路一起不可用**，不是「只有学习报告不可用」。
   ③ 网关侧 `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 置 1 还有运行时前置：必须同时 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=1`，
   否则网关启动失败（`internal/config/config.go` 已强制，测试锚定）。④ 浏览器入口是**构建期**开关：`scripts/ops/henukit-release-images.sh`
-  的 `release_build_args` 目前**不含**该键，产物因此恒为 Dockerfile 默认 0——开启必须把键加进那段 release env 并重建 Portal 镜像；
+  的 `release_build_args` 目前**不含**该键，**发布产物**因此恒为 Dockerfile 默认 0（本地用 compose 构建可以传这个 build arg，但那不是发布路径）——开启必须把键加进那段 release env 并重建 Portal 镜像；
   同一次改动会让 `scripts/ops/tests/learning-feedback-dark.test.mjs` 变红，那是设计意图（切流必须是一次显式、会让绊线响的改动，
   不是某个部署面顺手写 1），要同步把该断言改成期望已开启。
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
