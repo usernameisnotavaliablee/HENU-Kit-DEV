@@ -495,7 +495,7 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 | §8 | 支付（WeChat 键 / EasyPay / 订单表） | 通过/失败/待人工 | | D3 决策输入 |
 | §9 | 残留（study-api 404 / 10086 / 旧容器） | 通过/失败/待人工 | | |
 | §10 | 证据归档 | 通过 | | `$LOG` 路径 |
-| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401（写与清除需 `PORTAL_PRACTICE_COMMANDS_ENABLED=1`）；worker=0 时从未切流过 queued 应为 0 |
+| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401（写与清除需 `PORTAL_PRACTICE_COMMANDS_ENABLED=1`）；浏览器开关是构建期变量，只能看产物/入口；worker=0 时从未切流过 queued 应为 0 |
 
 **回填动作（核验完成后，在仓库内执行）：**
 1. 更新 `docs/operations/CURRENT_PRODUCTION_STATE.md` §6「待服务器核验清单」：已核验项打勾并写证据日期；把「仓库无法自答、必须服务器回答」的结论写进 §1–§4 相应小节。
@@ -519,12 +519,17 @@ for k in PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS \
          QUIZCRAFT_LEARNING_MANUAL_LIMIT; do
   printf '%s=%s\n' "$k" "$(grep -hE "^${k}=" "$ENV_FILE" | tail -1 | cut -d= -f2-)"
 done | tee -a "$LOG"
-# 浏览器开关烘进 Portal 构建产物：只改 env 不生效，必须重建镜像（回退顺序第 ② 步）
-docker inspect henukit-portal-1 --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep -E '^NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=' | tee -a "$LOG"
+# 上面五个键里，浏览器开关（NEXT_PUBLIC_*）在容器 env 里看不到：它是**构建期**变量，
+#   apps/portal/Dockerfile 的 ARG/ENV 只在 builder 阶段，运行阶段（runner）只声明 NODE_ENV/PORT/HOSTNAME。
+#   所以不要用 `docker inspect ... | grep NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` —— 它一定没有输出。
+#   该开关的产物取值由 release 构建参数决定（仓库 side：scripts/ops/henukit-release-images.sh 的 release_build_args，
+#   当前**不含**该键，因此产物按 Dockerfile 默认 `0`；ops 暗态测试还断言 release 镜像不得为 1）。
+#   可观察的替代证据（`[MANUAL]`）：
+echo "[MANUAL] 用浏览器（或 Playwright）打开 https://henukit.cn/practice，确认没有「学习报告」入口（P-06）" | tee -a "$LOG"
+echo "[MANUAL] 若要开启：必须把该键加进 release 构建参数并重建 Portal 镜像（只改 $ENV_FILE 不生效，见回退顺序第 ② 步）" | tee -a "$LOG"
 ```
 
-**暗态期望值**：前两个为 `0`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=0`、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`（`..._SCHEDULER_INTERVAL` 默认 `10m` 但在 worker 关闭时不生效，见 11.4）。
+**暗态期望值**：env 里前两个为 `0`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=0`、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`；`..._SCHEDULER_INTERVAL` 出厂为 `10m`（不是 0，0 是回退值，见 11.4/11.5）。浏览器开关的**产物**取值另需按上面的 `[MANUAL]` 项确认。
 
 ```bash
 echo "== 11.2 路由取证（不带 Cookie；暗态门在鉴权之前，所以暗态下能直接看到 503）==" | tee -a "$LOG"
@@ -562,7 +567,7 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 ```
 
 **通过判据**：
-- 11.1 五个键存在且为暗态期望值（切流后应与既定切流计划一致）；
+- 11.1 env 里五个键存在且为上述期望值；浏览器开关另按 `[MANUAL]` 项确认产物侧入口不存在（切流后应与既定切流计划一致）；
 - 11.2 三条状态码符合上述判读；
 - 11.3 `queued`/`running` **不增长**（从未切流过时应为 0；曾切流或回退过时残留队列与 queued-behind 告警属预期，以「不增长」为准）；
 - 任一不符 → `[FAIL]`，按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
@@ -571,16 +576,16 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 
 **11.5 切流/回退顺序速查（语义与理由见矩阵 §7，此处只列变量与生效方式）**：
 
-| 步骤 | 变量 | 暗态 / 开启 | 生效方式 |
+| 步骤 | 变量 | 回退值 / 开启值 | 生效方式 |
 |---|---|---|---|
 | ① | `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` / `1` | 重启 gateway |
 | ② | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` / `1` | **重建 Portal 镜像** |
 | ③ | `QUIZCRAFT_LEARNING_WORKER_ENABLED` | `0` / `1` | 重启 QuizCraft 容器 |
-| ④ | `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL` | `0` / `10m` | 重启 QuizCraft 容器 |
+| ④ | `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL` | 回退 `0` / 开启 `10m`（**出厂即 10m**，worker 关闭时不生效） | 重启 QuizCraft 容器 |
 
 回退顺序固定为 ① → ② → ③ → ④；回退期间**清除接口仍可用**（会员撤回数据权利），已发布报告、偏好、任务与审核记录都不会被删除。
 
-**证据记录**：11.1 五行键值与 Portal 容器 env 行、11.2 三个状态码与各自响应体前 200 字节、11.3 的 `learninghealth` 摘要。
+**证据记录**：11.1 五行 env 键值 + 浏览器里入口不存在/存在（附截图或 release 构建参数记录）、11.2 三个状态码与各自响应体前 200 字节、11.3 的 `learninghealth` 摘要。
 
 ---
 

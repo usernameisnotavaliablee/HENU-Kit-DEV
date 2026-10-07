@@ -812,3 +812,16 @@
 顺带确认的两件事（都写进文档）：`PORTAL_PRACTICE_COMMANDS_ENABLED` 的判定是 `== "1"`（`internal/config/config.go`），生产实测为 `1`；§11 的探针路径与网关路由表逐条一致（GET 偏好/latest/tasks、POST 生成、PUT 偏好、DELETE 清除）。
 
 教训与 op 62 同类：**手册里的「期望值」和自己后文的事实必须同源**，我给 §11 写目的时凭印象写了「四个默认 0」，而真正的来源（env 示例与 ops 测试）就在同一个 diff 里。
+
+### 66 — 标准轴抓到手册里一条「永远没有输出」的取证命令
+
+§11.1 我写了 `docker inspect henukit-portal-1 ... | grep NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS`，还把它写进「证据记录」。标准轴逐条核了管线后指出这条命令**一定没有输出**，我自己复验成立：
+
+- `docker-compose.henukit.yml` 里该键只出现在 portal 服务的 `build.args`，`environment:` 只有 `NODE_ENV/PORT/HOSTNAME`，两个 compose 文件都没有 `env_file`；
+- `apps/portal/Dockerfile` 的 `ARG/ENV` 在 **builder** 阶段（`:29`/`:36`），运行阶段（`:42` 起）只声明 NODE_ENV/PORT/HOSTNAME——ENV 是分阶段的，所以镜像配置里没有这个键；
+- 生产用 prebuilt 镜像（`docker-compose.henukit.prebuilt.yml` 的 `image: henukit-portal:${RELEASE_SHA}` + `build: !reset null`）；
+- 于是「通过判据」可以在产物其实是 **1** 的情况下被打勾——这正是手册最不能出的错。
+
+改成：明写 `NEXT_PUBLIC_*` 是构建期变量、容器 env 里必然看不到，产物取值由 release 构建参数决定（`scripts/ops/henukit-release-images.sh` 的 `release_build_args` 当前**不含**该键，故按 Dockerfile 默认 `0`；暗态测试还断言 release 镜像不得为 1），把可观察证据降级为 `[MANUAL]`（浏览器看 `/practice` 没有 P-06 入口 + 开启必须改构建参数并重建）。同时把 §11.5 表头「暗态 / 开启」改成「回退值 / 开启值」并给 ④ 补上「出厂即 10m」——原表把回退值 0 标成暗态值，与 §11.1 自相矛盾（这条是标准轴 F2，我在 op 65 只修了「目的」那句，没修表）。
+
+现在 §11 里没有任何一条命令是「跑不出东西」的：env 五个键来自 `$ENV_FILE`、三条路由码来自 curl、健康检查标 `[MANUAL]`、浏览器入口标 `[MANUAL]`。
