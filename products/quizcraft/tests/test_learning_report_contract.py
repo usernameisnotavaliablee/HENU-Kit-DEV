@@ -1,23 +1,18 @@
-import json
-import subprocess
-import shutil
 import unittest
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 CONTRACT = ROOT / 'packages/api-contracts/openapi/quizcraft.yaml'
 PREFIX = '/api/v1/portal/practice/banks/{bank_id}/learning-reports'
 
 
-@unittest.skipUnless(shutil.which("ruby"), "Offline check needs Ruby/Psych; canonical OpenAPI validation remains required")
 class LearningReportContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # System Ruby/Psych is an offline syntax reader, not the production OpenAPI validator.
-        result = subprocess.run(['ruby', '-rjson', '-ryaml', '-e',
-            'puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), [], [], true))',
-            str(CONTRACT)], check=True, capture_output=True, text=True)
-        cls.spec = json.loads(result.stdout)
+        # Offline structural read of the contract; redocly stays the OpenAPI validator.
+        cls.spec = yaml.safe_load(CONTRACT.read_text(encoding='utf-8'))
 
     def test_actor_is_required_and_only_service_signatures_authorize_reports(self):
         # Reads are served by the actor-bound catalog read middleware
