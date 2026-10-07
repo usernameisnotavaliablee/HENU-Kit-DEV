@@ -1074,3 +1074,29 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 原因就是我自己那条环境配方：`.cache/fakehome` 是给 Go 工具与 npm 用的（第 81 条记的 staticcheck 需要可写 `HOME`），Next dev 需要的 `HOME` 不是空目录。于是这批 e2e 的可用环境是「真实 `HOME` + 显式 `GOCACHE`/`GOMODCACHE`/`GOPATH`」——两个重定向方向相反，不能一套通吃；`test:e2e:oauth-continuation` 把这点暴露得最清楚：它一边要起 Next dev（要真实 `HOME`），一边要 `go run` 起 fixture（要仓库 `.cache` 里的 `GOCACHE`），少了后者就是 `failed to initialize build cache at /Users/…/Library/Caches/go-build: operation not permitted`。配方已写进 `docs/DEVELOPMENT.md` §14。
 
 顺带一条可复用判断：QuizCraft 那三个浏览器套件在第 82 条的 `HOME` 重定向下**照样通过**，因为它们跑的是 Vite（不吃 `HOME`）——同一个 `HOME` 变量，Next 与 Vite 两种 dev server 的结论相反，遇到「浏览器测试全红」时先看是哪一个。
+
+### 84 — Portal 十步浏览器门禁整组跑通（486 条），deploy 作业的契约批只剩 Docker／systemd 环境红
+
+第 83 条只跑了「被本分支改到的那几个 spec」。这一轮把 `deploy-henukit.yml` 里 Portal 的**全部十个** `test:e2e:` 步骤**整组**跑了一遍——该文件 23 个 spec 的 responsive 组是上一轮唯一没整组跑过的（上轮只挑了我改到的四个）：
+
+| 步骤（脚本） | 结果 |
+| --- | --- |
+| `responsive`（23 个 spec） | **283 passed**（2.0m） |
+| `navigation`（5 个） | **56 passed**（1.9m） |
+| `account`（6 个） | **64 passed**（28.9s） |
+| `food`（4 个，`--workers=1`） | **16 passed**（11.2s） |
+| `quizcraft-catalog`（独立 config） | **12 passed**（7.6s） |
+| `stats`（3 个，`PLAYWRIGHT_ENABLE_QUIZCRAFT_V2_READS=1`） | **11 passed**（13.3s） |
+| `qq-binding`（独立 config） | **11 passed**（5.8s） |
+| `library-download`（`--workers=1`） | **8 passed**（7.8s） |
+| `practice`（3 个） | **11 passed**（上一轮同码 head 上跑过；本轮之前的提交只改文档） |
+| `learning-reports`（独立 config） | **14 passed**（同上） |
+
+合计 **486 条浏览器用例**，加上另一个作业里 oauth 那条链的 Portal 7 + Console 7。十个步骤全是整组跑的，不是挑文件——所以「本分支的 Portal 源码改动没有把别的页面跑坏」这句话现在有覆盖面，而不只是「我改过的那几个 spec 没坏」。第 83 条的配方（真实 `HOME` + 显式 Go 缓存）在这十组上没再出岔子。
+
+顺带补了第一个作业 `validate-release-contract`（`:23`）的两步——它此前只在第 81 条那张表里出现过摘要，这轮按原文命令整批跑了一遍（`git diff` 证明第 81 条之后本分支只动过文档，所以顺带复核那些解析文档的守卫）：
+
+- `Verify artifact and runtime boundaries`：**118 个用例，95 passed / 15 failed / 8 skipped**。15 条红的归属是精确的：4 条在 `deploy-henukit-workflow.test.mjs`（该文件本分支改过——加了「CI 也跑 quizcraft-catalog / practice / learning-reports / qq-binding 这四个组」的断言，那条断言本身是过的），报错都是 `spawnSync docker ENOENT`（渲染 compose、起 HENU 镜像要 docker CLI）；另外 **11 条正好是 `getwork-node-rollback.test.mjs` 的全部用例**（该文件本分支没碰过），现象是它读不到 fixture 写在临时目录里的 `calls` 记录（`ENOENT … /getwork-rollback-*/calls`）、以及若干 `actual: null` 的进程状态——那套用例从第 59 行起自己造一个假的 `systemctl` 往 `calls` 里写记录，本机（macOS，无 systemd）走不到那一步。8 条 skipped 是 Docker 门控的设计内跳过：`import-henukit-materials-preflight.test.mjs:22` 写的是 `dockerAvailable ? test : test.skip`。
+- `Reject Account mock and fallback sources`：`node scripts/ops/check-account-production-boundary.mjs` → **PASS**（要求真实网关、生产路径里没有 Account mock 来源），这条与代码同源、直接对本分支成立。
+
+于是这个作业在本机的红/跳过全部能归到 Docker 或 Linux systemd 两个环境缺口上，没有一条与本分支的改动有关。
