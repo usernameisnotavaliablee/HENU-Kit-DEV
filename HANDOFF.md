@@ -835,3 +835,14 @@
 顺手按规格轴未计入的一条提醒把 11.4 限定为「**从未切流过**的暗态下 queued 必然为 0」，与 11.3 的「不增长」判据对齐。
 
 第 65 条的正文是**就地更正**的（本轮 numstat 1 增 1 删 / 3 增 3 删 / 1 增 1 删，删除数非零即证明改到了原文），并在句末注明更正来自第 67 条——这条本身也是 op 62 那次的教训（说「已就地更正」就必须有删除数自证）。
+
+### 68 — 把 #166 切流的硬前置写进运维矩阵（此前文档里一条都没有）
+
+上一轮修 §11 时顺手发现 `release_build_args` 不含浏览器开关，于是把整条开启链路查了一遍，结果是文档缺口比那一条大得多：矩阵 §7 只有「回退顺序」和「内容审核」，**开启前置一条都没写**。现在补了 `- **开启前置（顺序不能换，全部 fail-fast）**`：
+
+1. **凭据必须一次配齐**：`QUIZCRAFT_LEARNING_PROVIDER_URL/_API_KEY/_MODEL` 与 `QUIZCRAFT_LEARNING_ENTITLEMENT_URL/_CLIENT_ID/_KEY_ID/_SECRET` 都是「全配或全不配」，只配一半在启动时被判不安全配置；权益 secret/ClientID 不得与 Portal/Console/汇总/平台的任何客户端共用（`learning_entitlement.go` 有明确的复用拒绝）。
+2. **顺序反了的代价是刷题整体不可用**：`cmd/server/main.go` 在 worker 非空而权益客户端为空时 `fail(errors.New("QuizCraft learning report worker requires the signed entitlement client"))` 直接退出——**Core 起不来**。这条是本次最值钱的发现：谁先开 worker 后配凭据，坏的不是学习报告，是整个刷题链路。
+3. **网关侧还有一道运行时前置**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 置 1 必须同时 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=1`，否则网关启动失败（`internal/config/config.go` 强制，暗态测试锚定）。
+4. **浏览器入口是构建期开关**：`release_build_args` 目前不含该键 → 产物恒为 Dockerfile 默认 0；开启必须改那段 release env 并重建镜像，而且同一次改动**必须**让 `learning-feedback-dark.test.mjs` 变红——那正是设计意图（切流是一次显式的、会让绊线响的改动），要同步把断言改成期望已开启。
+
+补完这条后，`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 仍 3 pass：新段落刻意避开回退四步的原文字符串，所以断言里那四个 `indexOf` 的首现位置没有被挪动（这条测试同时在守护回退顺序，改文档时容易踩）。

@@ -108,6 +108,16 @@
   告警项：过期租约、排队超阈值、24h 失败超预算、已同意会员但无启用课程。暗态功能不产生告警。
 - **手动生成限流**：`QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 `10`，`0` 关闭）限制同一会员对同一课程每小时的生成任务数，
   超限为 429 `rate_limited`（网关转 429 `practice_command_rate_limited`）。这是成本/滥用保护，不是配额；计划任务的请求永不被拒，但其任务计入窗口工作量。
+- **开启前置（顺序不能换，全部 fail-fast）**：① 先把模型供应商三元组 `QUIZCRAFT_LEARNING_PROVIDER_URL` / `_API_KEY` / `_MODEL`
+  与签名权益客户端四键 `QUIZCRAFT_LEARNING_ENTITLEMENT_URL` / `_CLIENT_ID` / `_KEY_ID` / `_SECRET` **一次配齐**——两处都是
+  「全配或全不配」，只配一半会在启动时被判为不安全配置；权益 secret 与 ClientID 不得与 Portal/Console/汇总/平台任何客户端共用
+  （`cmd/server/learning_entitlement.go` 有明确的复用拒绝）。② 再开 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1`：顺序反了或凭据漏配，
+  `cmd/server/main.go` 直接 `fail(...)` 退出——**QuizCraft Core 起不来，整个刷题链路一起不可用**，不是「只有学习报告不可用」。
+  ③ 网关侧 `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 置 1 还有运行时前置：必须同时 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=1`，
+  否则网关启动失败（`internal/config/config.go` 已强制，测试锚定）。④ 浏览器入口是**构建期**开关：`scripts/ops/henukit-release-images.sh`
+  的 `release_build_args` 目前**不含**该键，产物因此恒为 Dockerfile 默认 0——开启必须把键加进那段 release env 并重建 Portal 镜像；
+  同一次改动会让 `scripts/ops/tests/learning-feedback-dark.test.mjs` 变红，那是设计意图（切流必须是一次显式、会让绊线响的改动，
+  不是某个部署面顺手写 1），要同步把该断言改成期望已开启。
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。
