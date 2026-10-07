@@ -1136,3 +1136,12 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 为什么本机 84 条日志都没逮到：该步的生成器是 Docker 里的 sqlc，本机无 Docker，此前只跑了不含 sqlc 的 `generate-contract.sh`，于是这条一直躺在「未复现」清单里（PR 正文也如实写了）。
 - 本轮补齐复现路径：`go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.0` **不可行**（sqlc 的 go.mod 含 replace 指令），改用官方 release 的纯 Go 二进制 `sqlc_1.31.0_darwin_arm64`；本机 `sqlc generate` 产出与 CI 日志**逐字一致**的 75 行新增（0 删除），重生成后 `gofmt` 干净、`go build ./...` 与 `go vet` 通过、`./internal/store` 无测试文件。
 - 教训（已补进根 `AGENTS.md`）：凡是「因为要 Docker 所以跑不了」的步骤，先找该工具的独立二进制（sqlc 就是单文件），别把它留在未复现清单里等真 CI——这条红说明真 CI 的价值：1m41s 逮到了本机数天没逮到的东西。
+
+### 88 — 真 CI 第二轮：我的契约测试依赖外部 `ruby`（CI 上必错），并把 AGENTS.md 并成唯一一份
+
+- 第一轮真 CI 的 sqlc 修复（`772097f0`）在 run `37658434549` 得到证实：`Verify QuizCraft contract` ✓、`Vet, test, and build` ✓。红移到下一个从没跑过的步骤 `Verify existing FastAPI remains intact`：它跑的 pytest 里 `tests/test_learning_report_contract.py` 4 条 `ERROR at setup`。
+- 根因：该文件 `setUpClass` 用 `subprocess.run(['ruby','-rjson','-ryaml','-e','puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), [], [], true))'])` 读 `packages/api-contracts/openapi/quizcraft.yaml`，并用 `@unittest.skipUnless(shutil.which("ruby"))` 兜底。本机 macOS 有 ruby 2.6 → 一直绿；CI runner 上 ruby 存在但这条命令退出非零（pytest 只回显了 `CalledProcessError` 的截断 repr，ruby 的 stderr 没落进日志），`skipUnless` 兜不住「工具在但不可用」。
+- 修法（ponytail：删依赖而非猜 ruby 版本）：测试改用 Python 自己的 `yaml.safe_load(CONTRACT.read_text(encoding='utf-8'))`，删掉 `json` / `subprocess` / `shutil` 三个 import 与那个 skip 装饰器；`pyyaml` 与 `pytest` 一样只装在 CI 的 pip 行（[`.github/workflows/quizcraft-go.yml`](.github/workflows/quizcraft-go.yml) 第 165 行），**不进** `requirements.txt`，免得为一条测试给生产加依赖。
+- 本机验证：`PYTHONPATH=. python -m pytest -q tests/test_learning_report_contract.py` → **4 passed**（此前是「靠 ruby 过」，现在是「不依赖 ruby 过」）。
+- 同轮的文档合并：根 `AGENTS.md` 并为全仓唯一 agent 文档（97 行，caveman 压缩；17 条经验教训全部保留，新增「CI 现状」记下 14 个 workflow / 只有 2 个支持 `workflow_dispatch` / PR 事件在本 fork 不产生 run / 两条治理门禁的原文要求）；删除 `apps/portal/AGENTS.md` 与 `apps/portal/CLAUDE.md`（`next dev` 自动生成，生成器 `apps/portal/node_modules/next/dist/server/lib/generate-agent-files.js:112-113` 同时写这两个文件）并加进 `.gitignore` → 提交 `ed2c0f27`。
+- 教训：`skipUnless(which(...))` 只兜「工具不存在」，兜不住「工具在但不可用」；跨平台测试宁可只用语言自身的标准库或已装依赖，也别调系统里的第三方解释器。
