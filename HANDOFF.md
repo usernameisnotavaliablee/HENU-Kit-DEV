@@ -1127,3 +1127,12 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 弯路已归档到根 [AGENTS.md](AGENTS.md) 的「经验教训」一节，分取值与取证 / 本机环境 / 流程三类共 17 条（7 + 5 + 5，位于 `AGENTS.md` 第 51–74 行）（含被 `tail` 截断取数、管道里取退出码、把条件句写成 CI 事实、日志条目错引、HOME 与 Node 26 两个环境陷阱、以及「先算触发面再决定验什么」）。
 - 下一步（需人工确认）：①把 PR 正文 `Review-Head` 钉到当时 head 并确认 `review-evidence` 通过；②决定启不启用 fork 的 Actions 或改分支名；③`#166` 切流决定。
 - 补记（暂停之后）：用户在 fork 上启用了 Actions 并把 PR #1 合入 `main`（合并提交 `29c7c6a8`，合的是 `0271062f`，比本分支晚的三处没进去），于是 `main` 上 `console-gateway` 的契约步骤因生成物陈旧而必红；据此开 PR #2（`c19184c0` → `main`），并用 `gh workflow run quizcraft-go.yml --ref main` 取得本仓库**第一次真实 CI 运行**（run `37657421506`）。
+
+### 87 — 启用 Actions 后的第一次真 CI：1m41s 就红在 sqlc 生成物漏生成（本机一直跑不到的那半）
+
+- 前情：用户启用 fork Actions 并把 PR #1 合进 `main`（合并提交 `29c7c6a8`，合的是 `0271062f`，落后本分支三处），于是 `main` 上 `console-gateway` 的契约步骤必红 → 开 PR #2（`c19184c0` → `main`）。
+- **PR 事件不触发 Actions**：`opened` / `reopened` / `synchronize` 三次都没产生 run（`gh api …/actions/runs` 的 `total_count` 为 0），`gh pr checks 2` 一直报 no checks；但 `gh workflow run quizcraft-go.yml --ref main` 立刻成功 ⇒ 这台 fork 目前只有 `workflow_dispatch` 与 push 到 `main` 能跑起来。14 个 workflow 里只有 `deploy-henukit.yml` 与 `quizcraft-go.yml` 带 `workflow_dispatch`。
+- **第一次真 CI（run `37657421506`，main）**：1m41s，job `verify` 在 `Verify QuizCraft contract` 步红（`##[error]Process completed with exit code 1`），该步后续六步因此全没跑。红的直接原因就是它自己的 `git diff --exit-code`：`docker run … sqlc/sqlc:1.31.0 generate` 之后 `products/quizcraft/go-service/internal/store/models.go` 多出 **75 行**——`QuizcraftLearningCatalog`、`QuizcraftLearningContentReview`、`QuizcraftLearningContentVersion`、`QuizcraftLearningReport`、`QuizcraftLearningReportJob`、`QuizcraftLearningReportPreference` 六个结构体在仓库里一个都没有（`grep` 命中 0）。
+- 为什么本机 84 条日志都没逮到：该步的生成器是 Docker 里的 sqlc，本机无 Docker，此前只跑了不含 sqlc 的 `generate-contract.sh`，于是这条一直躺在「未复现」清单里（PR 正文也如实写了）。
+- 本轮补齐复现路径：`go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.0` **不可行**（sqlc 的 go.mod 含 replace 指令），改用官方 release 的纯 Go 二进制 `sqlc_1.31.0_darwin_arm64`；本机 `sqlc generate` 产出与 CI 日志**逐字一致**的 75 行新增（0 删除），重生成后 `gofmt` 干净、`go build ./...` 与 `go vet` 通过、`./internal/store` 无测试文件。
+- 教训（已补进根 `AGENTS.md`）：凡是「因为要 Docker 所以跑不了」的步骤，先找该工具的独立二进制（sqlc 就是单文件），别把它留在未复现清单里等真 CI——这条红说明真 CI 的价值：1m41s 逮到了本机数天没逮到的东西。

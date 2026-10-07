@@ -64,6 +64,7 @@ Bug 修复补回归；覆盖失败、权限、并发与重试路径。共享契�
 - npm 要同时给 `npm_config_cache` **和** `npm_config_logs_dir`，否则脚本以无关错误中止（`npm error Log files were not written…`）。
 - 本机 Node v26 默认开 experimental webstorage，会让 Console 的 `pending-operations.spec.ts` 挂 1 条；加 `NODE_OPTIONS=--no-experimental-webstorage` 即 19/19。CI 固定 node 22（该版本默认不启用）。
 - 无 Docker 时的红必须**点名文件+错误**再归因：`spawnSync docker ENOENT`、`panic: rootless Docker not found`（testcontainers）、空 compose 输出的 `JSON.parse`、materials 的 `fixed Node runtime is unavailable`、缺 `shellcheck`/systemd。只写「环境问题」不算归因。
+- 需要 Docker 的步骤先找该工具的独立二进制，别直接记成「未复现」：`sqlc` 官方 release 是纯 Go 静态二进制，本机可直接 `sqlc generate` 复现 CI 里 `docker run sqlc/sqlc:1.31.0 generate` 的那半（`go install …@v1.31.0` 不可行，它的 go.mod 带 replace 指令）。
 - 子代理环境可能与本机不同（如它要 `chromium_headless_shell-1228` 而本机缓存是 1243）：它能 `--list` 数用例但验不了通过，别把它的「跑不了」当证据。
 
 ### 流程

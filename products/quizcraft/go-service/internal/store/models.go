@@ -105,6 +105,81 @@ type QuizcraftIdempotencyResult struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type QuizcraftLearningCatalog struct {
+	BankID                 uuid.UUID          `json:"bank_id"`
+	ActiveContentVersionID uuid.NullUUID      `json:"active_content_version_id"`
+	Enabled                bool               `json:"enabled"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+}
+
+type QuizcraftLearningContentReview struct {
+	ID               uuid.UUID          `json:"id"`
+	BankID           uuid.UUID          `json:"bank_id"`
+	ContentVersionID uuid.UUID          `json:"content_version_id"`
+	ActorUserID      uuid.UUID          `json:"actor_user_id"`
+	Action           string             `json:"action"`
+	Note             string             `json:"note"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type QuizcraftLearningContentVersion struct {
+	ID            uuid.UUID          `json:"id"`
+	BankID        uuid.UUID          `json:"bank_id"`
+	BankVersionID uuid.UUID          `json:"bank_version_id"`
+	ContentSha256 string             `json:"content_sha256"`
+	Document      []byte             `json:"document"`
+	Status        string             `json:"status"`
+	ReviewedBy    uuid.NullUUID      `json:"reviewed_by"`
+	ReviewedAt    pgtype.Timestamptz `json:"reviewed_at"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+}
+
+type QuizcraftLearningReport struct {
+	ID               uuid.UUID          `json:"id"`
+	JobID            uuid.UUID          `json:"job_id"`
+	UserID           uuid.UUID          `json:"user_id"`
+	BankID           uuid.UUID          `json:"bank_id"`
+	ContentVersionID uuid.UUID          `json:"content_version_id"`
+	LeaseToken       uuid.UUID          `json:"lease_token"`
+	EvidenceUntil    pgtype.Timestamptz `json:"evidence_until"`
+	Status           string             `json:"status"`
+	Body             []byte             `json:"body"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
+
+type QuizcraftLearningReportJob struct {
+	ID                 uuid.UUID          `json:"id"`
+	UserID             uuid.UUID          `json:"user_id"`
+	BankID             uuid.UUID          `json:"bank_id"`
+	PreferenceRevision int64              `json:"preference_revision"`
+	ContentVersionID   uuid.UUID          `json:"content_version_id"`
+	InputSha256        string             `json:"input_sha256"`
+	Snapshot           []byte             `json:"snapshot"`
+	Status             string             `json:"status"`
+	RunAfter           pgtype.Timestamptz `json:"run_after"`
+	Attempts           int32              `json:"attempts"`
+	LeaseToken         uuid.NullUUID      `json:"lease_token"`
+	LeaseUntil         pgtype.Timestamptz `json:"lease_until"`
+	ReasonCode         string             `json:"reason_code"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type QuizcraftLearningReportPreference struct {
+	UserID                  uuid.UUID          `json:"user_id"`
+	BankID                  uuid.UUID          `json:"bank_id"`
+	Enabled                 bool               `json:"enabled"`
+	IntervalDays            int32              `json:"interval_days"`
+	Goal                    string             `json:"goal"`
+	ChapterIds              []byte             `json:"chapter_ids"`
+	ExternalAnalysisConsent bool               `json:"external_analysis_consent"`
+	ConsentVersion          string             `json:"consent_version"`
+	Revision                int64              `json:"revision"`
+	NextDueAt               pgtype.Timestamptz `json:"next_due_at"`
+	CreatedAt               pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt               pgtype.Timestamptz `json:"updated_at"`
+}
+
 type QuizcraftLearningState struct {
 	UserID            uuid.UUID          `json:"user_id"`
 	BankID            uuid.UUID          `json:"bank_id"`
