@@ -713,10 +713,32 @@
 **硬伤 H1（我的修复无效）**：`selectedBank` 的类型是 `QuizCraftCatalogBank | undefined`（`find` 不会返回 null），所以在 `strict` 下我刚写的 `selectedBank !== null` **恒为真**。结果是目录加载中、目录读取失败、目录里没有课程这三种「屏上根本没有控件」的状态仍然显示「随时可以关闭或清除」——正是 N3 要修的那个过度承诺，而且我上一轮在 HANDOFF 58 里写的「未选课分支现在不会渲染它」**在效果上是假的**。改为 `selectedBank !== undefined && !membershipDenied`，并补了会咬人的钉子：目录 mock 覆盖成 `banks: []` 的用例断言 `practice-reports-no-bank` 可见 + 该半句数为 0。**变异验证**：把条件改回 `!== null` 后该用例失败（Expected 0 / Received 1），再改回来——不是同义反复。同时补上文案轴指出的「存在侧」钉子：会员面用例断言该半句可见（暗态用例只钉了不出现，全站硬写 `false` 也能全绿）。
 
 其余：
-1. **两条轴的同一处漂移（标准 J1 / 规格 F1）**：运维矩阵的行号在 op 58 里又错了——因为那次提交自己就往两个 Go 文件里各加了 3 行注释，把它们下面的引用整体推后了 3 行（包括我"修好"的那两个）。现在按当前 head 逐条重算：`learning_reports.go:141`（并保留函数名 `clearLearningReports`，且修掉 `:114` 那处反引号嵌套导致的坏 markdown）、`:59` 读 / `:107` 写、`:89`、`:95`、`handler.go:1025`。
-2. **标准 J2（注释与三行以下的代码矛盾）**：`learning_reports.go` 的读路径 403 原来也是把常量当 `writeError` 的 code 传的，于是「只有比较用它」是假的。**读路径也改用字面量**：常量只留给 `:85` 的比较，注释随之为真，而且这个会员可见 code 现在有两个字面量锚点，Portal 的扫描更不容易再瞎。
+1. **两条轴的同一处漂移（标准 J1 / 规格 F1）**：运维矩阵的行号在 op 58 里又错了——因为那次提交自己就往两个 Go 文件里各加了 3 行注释，把它们下面的引用整体推后了 3 行（包括我"修好"的那两个）。（**事后更正**：那一版仍然是按改注释前的行号算的，五处又各差一行；见第 60 条——现在这些引用改成写函数名而不是行号。）那一版同时修掉了 `:114` 那处反引号嵌套导致的坏 markdown。
+2. **标准 J2（注释与三行以下的代码矛盾）**：`learning_reports.go` 的读路径 403 原来也是把常量当 `writeError` 的 code 传的，于是「只有比较用它」是假的。**读路径也改用字面量**：常量只留给 `learningReportRead` 里的比较，注释随之为真，而且这个会员可见 code 现在有两个字面量锚点，Portal 的扫描更不容易再瞎。
 3. **HANDOFF 58 第 5 条的更正**（本文开头）：未登录分支当时的判断是对的（确有控件在屏外），但未选课/目录失败分支确实仍然过度承诺，直到本轮才算修好。
 
 验证：`gofmt -l` 干净、`go vet ./...` 干净、`go test -race -count=1 ./internal/httpapi` ok；Portal `pnpm test` 38 文件 / 301 用例；`playwright --config playwright.learning-reports.config.ts` **14 passed**；变异验证见上。
 
 下一步：在新 head 上再请标准/规格两轴确认这两条关闭（文案轴已 0），然后更新 PR #1 正文并把 `Review-Head` 钉到最终 SHA。
+
+### 60 — 运维矩阵不再写行号：连续两轮漂移的根因是「同一次提交改了被引用的文件」
+
+收尾确认（`4f84dd7a`）：文案轴 **0**、标准轴 1、规格轴 1，后两者是**同一条**且都是同一处：矩阵 §7/§8 的行号又错了一行——op 59 自己把 `learning_reports.go` 顶部的注释从 2 行改成 3 行（净 +1），于是它下面所有引用集体后移一行，而我在同一提交里"重算"用的是改之前的编号。**这是连续两轮同一处漂移，机制相同：只要在同一次提交里既改 Go 文件又改引用它的文档，行号就必然错。**
+
+两轴都给了同一个建议，我采纳（这也是更省的做法）：**不再写行号，改写函数名**。行号在 `learning_reports.go:21` 以下任何注释增删都会失效，函数名不会。现在：
+
+| 位置 | 原来 | 现在 |
+| --- | --- | --- |
+| §7 清除接口豁免 | `learning_reports.go:141` 的 `clearLearningReports` | `internal/httpapi/learning_reports.go` 的 `clearLearningReports` |
+| §8 403 兜底 | `practice access denied`（`:89`） | `practice access denied`（`learningReportRead` 的兜底） |
+| §8 429 | `handler.go:1025` | `writePracticeCommandFailure`（`internal/httpapi/handler.go`） |
+| §8 依赖 503 | `learning_reports.go:95` | `learningReportRead` 的依赖不可用分支 |
+| §8 暗态 503 | `learning_reports.go:59` 读、`:107` 写 | `learningReportRead` 读、`learningReportWrite` 写 |
+
+五个函数名都核对过：`learningReportRead` 覆盖 `:57-105`（暗态 503、403 兜底、依赖 503 都在其中），`learningReportWrite` 覆盖 `:106-116`，`clearLearningReports` 在 `:142`，429 那行确实在 `writePracticeCommandFailure` 内。另外 429 行原话里的「全站共用文案」警告保留不变。
+
+同轮更正：HANDOFF 第 59 条里那句「现在按当前 head 逐条重算」在当时是假的（用的是同一次提交改注释前的编号），**已就地更正**并指向本条；`:85` 也改成写 `learningReportRead` 里的比较。HANDOFF 是给后续会话看的日志，一个会误导后人的数字不如就地改掉。
+
+验证：`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（该测试会解析这份矩阵文档，改完仍需通过）；`gofmt -l`、`go vet ./...` 干净；Portal `pnpm test` 301 用例、learning-reports e2e 14 passed 均为本条之前同一 head 上的结果，本条只改文档文字，无代码变化。
+
+下一步：最后一轮确认（期望三轴同时 0），然后把 PR #1 正文的两轴结论与 `Review-Head` 钉到最终 SHA。
