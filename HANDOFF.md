@@ -586,3 +586,29 @@
 - 已知取舍（记录而非隐藏）：会员区块只给文案与入口，不带 request_id（`EmptyBlock` 没有该槽位）。会员权益是会员自己的状态，值机不需要流水号；若日后要支持工单，再给空态加槽位，而不是现在发明新组件。
 - 三轴：Standards — 只改既有运维矩阵，沿用其表格与「§ 编号」结构，未新建文档；Spec — 该矩阵就是学习反馈的运维规格，与 `quizcraft-learning-feedback-spec.md` 的分工保持不变（前者运维、后者开发）；Public-ready Copy — **有**会员可见文案出现在文档表格里，均为源码原文引用，未新造句子。
 - 下一步（op 53）：给 `PRODUCTION_VERIFY_RUNBOOK.md` 加一节「学习报告切流后的只读核验」（目前该 Runbook 完全没有学习报告项），或按 HANDOFF 未决项推进 #166 切流决定材料。
+
+### 53 — 整分支三轴评审（3 个只读 subagent）＋两个从未跑过的 CI 作业本机复现
+
+- 评审设置：fixed point = 与 main 的 merge-base `8d52d8b3`，diff = `git diff 8d52d8b3...HEAD`（170 文件 / +20191−221 / 45 提交）。三条轴各一个 subagent 并行（正好用满 3 个并发上限），全部**只读**：Standards（AGENTS.md + apps/portal/AGENTS.md + testing-acceptance-spec + Fowler ch.3 smell baseline）、Spec（本功能 spec + ADR-0047 + 内容 spec + 运维矩阵）、Public-ready Copy（会员可见文案，含网关中文原文）。三份报告都要求声明覆盖范围与未覆盖项。
+- **结论：三轴都不是 0 findings**，所以 PR #1 正文里目前只能继续写 `pending`，不能写 `0 findings`（`pull-request-governance.yml` 的 `review-evidence` 要求 `Standards-Review: 0 findings` / `Spec-Review: 0 findings` 且 `Review-Head` 等于当前 head）。下面每条都已逐条对源码核实，并给出裁决。
+- Standards：**2 hard + 5 judgement**。核实后接受 1 条、拒绝 4 条、1 条升级为产品问题：
+  - 接受（hard）②唯一真实 PG 集成测试 `learning_report_joint_test.go:751-753` 用 `t.Skip` 等 `QUIZCRAFT_JOINT_DATABASE_URL`，而 `portal-gateway.yml` 的 verify 作业**没有** Postgres 服务、也不设该变量 → 最有价值的「Gateway↔真实 Core」证据在 CI 里永远静默跳过，与 `testing-acceptance-spec.md` §2「Integration (PostgreSQL) 在 PR 运行」冲突。**这是本轮最有价值的一条**，修复放进 op 54（CI 加 Postgres 服务 + 该测试在缺少变量时必须 fail 而不是 skip）。
+  - 拒绝（hard）①两个提交信息不合 `type(scope): description`（`6eda2bd7` 散文、`626e3a80` 中文散文且标题说「切换模型」而内容是 HANDOFF + 一个测试文件）。核实：分支 43/45 合规、main 自身 37/40 合规，确属异类。但改它必须 rebase 重写历史 → 会**篡改 HANDOFF 里逐条记录的 45 个 SHA 证据**（op 48–52 都按 SHA 引用），代价大于一条合并时由 squash 自动消解的措辞问题；且 AGENTS.md 的「一个 PR 只解决一个问题」也不支持为此再开 PR。裁决：记录给人工，建议 squash-merge 时统一写规范信息。
+  - 拒绝 ③`StatisticRow` 只显示 9 个统计字段里的 3 个：无任何已记录标准要求全部展示，契约多带字段不等于 UI 必须显示；**升级**为产品/内容问题交给待人工复核清单（会员看到的数字属于尚未通过的语义审核）。
+  - 拒绝 ④chip 样式三元表达式重复 3 次、⑤`validateLearningReport` 4 处去重循环：属判别性判断且抽取收益极小（每个循环的错误信息不同），现阶段不动。
+  - 拒绝 ⑦8 处 `database_unavailable` 字面量：核实这是本仓库既有写法（`practice_http.go` 55 处、`workshop_http.go` 30 处），改新文件会让它与两个旧处理器不一致。
+  - 拒绝 ⑥两个拒绝码散落在 4 个文件（"Shotgun Surgery"）：这正是 op 49–51 的**有意设计**并已写进运维矩阵 §8（改这类拒绝必须同提交动三处）；要消除得引入跨 Go/TS 的代码生成，属过度工程。
+- Spec：**3 findings**。(a) 无遗漏需求（未完成项都是 spec 自己标注的待完成）；faithful 清单已由该轴逐条对代码核验（门禁位置、码与状态、暗态默认与启动守护、回退顺序、幂等、限流、内容审核 400/409、撤回后不再服务、健康告警、e2e 分组）。三条 finding：
+  - **c2 接受（是我 op 50 的代码问题）**：读路径 `internal/practice/learning_reports.go:130-136` 只校验「机器码形状」就保留任何码，`httpapi/learning_reports.go:72-76` 再原样转达；但 spec:86 与写路径（`handler.go:1001-1007` 白名单）都要求**只转达 Portal 真正会渲染的码**。若 Core 在某次拒绝里给出别的形状合法码，Portal 的登记表查不到 → `formatPortalError` 退化成通用 403 文案「你没有权限进行这个操作…」，会员**失去会员区块与「去会员中心」入口**（正是 op 51 要修的东西）。修复放 op 54（读路径按写路径同样白名单，仅放行 `learning_entitlement_required`）。
+  - **c1 接受**：回退承诺自相矛盾。spec 的回退条目在同一句里既说 ①`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 时「Gateway 读/写学习报告即时 503」，又说「回退后应确认……关闭接口（`DELETE .../learning-reports`）仍可用」——① 之后 DELETE 也被 `learningReportWrite` 的暗态门挡住（`learning_reports.go:92-98`，`learning_reports_test.go:330-353` 还把这个行为固定住了）。真实场景是：浏览器开关已烘焙 1 的旧构建/已打开页面 + 服务端开关翻 0 → 会员能打开页面、读全 503，但**连撤回同意与清除都 503**（op e9958d55 只解决了「读失败仍可关闭/清除」，没解决「暗态回退」）。op 54 二选一：把关闭/清除路由从暗态门里豁免（Core 侧这两条确实不校验会员与内容，`learning_preferences.go:204`、`learning_reports_http.go:262-281`），或把 spec 改成诚实说法。倾向前者，因为它是会员的数据权利。
+  - **b1 交人工确认（我不能改 AGENTS.md）**：分支 diff 里含 `AGENTS.md` 的重写（49+/58−，把英文「Repository agent guidance」换成现在的中文仓库规范），来源是 `6eda2bd7`——本功能第一个提交，**早于我接手的各轮**。按你的长期约束我不动 AGENTS.md；但 PR 里带着它属「spec 未要求的范围」，需要你确认这是当初有意为之。
+- Public-ready Copy：**8 findings + 一份新增会员可见文案清单（含网关 6 条）**。核实后接受 5 条、拒绝 1 条、2 条低优先：
+  - 接受：①`learning-report-settings.tsx:188`「设置版本 v{n}」泄漏内部版本号，会员无法据此行动；④`page.tsx:435`「勾选「定期生成」」引用了屏幕上**不存在**的标签（真实标签是「定期为我生成这门课的学习报告」）；⑤`:502` 空态里写内部机制且 CTA「去刷题」把会员带离本页真正能解决问题的「生成报告」；⑧同一 `/practice` 目的地并存「去题库」与「去刷题」（`:303,533` vs `:469,478,503`，且 `:532` 文案说「先去刷题」按钮却写「去题库」）；③`learning-report-settings.tsx:98`「最少的作答摘要」高于事实（spec:42 的外发白名单是「课程标签、统计和必要题目样本」，不含自由文本作答）。
+  - 拒绝：②「`expected_answer: null` 会渲染成「正确答案 未作答」」——**现网不可达**：`learning_evidence.go:400-414` 用 CASE 把超限值变 NULL 后**整次构建 fail closed**（该文件 :367-368 的注释就是这个意思），且样本选择 SQL 直接排除 `expected_answer='null'::jsonb`；spec:41 也写明「历史异常 `expected_answer: null` 不进入评价统计……**不声称现网存在该问题**」。按 ponytail「不为不可达分支写代码」决定不改（若日后 Core 真的返回 null，那是契约层要先收紧的事）。
+  - 低优先（进 op 55 文案批次）：⑦`handler.go:1020`「操作太频繁了」把服务端成本守卫说成会员的「操作」问题（且该文案本就在待人工复核清单里）；⑥网关中文文案字面量重复（暗态/依赖两个 503 共用一句是**有意**的，运维矩阵 §8 明确要求值班看码，改成常量反而会掩盖「两个码是两个独立决定」，故只作为可选项记录）。
+- 两个从未在该分支跑过的 CI 作业，本机等价复现（CI 因 fork 未启用 Actions 跑不了，这是唯一可用证据）：
+  - `deploy-henukit.yml` 的 `validate-release-contract`：逐条执行其 18 个 `node --test`。**本功能相关的 `learning-feedback-dark.test.mjs` 3 条全过**（每个部署面保持暗态 / 读侧 fail-closed / 回退顺序仍在运维矩阵里）；分支改动的 `deploy-henukit-workflow.test.mjs` 新断言（学习报告 e2e 分组、`reuseExistingServer: false`、开关烘焙）也过。另有 14 条失败**全部**是环境缺失（`spawnSync docker ENOENT` ×4、`getwork-node-rollback` 的假 systemd 夹具 ×10），我用 `git worktree` 在 merge-base `8d52d8b3` 上跑同样两个文件，**同样 14 条、同样名字**失败 → 与本分支无关，属本机无 Docker/systemd 的既有环境缺口（已在复核后清理该 worktree）。
+  - `portal-gateway.yml` 的「Verify generated OpenAPI types」：本机跑 `go run ./cmd/contractgen` + `quizcraftcontractgen` 后 `git diff --exit-code` 退出 0 → 生成物是最新的，该作业不会因陈旧生成物变红。
+- 三轴（本次是评审本身，无代码改动）：Standards — 评审按仓库「三轴审查」条目执行，未引入新约定；Spec — 评审即对照 spec/ADR/运维矩阵，未改规格；Public-ready Copy — 只读检查，未改任何文案（改动都在 op 54/55）。README/PR 正文待 op 54 修完后再更新 `Review-Head` 与两轴 0 findings 声明。
+- 下一步（op 54，按价值排序）：①CI 让联合测试在缺少变量时 fail 而不是 skip，并给 `portal-gateway.yml` 配 Postgres 服务与联合变量（Standards 硬伤、也是「验证只在本机」的根因）；②读路径按写路径白名单转达拒绝码（Spec c2）；③暗态回退下的关闭/清除要么豁免要么改 spec（Spec c1，倾向前者）。
+- 之后（op 55）：文案批次（设置版本、标签引用、空态 CTA、去题库/去刷题统一、作答摘要措辞、429 措辞）+ 重出桌面/移动端截图，并同步待人工复核清单。
