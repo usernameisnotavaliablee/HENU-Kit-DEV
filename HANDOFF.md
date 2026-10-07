@@ -914,7 +914,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - `package-henukit-runtime.test.mjs`：`Runtime packaging creates a temporary Git checkout and validates it is clean. Keep it isolated from cross-file fixtures that also create and mutate temporary repositories.` —— 临时 Git checkout 的干净性，与超时无关。
 - `watch-henukit-actions.test.mjs`：`…so scheduling cannot turn a successful activation into a one-second timeout.` —— 才是 1 秒超时。
 
-已按文件分别写明各自理由。（顺带被证实的另一件事：本轮翻出自己在更早轮次留下的 `.cache/ci-quizcraft/contract-check.log`——里面就是 `go run …/sqlc@v1.31.0` 因 replace 指令报错的记录，说明 quizcraft 的 sqlc 确实不能脱离镜像跑，第 72 条那句话不是保守写法而是事实。原文把这处证据记成「标准轴找到的」，第 74 条更正：那是本会话自己的运行产物，另一个轴从未写过 `.cache/`。）
+已按文件分别写明各自理由。（顺带被证实的另一件事：本轮翻出自己在更早轮次留下的 `.cache/ci-quizcraft/contract-check.log`——里面就是 `go run …/sqlc@v1.31.0` 因 replace 指令报错的记录，说明 quizcraft 的 sqlc 确实不能脱离镜像跑，第 72 条那句话不是保守写法而是事实。原文把这处证据记成「标准轴找到的」，第 74 条更正：那是本会话自己的运行产物，本会话自己核过的那一个轴没有写过 `.cache/`——这句不能推广成「所有轴都没写过」，那是不可验证的全称否定。）
 
 这已经是同一轮里第四次栽在同一个动作上：**写「只有/都是/同样的」之前没有把两个候选都打开看**（`release_build_args`、Console 守卫、sqlc 模块、这次的注释）。第 70/72 条都写了这条教训，说明「记下教训」不管用——真正管用的是动作：凡是要写全称判断，先把所有候选逐一打开确认，再动笔。
 
@@ -923,3 +923,22 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 第 73 条写「标准轴在 `.cache/ci-quizcraft/contract-check.log` 里找到证据」。事实是：那个文件是**本会话更早轮次**留下的运行日志（目录时间戳是 10 月 6–7 日，里面确实是 `go run …/sqlc@v1.31.0` 因 replace 指令报错的记录），标准轴在复核时明确说明它从未写过 `.cache/`。结论本身成立（quizcraft 的 `internal/store` 确实无法脱离镜像生成），错的是出处标注。已就地更正为「本会话更早轮次的运行产物」。
 
 这条是标准轴主动交出来的——它本可以只说「结论对」而不提这点，反而自己去核了。记下来的意义不在这一处标注，而在于：**HANDOFF 里的每条证据都要能被下一个会话按文件名复现**，出处写错等于证据链断了；谁想引用证据，就得先确认那个文件真的是谁、什么时候写下的。
+
+### 75 — 构建面也补上了：三个构建全绿，顺带把治理门禁查清（只有 branch-name 必然红）
+
+第 71 条补的是"测试"面，这轮把**构建**面也跑了——它是分支影响面里唯一还没碰过的一类门禁，而且风险很实在：本分支重新生成过 `products/quizcraft/web-app/src/generated/quizcraft-api` 的 TS 客户端，也新增了 Portal 页面，**生成代码漂移会在这里被 `tsc` 抓到**。
+
+| 门禁 | 结果 |
+| --- | --- |
+| `pnpm run build:portal` | 通过；`/practice/reports` 作为静态路由出现在产物列表里；两项后置检查（付费资料无预览动作、产物无 mock 页）通过 |
+| `pnpm run build:quizcraft` | 通过；`tsc` 类型检查过重新生成的客户端，vite build 1736 modules，管理端会话与切流产物两项检查过 |
+| `pnpm --filter @henukit/console run lint` + `build:console` | `vue-tsc --noEmit` 干净，构建通过（仅一条 rolldown 的 pure 注释位置提示） |
+
+**治理门禁审计**（`.github/workflows/pull-request-governance.yml` 两个作业）：
+
+- `review-evidence`：正文三行（`Review-Head` / `Standards-Review` / `Spec-Review`）与正则期望完全相等 → 通过。
+- `branch-name`：要求 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本分支是 `codex/learning-feedback` → **必然红，且不是代码问题**。`hc-<issue>` 需要一个 issue 号，而本仓库 **issues 已关闭**，没有可引用的真实编号；改名分支还要重开 PR（`head.ref` 变了）。所以出路只有人工选一条：改名重开、或放宽该规则。已写进 PR 正文，不让它以一个"红叉"的形式默默挂着。
+
+**PR 模板逐节比对**：模板 14 节全部存在且有内容（背景/目标/范围/明确不做/影响模块/API 数据事件/产品边界/品牌与可访问性/安全与隐私/验证/发布/回滚/截图/Reviewer 重点）。勾选项逐条核对过，只有一处是错的——「影响模块」里同时勾了 `Documentation only`（那是"仅文档"的含义，与真实的代码改动矛盾），已去掉；`Study Web/Admin/API/Worker`、`Platform Core/Worker`、`Design Tokens` 保持不勾（本分支确实没动）。
+
+顺带把第 74 条留下的一处全称否定改了：原文「另一个轴从未写过 `.cache/`」= 不可验证，改成"本会话自己核过的那一个轴没写过"，并注明不能推广。

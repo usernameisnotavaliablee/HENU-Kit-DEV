@@ -50,6 +50,9 @@
     `scripts/ops/tests/package-henukit-runtime.test.mjs` 必须 `node --test --test-concurrency=1 <file>` 单独执行。
     两条的原因**不同**（CI 的 `deploy-henukit` 作业分别注明）：前者是短命 fake runtime 的调度在跨文件负载下会把
     「成功的激活」压成 1 秒超时；后者要隔离于同样创建并改写临时仓库的跨文件 fixture，避免临时 Git checkout 被判为不干净。
+  - 构建门禁同样可本机全跑：`pnpm run build:portal`（Next.js 构建 + 付费资料与 mock 产物两项检查）、
+    `pnpm run build:quizcraft`（`tsc` + vite build + 管理端会话与切流产物检查）、`pnpm --filter @henukit/console run lint`
+    与 `pnpm run build:console`。生成代码漂移会在这里被 `tsc` 抓到，所以契约改动后应连构建一起跑。
   - 依赖 Docker 的断言按文件报不同错，别按错串找错文件：`deploy-henukit-workflow.test.mjs` 的 4 条 compose 断言是
     `spawnSync docker ENOENT`；`package-henukit-runtime.test.mjs` 的那 1 条是 `docker: command not found` 后管道输出为空 →
     `JSON.parse` 抛 `SyntaxError: Unexpected end of JSON input`；材料密封脚本（`services/deploy-webhook/deploy/henukit-materials-seal`
