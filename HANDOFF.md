@@ -906,3 +906,14 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 `go test ./internal/httpapi -run TestQuizCraftLearningReportMemberChainAcrossARealCore -count=1 -v` → **54 assertions passed**，4 个子用例全过（真实 Core 就绪、13 个迁移连跑两遍、暗态诚实 503、撤权会员、手动限流），4.36s。PR 正文里的 54 条断言因此是当前 head 的事实，而不是旧 head 的转述。
 
 教训（第三次同类）：**在文档里写「只有」「都是」这类全称判断前，先把两个候选都打开看一眼**。这轮三次翻车（`release_build_args`、Console 守卫、sqlc 模块）都是同一个动作缺失——只查了一处就写全称。
+
+### 73 — 第四次同类：写「同样的注释说明」前只读了一条注释
+
+第 71 条那句「CI 的 `deploy-henukit` 作业里对这两条命令有同样的注释说明」是假的：两条命令的注释理由**不一样**，标准轴去把两条都打开看了。
+
+- `package-henukit-runtime.test.mjs`：`Runtime packaging creates a temporary Git checkout and validates it is clean. Keep it isolated from cross-file fixtures that also create and mutate temporary repositories.` —— 临时 Git checkout 的干净性，与超时无关。
+- `watch-henukit-actions.test.mjs`：`…so scheduling cannot turn a successful activation into a one-second timeout.` —— 才是 1 秒超时。
+
+已按文件分别写明各自理由。（顺带被证实的另一件事：标准轴在 `.cache/ci-quizcraft/contract-check.log` 里找到证据——`go run …/sqlc@v1.31.0` 因 replace 指令报错，说明 quizcraft 的 sqlc 确实不能脱离镜像跑，第 72 条那句话不是保守写法而是事实。）
+
+这已经是同一轮里第四次栽在同一个动作上：**写「只有/都是/同样的」之前没有把两个候选都打开看**（`release_build_args`、Console 守卫、sqlc 模块、这次的注释）。第 70/72 条都写了这条教训，说明「记下教训」不管用——真正管用的是动作：凡是要写全称判断，先把所有候选逐一打开确认，再动笔。
