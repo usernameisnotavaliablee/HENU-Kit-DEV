@@ -50,6 +50,8 @@
     `scripts/ops/tests/package-henukit-runtime.test.mjs` 必须 `node --test --test-concurrency=1 <file>` 单独执行。
     两条的原因**不同**（CI 的 `deploy-henukit` 作业分别注明）：前者是短命 fake runtime 的调度在跨文件负载下会把
     「成功的激活」压成 1 秒超时；后者要隔离于同样创建并改写临时仓库的跨文件 fixture，避免临时 Git checkout 被判为不干净。
+  - 构建门禁（Portal / Console / QuizCraft）的命令与「生成代码一致性由谁判定」见 `docs/DEVELOPMENT.md` §14 CI 的
+    「本机等价复现（无 Docker）」。
   - 依赖 Docker 的断言按文件报不同错，别按错串找错文件：`deploy-henukit-workflow.test.mjs` 的 4 条 compose 断言是
     `spawnSync docker ENOENT`；`package-henukit-runtime.test.mjs` 的那 1 条是 `docker: command not found` 后管道输出为空 →
     `JSON.parse` 抛 `SyntaxError: Unexpected end of JSON input`；材料密封脚本（`services/deploy-webhook/deploy/henukit-materials-seal`

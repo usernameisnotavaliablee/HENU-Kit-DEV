@@ -367,7 +367,7 @@ Issue 必须包含：
 
 ### 本机等价复现（无 Docker）
 
-上面这些门禁里只有依赖容器/镜像的部分必须有 Docker（Go 集成测试的 testcontainers 分支、`products/quizcraft/go-service` 的 `sqlc/sqlc` 镜像、compose 渲染、Docker build）；其余可在无 Docker 的本机直接跑：
+需要 Docker 的是依赖容器/镜像的门禁，例如 Go 集成测试的 testcontainers 分支、`products/quizcraft/go-service` 的 `sqlc/sqlc` 镜像、trivy 的镜像与密钥扫描（`aquasec/trivy`）、compose 渲染与 Docker build——这份列举是示意而非穷尽，判断标准是「该门禁是否要起容器/镜像」。其余可在无 Docker 的本机直接跑：
 
 - 构建门禁：`pnpm run build:portal`（Next.js + 付费资料与 mock 两项产物检查）、`pnpm run build:quizcraft`（`tsc` + vite build + 管理端会话与切流产物检查）、`pnpm --filter @henukit/console run lint` 与 `pnpm run build:console`。
 - **生成代码与生成器是否一致，由「重新生成 + `git diff --exit-code`」判定，不由构建判定**：只改契约而没重新生成时，陈旧的客户端自洽，构建照样通过；构建能抓到的是重新生成之后调用点的不兼容。契约改动请连着生成器与构建一起跑。
