@@ -894,3 +894,15 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 2. **两个集成包的 Docker 缺失会 panic，不是用例失败**。`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL` / `QUIZCRAFT_TEST_DATABASE_URL` 是现成的逃生口（CI 的 testcontainers 分支才用容器）；注意 quizcraft 这个逃生口**不会**应用迁移，必须先手工按序执行 `db/migrations/*.up.sql`，否则空库上照样红。整目录串行 329 用例的 46 条失败也全是这类（材料密封的固定 Node runtime 不可用 9 条、docker ENOENT、Linux 工具与路径缺失、getwork 回滚需 systemd 等）。
 
 判据也补了一条：契约检查的证据是「生成器确实重写了文件 + diff 为空」，而不是「命令退出 0」——生成器静默失败（例如 `npx` 因沙箱写不了 `~/.npm/_logs` 而中断）时 diff 同样为空，我第一遍就被这个骗过一次，改用工作区内的 npm cache 重跑才拿到真信号。
+
+### 72 — 同一段里两处「说太满」：sqlc 的 Docker 依赖按模块分、错串与文件必须配对
+
+第 71 条那段复现说明又被文案轴抓到两处，都是我能证伪却没有先证伪的：
+
+1. **「只有 `internal/store` 的 `sqlc generate` 必须 Docker」对两个模块中的一个为假**：CI 里 `products/quizcraft/go-service` 才是 `docker run … sqlc/sqlc:1.31.0`（`quizcraft-go.yml`），而 `services/platform-core` 用的是 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`（`platform-core.yml`）——**不需要 Docker**。在一个标题就是「无 Docker 的本机等价复现」的段落里，这种写法等于告诉读者某步不可复现。已按模块点名。
+2. **错串与文件配对错了**：我写「`fixed Node runtime is unavailable`（材料密封类）或空输出解析错误：`deploy-henukit-workflow.test.mjs` 的 4 条与 `package-henukit-runtime.test.mjs` 的 1 条即属此类」。实跑是：前者 4 条全是 `spawnSync docker ENOENT`；后者那 1 条是 `docker: command not found` → 管道输出为空 → `JSON.parse` 抛 `SyntaxError: Unexpected end of JSON input`（:87）；而 `fixed Node runtime is unavailable` 来自材料密封脚本自己（只查 `/usr/bin/node`、`/usr/local/bin/node`），跟这两个文件无关。已按文件拆开写清各自的报错。
+
+顺手把本轮的旗舰证据在**最终 head 上重跑**了一遍（此前是在更早的 head 上跑的）：`QUIZCRAFT_JOINT_REQUIRED=1` + 本机 PG 指向 `postgres` 库 + `ALLOW_DESTRUCTIVE_RECREATE=1`，
+`go test ./internal/httpapi -run TestQuizCraftLearningReportMemberChainAcrossARealCore -count=1 -v` → **54 assertions passed**，4 个子用例全过（真实 Core 就绪、13 个迁移连跑两遍、暗态诚实 503、撤权会员、手动限流），4.36s。PR 正文里的 54 条断言因此是当前 head 的事实，而不是旧 head 的转述。
+
+教训（第三次同类）：**在文档里写「只有」「都是」这类全称判断前，先把两个候选都打开看一眼**。这轮三次翻车（`release_build_args`、Console 守卫、sqlc 模块）都是同一个动作缺失——只查了一处就写全称。

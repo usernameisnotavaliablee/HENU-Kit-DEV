@@ -38,7 +38,8 @@
     `go run ./cmd/contractgen && go run ./cmd/quizcraftcontractgen`（`services/portal-gateway`）或
     `bash products/quizcraft/go-service/scripts/generate-contract.sh` 之后 `git diff --exit-code`。
     判据是「生成器确实重写了文件且 diff 为空」，而不是「命令退出 0」——生成器静默失败时 diff 同样为空。
-    只有 `internal/store` 的 `sqlc generate`（CI 用 `sqlc/sqlc:1.31.0`）必须 Docker。
+    只有 `products/quizcraft/go-service/internal/store` 的 `sqlc generate` 必须 Docker（CI 用 `sqlc/sqlc:1.31.0`）；
+    `services/platform-core/internal/store` 在 CI 里是 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`，无需 Docker。
   - 两个集成测试包在无 Docker 时会 **panic**（`rootless Docker not found`），指向本机 PostgreSQL 即可正常跑：
     `ACCOUNT_PORTFOLIO_TEST_DATABASE_URL=postgres://…`（`services/account-portfolio`，TestMain 自己应用迁移）；
     `QUIZCRAFT_TEST_DATABASE_URL=postgres://…`（`products/quizcraft/go-service`，此逃生口**不会**应用迁移，
@@ -48,9 +49,10 @@
   - 运维测试目录**不可整体一起跑**：`scripts/ops/tests/watch-henukit-actions.test.mjs` 与
     `scripts/ops/tests/package-henukit-runtime.test.mjs` 必须 `node --test --test-concurrency=1 <file>` 单独执行。
     跨文件负载会把「成功的激活」压成 1 秒超时，得到假失败（CI 的 `deploy-henukit` 作业里对这两条命令有同样的注释说明）。
-  - 依赖 Docker 的断言会报 `spawnSync docker ENOENT`（compose 渲染类）、`fixed Node runtime is unavailable`（材料密封类）
-    或由此衍生的空输出解析错误：`deploy-henukit-workflow.test.mjs` 的 4 条 compose 断言与 `package-henukit-runtime.test.mjs`
-    的 1 条即属此类。
+  - 依赖 Docker 的断言按文件报不同错，别按错串找错文件：`deploy-henukit-workflow.test.mjs` 的 4 条 compose 断言是
+    `spawnSync docker ENOENT`；`package-henukit-runtime.test.mjs` 的那 1 条是 `docker: command not found` 后管道输出为空 →
+    `JSON.parse` 抛 `SyntaxError: Unexpected end of JSON input`；材料密封脚本（`services/deploy-webhook/deploy/henukit-materials-seal`
+    等只查 `/usr/bin/node` 与 `/usr/local/bin/node`）在没有该 Node 时单独报 `fixed Node runtime is unavailable`。
 
 ## 4. Phase 0–1 验收
 
