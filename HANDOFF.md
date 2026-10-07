@@ -1047,7 +1047,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 ### 83 — Portal 的浏览器门禁：本分支改到的四组都跑了（三组全过，oauth gate 本机可跑的四段全过），并定位「重定向 HOME 会让 Next dev 起不来」
 
-前几轮补的是 Go 侧的测试/构建/静态分析与 QuizCraft 的浏览器面（那是 Vite）；Portal 这边此前只跑过本功能自己那套用例（本轮跑之前 `.cache/screenshots/` 里的截图是 17:16 落的，本轮那次把它们覆盖成了 22:56），把本分支改到的四个组都拉起来跑是这一轮做的——而 Portal 恰恰是本功能会员可见的那一半。Portal 的 e2e 在 `deploy-henukit.yml` 里共**十**个步骤（`apps/portal/package.json` 里另有 11 个 `test:e2e:*` 脚本，多出来的那个走 gate），本分支改到的 spec 落在其中四组：
+前几轮补的是 Go 侧的测试/构建/静态分析与 QuizCraft 的浏览器面（那是 Vite），而 Portal 恰恰是本功能会员可见的那一半。Portal 的 e2e 此前被零星跑过——日志里记着 learning-reports 那套的多次运行（用例数从 5 长到 14）、默认配置下受影响的 110 条（`:338`）、以及 `empty-state-actions` 加 `touch-targets` 的 35 条与 `empty-state-actions` 加 `practice-session` 的 15 条——但那些都在各自的旧 head 上，而且 oauth 那条链此前没有跑过的记录。这一轮做的是在当前 head 上把改到的四个组各跑一遍（含从没跑过的 oauth 两段），并定位了下面的根因。Portal 的 e2e 在 `deploy-henukit.yml` 里共**十**个步骤（`apps/portal/package.json` 里另有 11 个 `test:e2e:*` 脚本，多出来的那个走 gate），本分支改到的 spec 落在其中四组：
 
 | CI 步骤 | 本机结果 |
 | --- | --- |
@@ -1067,7 +1067,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 | 环境 | 根路径 |
 | --- | --- |
-| `HOME=$PWD/.cache/fakehome` | **HTTP 500**，日志里匹配那两类报错的行有 160 行 |
+| `HOME=$PWD/.cache/fakehome` | **HTTP 500**；日志里 `PageNotFoundError` 与 `build-manifest.json` 的 `ENOENT` 这两类各计，匹配行共 160 行 |
 | 只重定向 `npm_config_cache` | HTTP 200，零报错 |
 | 什么都不重定向 | HTTP 200，零报错 |
 
