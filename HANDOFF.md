@@ -860,4 +860,15 @@
 
 顺手按规格轴未计入的提醒把 ④ 的「产物恒为 0」限定为「**发布产物**恒为 0（本地 compose 构建可传该 arg，不是发布路径）」——单仓 compose 确实会传同一个 build arg，原句读起来像"任何构建都是 0"。
 
-验证：`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（文档解析守卫仍过）；`grep CONSOLE_` 在 Go 服务里为空；`QUIZCRAFT_PLATFORM_CLIENT` 只在 `products/quizcraft/go-service/.env.example` 命中。
+验证：`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（文档解析守卫仍过）；`grep CONSOLE_` 在 Go 服务里为空。（原文这里还写了「`QUIZCRAFT_PLATFORM_CLIENT` 只在 `products/quizcraft/go-service/.env.example` 命中」——第 70 条更正：那句为假，`services/platform-core/scripts/provision-quizcraft-client.sh` 以 `:?` 要求它、README 也列它，真正成立的是「单仓 `.env.henukit.example` 与各 compose 都没有定义或传递它」。）
+
+### 70 — 同一句里再修两处：一个指向不存在的 TODO，一句「只在某文件命中」的假话
+
+第 69 条那两句「提醒」自己也不干净，两个轴同时报了：
+
+1. **「见 TODO」指向不存在的地方**：全仓（`docs/` 与仓库根）只有这一处 `TODO`，也没有 `TODO.md`。改成点名记录位置（`HANDOFF.md` 第 69 条），这才跟得上。
+2. **「`QUIZCRAFT_PLATFORM_CLIENT_*` 只在 go-service 自己的 `.env.example` 里」为假**：`services/platform-core/scripts/provision-quizcraft-client.sh` 用 `:?` **强制要求** `QUIZCRAFT_PLATFORM_CLIENT_SECRET` 与 `QUIZCRAFT_PLATFORM_KEY_ID`，`services/platform-core/README.md` 也把它列为配置 QuizCraft OAuth 客户端的必需输入（Core 侧 `main.go` 读同一组名字）。真正成立的是**承担值班决策的那半句**：单仓 `.env.henukit.example` 与各 compose 都没有定义或传递它，所以这条复用守卫在组合栈里不会触发。已改成这个口径，并把第 69 条的验证行**就地更正**（numstat 1 增 1 删自证）。
+
+顺带把内层「①②」换成「其一/其二」：外层步骤已经占用了 ①②③④，内层 ② 紧接外层 ② 出现在同一渲染行，而这条目的正是「顺序不能换」。
+
+教训（第三次同一类）：**别在文档里写「只在 X 出现」这种全称否定**——我能证明的永远只是「我查过的那些地方没有」。这轮三次翻车（`release_build_args`、Console 守卫、platform client）都是全称断言太满，而每次负责决策的那半句都是对的。以后写「没有/只在」一律降级成「在我核过的这几处没有」，并顺手列出核过的文件。
