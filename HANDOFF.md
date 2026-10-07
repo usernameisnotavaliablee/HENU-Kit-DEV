@@ -572,3 +572,17 @@
 - 证据：`.cache/screenshots/learning-reports-membership-{desktop,mobile}.png`（桌面 1280、移动 390，`playwright.learning-reports.config.ts` 一条命令产出）。
 - 三轴：Standards — 复用既有 `EmptyBlock`/错误信封与 `formatPortalError` 通道，`code` 为可选字段以免惊动其他调用方；Spec — 已把「按码分支、必须登记、不得重复谎报」写进 `docs/development/quizcraft-learning-feedback-spec.md`；Public-ready Copy — **有**新增会员可见文案（沿用网关两句 + 新按钮「去会员中心」），仍在待人工审阅清单里，没有自行造新句子。
 - 下一步（op 52）：把这两条拒绝路径纳入发布/回滚说明与运维 Runbook（撤权会员看到会员区块、而非 503），并检查 Portal 侧还有哪些 surface 会因为 `learning_*` 码需要分支。
+
+### 52 — 学习报告拒绝语义进运维矩阵，并把「拒绝 vs 故障」写成值班可执行的顺序
+
+- 起因：op 49/50/51 让「会员权益不足」「授权代次过期」这两类拒绝一路带着 Core 的码走到浏览器，但**运维文档还停在 op 48 之前**——`practice-wiring-matrix.md` §5 学习报告读行只写 503/404，没写撤权会员拿到的是 403；值班照文档走会把会员状态当依赖故障去翻队列。
+- 改动（`docs/operations/practice-wiring-matrix.md`）：
+  1. §5 读行补上 `/latest` 与 `/tasks/{id}` 受实时会员门禁 → 403 `learning_entitlement_required`（并写明 Core **先校验权益再查报告**，所以没报告也先给 403；偏好读不受门禁仍是 200）；写行补上三个可行动拒绝（400 代次过期 / 403 权益不足 / 429 手动生成超限）。
+  2. 新增 §8「会员侧拒绝：谁写的、会员看到什么、值班怎么办」：拒绝码表（码 × 谁写 × 触发条件 × 会员侧表现，带源码行号）、实时门禁的精确位置、四步值班决策顺序、以及「撤权会员批量 403 属预期状态、不产生告警」。
+  3. §8 末尾写明改这类拒绝必须同提交动三处（Core 语义 / 网关转达 / Portal 登记与分支），否则会静默退化。
+- 文档里每条断言都对着源码核过，不是凭记忆写的：Core 的 `learning_consent_outdated`（`learning_reports_http.go:88`）、`learning_entitlement_required`（`requireLearningLifetime` `:296`）、门禁位置（`:213` 只在 `Enabled` 为真时校验、`:240`/`:330`/`:343`/`:382` 每次校验）；网关的写转达（`handler.go:1001`/`:1004`）、读分类（`learning_reports.go:130`）、429 原文（`handler.go:1020`）；两个共用同一句文案的 503 码（`:50`/`:94` 暗态 vs `:82` 依赖）——特意写明「共用文案，值班必须看码」。
+- 顺手关掉 op 51 留下的 sweep：Portal 侧只有 `/practice/reports`（`page.tsx`）消费这两个码，`learning-report-settings/view` 是纯展示、`practice-nav` 只管入口、`client.ts` 是传输层 → **没有其他 surface 需要分支**（代码检索结果，不是印象）。从报告起练的 403 也落在同一页的 `commandFailed`，因此已经会显示会员区块。
+- 文档里的命令逐条实跑，避免「没人执行过的 Runbook」：网关 `-race`（practice 1.8s / httpapi 4.3s 通过）→ 真实 Core 联合链路 **54 assertions passed**、四条子路径 PASS → `portal-error.test.ts` 22 通过 → 学习报告 e2e **9 passed**（截图随之刷新）。命令改成子 shell 写法，从仓库根连续粘贴就能跑。
+- 已知取舍（记录而非隐藏）：会员区块只给文案与入口，不带 request_id（`EmptyBlock` 没有该槽位）。会员权益是会员自己的状态，值机不需要流水号；若日后要支持工单，再给空态加槽位，而不是现在发明新组件。
+- 三轴：Standards — 只改既有运维矩阵，沿用其表格与「§ 编号」结构，未新建文档；Spec — 该矩阵就是学习反馈的运维规格，与 `quizcraft-learning-feedback-spec.md` 的分工保持不变（前者运维、后者开发）；Public-ready Copy — **有**会员可见文案出现在文档表格里，均为源码原文引用，未新造句子。
+- 下一步（op 53）：给 `PRODUCTION_VERIFY_RUNBOOK.md` 加一节「学习报告切流后的只读核验」（目前该 Runbook 完全没有学习报告项），或按 HANDOFF 未决项推进 #166 切流决定材料。

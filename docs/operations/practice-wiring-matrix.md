@@ -74,9 +74,9 @@
 | `GET /api/v1/rankings/overall`、`/api/v1/banks/{bank_id}/rankings` | Core 排行契约（V2 客户端） | 404 |
 | `GET /api/v1/practice/stats` | Core 个人统计（V2 客户端） | 503 |
 | `GET /api/v1/practice/favorites`、`/banks/{bank_id}/favorites`、`/feedback/{feedback_id}/status` | Core actor-bound 读（V2 客户端） | 503 |
-| `GET /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`/latest`、`/tasks/{task_id}` | Core actor-bound 读（V2 客户端，学习报告镜像类型） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或缺客户端）；Core 无报告时透传 404 |
+| `GET /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`/latest`、`/tasks/{task_id}` | Core actor-bound 读（V2 客户端，学习报告镜像类型） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或缺客户端）；Core 无报告时透传 404；**撤权会员的 `/latest` 与 `/tasks/{id}` 是 403 `learning_entitlement_required`，不是 503**（Core 先校验实时会员权益再查报告，所以没有报告也先给 403；偏好读不受会员门禁，仍是 200） |
 | `POST /api/v1/practice/sessions`、`.../answers`、`/feedback`、favorites 写 | Core 命令（命令客户端） | 503 |
-| `PUT /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`POST /banks/{bank_id}/learning-reports`、`DELETE /banks/{bank_id}/learning-reports`、`POST .../results/{report_id}/practice-sessions` | Core 命令（命令客户端；需 `Idempotency-Key`） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或命令客户端缺失） |
+| `PUT /api/v1/practice/banks/{bank_id}/learning-reports/preferences`、`POST /banks/{bank_id}/learning-reports`、`DELETE /banks/{bank_id}/learning-reports`、`POST .../results/{report_id}/practice-sessions` | Core 命令（命令客户端；需 `Idempotency-Key`） | 503（`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` 或命令客户端缺失）；会员能自行处理的拒绝带 Core 的码原样转达：`learning_consent_outdated`（400）、`learning_entitlement_required`（403）、`practice_command_rate_limited`（429，手动生成超限） |
 | `GET /api/v1/practice/banks`、`/schools`、`/lists/{id}`、`/leaderboard` | **已下线**（ADR-0036，portal-api 直读删除） | 404 + 迁移提示 |
 
 排行隐私契约：公开排行响应只含 `rank / nickname / system_avatar / correct_answer_count`，
@@ -110,3 +110,54 @@
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。
+
+## 8. 学习报告的会员侧拒绝：谁写的、会员看到什么、值班怎么办
+
+先分清两类东西：**会员状态**（会员自己能处理，必须原样说明）与**依赖故障**（会员处理不了，才是 503「稍后再试」）。把这层说成那层，值班会去翻队列，而会员只是权益过期。
+
+| 会员看到的状态码 | 谁写的 | 触发条件 | 会员侧表现 |
+|---|---|---|---|
+| 400 `learning_consent_outdated` | Core（`learning_reports_http.go:88`），网关转达 | 存库的分析授权代次落后于当前版本，且会员请求**开启** | 横幅：「分析授权已过期，请先关闭学习报告，再重新开启」（关闭再开启两步自愿、可自查） |
+| 403 `learning_entitlement_required` | Core（`requireLearningLifetime`，`:296`），网关转达 | 实时会员权益校验不过 | 会员区块：「学习报告需要有效的会员权益，请确认会员状态后再试」+「去会员中心」入口 |
+| 429 `practice_command_rate_limited` | 网关（`handler.go:1020`，Core 429 转达） | 手动生成超过 `QUIZCRAFT_LEARNING_MANUAL_LIMIT`（默认 10/小时/会员/课程） | 横幅：「操作太频繁了，请稍后再试」。**不是配额，也别当故障** |
+| 503 `practice learning reports are temporarily unavailable` | 网关（`learning_reports.go:82`） | 依赖不可用、凭据缺失、账号/权益服务报错 | 横幅：暂时不可用，稍后再试（唯一的「重试」语义） |
+| 503 `practice learning reports are not enabled` | 网关（`:50` 读、`:94` 写） | 暗态开关关闭或客户端未接线 | 同一句「学习报告暂时不可用，请稍后再试」——**与上面共用文案，值班必须看码**：这个码代表「没开」，不是「挂了」 |
+| 404 `learning report not found` | 网关（Core 404 映射） | 该课程确实还没有报告 | 空态 + 「生成报告」入口，不是错误 |
+
+实时会员门禁的位置（读代码确认，不是推测）：`portalUpdateLearningReportPreferences` **只在 `input.Enabled` 为真时**校验（`:213`），
+所以撤权后会员仍能关闭与清除——撤回同意是会员的数据权利，不能被权益挡住；`portalRequestLearningReport`（`:240`）、
+`portalLatestLearningReport`（`:330`）、`portalLearningReportTask`（`:343`）、`portalCreateLearningReportPracticeSession`（`:382`）
+每次都校验；偏好读**不**校验。
+
+值班决策顺序（会员说「学习报告用不了」）：
+
+1. 看浏览器实际状态码（信封里的 `error` 码，不要只看文案）。401 → 登录态过期，重新登录；**403/400 → 别查服务**：403 查会员权益状态（续费/权益服务），400 让会员按文案关闭再开启。
+2. 429 → 看该会员该课程一小时的生成次数，属于滥用保护，等待窗口即可。
+3. 503/404 → 才是依赖与内容问题：先跑下面的运行监测，再看内容审核状态（§7：无 `status='approved'` 当前版本时会员侧就是诚实的不可用）。
+4. 撤权会员批量看到 403 属于**预期状态，不产生告警**（`learninghealth` 的告警项与会员权益无关），不要据此开工单。
+
+改这两类拒绝时，同一提交必须动三处，否则会静默退化：Core 的码与语义、网关的转达分支
+（写路径 `internal/httpapi/handler.go` 的 `writePracticeCommandFailure`、读路径
+`internal/httpapi/learning_reports.go` 与 `internal/practice/learning_reports.go` 的 403 分类）、
+Portal 的登记（`apps/portal/src/lib/api/gateway-errors.ts`，未登记会被 `gateway-errors.test.ts` 判红）
+与按码分支（`apps/portal/src/app/practice/reports/page.tsx`）。
+
+本机可复现的证据（不需要生产权限）：
+
+以下命令都从仓库根执行（子 shell 里的 `cd` 不污染后续命令）：
+
+```bash
+# 1. 网关：码的转达与分类（含「依赖故障仍是 503」的反例）
+(cd services/portal-gateway && go test -race -count=1 ./internal/practice ./internal/httpapi)
+
+# 2. 真实 Core 联合链路：撤权会员 /latest 与 /tasks/{id} 都是 403，偏好读仍是 200
+(cd services/portal-gateway && QUIZCRAFT_JOINT_ALLOW_DESTRUCTIVE_RECREATE=1 \
+  QUIZCRAFT_JOINT_DATABASE_URL='postgres://<role>@127.0.0.1:5432/postgres?sslmode=disable' \
+  go test ./internal/httpapi -run TestQuizCraftLearningReportMemberChainAcrossARealCore -count=1 -v)
+
+# 3. Portal：拒绝码必须登记 + 页面按码分支（含桌面/移动端截图）
+(cd apps/portal && npx vitest run src/lib/api/portal-error.test.ts)
+(cd apps/portal && npx playwright test --config playwright.learning-reports.config.ts)
+# 截图落在 .cache/screenshots/learning-reports-membership-{desktop,mobile}.png；
+# 浏览器二进制不在默认缓存目录时，给第 3 步补 PLAYWRIGHT_BROWSERS_PATH=<浏览器目录>
+```
