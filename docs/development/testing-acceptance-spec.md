@@ -43,10 +43,12 @@
   - 两个集成测试包在无 Docker 时会 **panic**（`rootless Docker not found`），指向本机 PostgreSQL 即可正常跑：
     `ACCOUNT_PORTFOLIO_TEST_DATABASE_URL=postgres://…`（`services/account-portfolio`，TestMain 自己应用迁移）；
     `QUIZCRAFT_TEST_DATABASE_URL=postgres://…`（`products/quizcraft/go-service`，此逃生口**不会**应用迁移，
-    需先按序执行 `db/migrations/*.up.sql`，否则用例在空库上失败）。那个库**每次运行前要重建**：CI 的 testcontainers
-    每次给的是全新容器，而直接复用同一个库会让上一次留下的行把一批用例打成秒级失败
-    （如 `TestExplicitImportIsStableVersionedAndReported`、`TestRequireEmptyTargetRejectsFactsInAnyQuizCraftTable`）。
-    `account-portfolio` 没有这个问题——它的 TestMain 无论逃生口与否都会 `ApplyMigrations`。
+    需先按序执行 `db/migrations/*.up.sql`，否则用例在空库上失败）。那个库**每次运行前要重建**：CI 这个作业走不到
+    testcontainers——`quizcraft-go.yml:44` 把 `QUIZCRAFT_TEST_DATABASE_URL` 设在 job 级 `env`，`:45-47` 是
+    `postgres:16-alpine` 的 service 容器，schema 由 `:75` 的 psql 循环预先灌好；本机复用同一个库时这两层都没有，
+    上一次留下的行会把一批用例打成秒级失败（如 `TestExplicitImportIsStableVersionedAndReported`、
+    `TestRequireEmptyTargetRejectsFactsInAnyQuizCraftTable`）。`account-portfolio` 不同：它的 TestMain 无论是否设变量
+    都会 `ApplyMigrations`，且该包用 `tests/main_test.go` 的 `clearAccountPortfolio` 在用例内 TRUNCATE，故可复用。
     `products/quizcraft/go-service/cmd/reconcile` 的 `TestReconcileCLIBlocksARealPartialImportThenResumesTheSameRun`
     没有逃生口，必须 Docker。
   - 运维测试目录**不可整体一起跑**：`scripts/ops/tests/watch-henukit-actions.test.mjs` 与

@@ -1015,27 +1015,27 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 顺带补跑了根 `test:libraryctl`（`node --test scripts/libraryctl/tests/*.test.mjs`，此前从未跑过）：**13/13 通过**。
 
-### 82 — quizcraft-go 那个作业的九步全部落地：集成测试包原不必 Docker
+### 82 — quizcraft-go 作业九步逐条过了一遍：唯一不通过的是 reconcile、两步需 Docker；集成测试包原不必 Docker
 
-第 71/75/81 条分别补了测试面、构建面、静态分析面，但**都只看自己认定的清单**。这轮反过来做一遍：把 `quizcraft-go.yml` 那九步逐条按原文复现，哪一步没跑过就跑哪一步。结论是这一步确实还有没跑过的，而且其中一步我一直以为「必须 Docker」，其实不必。
+第 71/75/81 条分别补了测试面、构建面、静态分析面，但**都只看自己认定的清单**。这轮反过来做一遍：把 `quizcraft-go.yml` 那九步逐条过一遍，能跑的按原文复现、跑不了的说明为什么。结论是这一步确实还有没跑过的，而且其中一步我一直以为「必须 Docker」，其实不必。
 
 | 步骤（`quizcraft-go.yml`） | 本机复现结果 |
 | --- | --- |
 | `Verify migration round trip and recovery`（`:69`） | 全序列通过：`cmd/migrate` 幂等两次、拒绝非 V2 目标；`backuprestore` 演练；迁移计数断言（按目录实际文件数）13 == schema_migrations 记录数；`000007` 的 down 被拒且行与 CHECK 约束都在；down 链 `000013 → 000001` 全过；重放 `000001–000008` up + `migrate` 后 `000009/000010/000011` 记录齐全、`latest_attempt_id` 为 NOT NULL；`pg_dump`/`pg_restore` 恢复演练与对恢复库的逐表 `to_regclass` 断言全过 |
 | `Verify resumable reconciliation CLI recovery`（`:121`） | **不通过，且是唯一不通过项**：`TestReconcileCLIBlocksARealPartialImportThenResumesTheSameRun` 无逃生口，`rootless Docker not found` |
 | `Verify QuizCraft contract`（`:124`） | `sqlc generate` 那半需要 Docker；契约生成器此前已复现为无漂移 |
-| `Vet, test, and build`（`:138`） | 该步命令全过：gofmt / vet / staticcheck / govulncheck 干净；importbank、server、settleranking、reconcile、migrate、backuprestore 六个二进制编出，发布 SHA 经 `strings` 校验确实嵌入，其中 importbank / reconcile / migrate / backuprestore 的 `-h` 泄密断言全过 |
+| `Vet, test, and build`（`:138`） | 除该步 `go test -race -count=1 ./...` 里的 `cmd/reconcile`（见上一行）之外，其余命令全过：gofmt / vet / staticcheck / govulncheck 干净；importbank、server、settleranking、reconcile、migrate、backuprestore 六个二进制编出，发布 SHA 经 `strings` 校验确实嵌入，其中 importbank / reconcile / migrate / backuprestore 的 `-h` 泄密断言全过 |
 | `Verify existing FastAPI remains intact`（`:163`） | CI 原文命令：`py_compile` + 七个测试文件 **13 passed** |
-| `Verify React generated-client shadow flow`（`:169`） | `lint` 与 `test:syntax` 干净；三个浏览器套件 **10 / 1 / 2 passed**（practice、practice:production 的 writes 路径、legacy-ranking 在 #166 前 fail-closed） |
+| `Verify React generated-client shadow flow`（`:169`） | 该步的 `build` 此前一轮已复现；本轮跑 `lint` 与 `test:syntax`（干净）与三个浏览器套件：**10 / 1 / 2 passed**（practice、practice:production 的 writes 路径、legacy-ranking 在 #166 前 fail-closed） |
 | `Verify cutover release switch rollback`（`:181`） | `bash -n` 三个脚本 + 两个 python 断言脚本 + `test-switch-cutover-release.sh` 全过 |
 | `Build shadow image` / `Scan repository and shadow image`（`:189`、`:191`） | 需 Docker，未跑 |
 
-**这一步的收获是 `tests` 包**：`products/quizcraft/go-service/tests` 的 `TestMain` 只看 `QUIZCRAFT_TEST_DATABASE_URL` 是否已有值——有值就直接 `m.Run()`，完全跳过 testcontainers（`tests/main_test.go:20-22`）。所以那个包并非「必须 Docker」，只需先手工备库。照此跑出来：**111 个顶层用例全过**（`-race`，13.8s），其中本分支的 `Learning*` 有 **50 个**，该包被本分支改动的测试文件 **18 个**。`services/account-portfolio` 的逃生口（`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL`）同样可用，三个包全过（`tests` 3.4s）——它的 `TestMain` 无论逃生口与否都会 `ApplyMigrations`，所以可以反复复用同一个库。
+**这一步的收获是 `tests` 包**：`products/quizcraft/go-service/tests` 的 `TestMain` 只看 `QUIZCRAFT_TEST_DATABASE_URL` 是否已有值——有值就直接 `m.Run()`，完全跳过 testcontainers（`tests/main_test.go:20-22`）。所以那个包并非「必须 Docker」，只需先手工备库。照此跑出来：**111 个顶层用例全过**（`-race`，13.8s），其中名字含 `Learning` 的用例 **50 个**（按 `TestLearning*` 前缀数则是 44 个），落在本分支改动过的测试文件里的有 48 个、另 2 个在未改动的 `practice_test.go`；该包被本分支改动的测试文件共 **18 个**。`services/account-portfolio` 的逃生口（`ACCOUNT_PORTFOLIO_TEST_DATABASE_URL`）同样可用，三个包全过（`tests` 3.4s）——它的 `TestMain` 无论是否设变量都会 `ApplyMigrations`，而且该包用 `tests/main_test.go:742` 的 `clearAccountPortfolio` 在用例内 TRUNCATE，所以同一个库本次实测可以反复复用（是那个 helper 在起作用，不是 `ApplyMigrations`——它只做幂等的建表）。
 
 那个逃生口有两个坑，都写进了 `docs/development/testing-acceptance-spec.md` §3：
 
 1. 它**不会**替你应用迁移（只有容器分支里有那个循环），空库上直接用会失败——这一点更早的轮次已经记过。
-2. 它**不能跨运行复用同一个库**：同一 preset 库第二次直接跑会得到一批秒级失败（`TestExplicitImportIsStableVersionedAndReported`、`TestRequireEmptyTargetRejectsFactsInAnyQuizCraftTable` 等），因为 CI 的 testcontainers 每次给的是全新容器。正确姿势是每次 `dropdb`/`createdb` 后按序把 13 个 up 迁移各跑两遍，再跑用例；`account-portfolio` 不受此限。
+2. 它**不能跨运行复用同一个库**：同一 preset 库第二次直接跑会得到一批秒级失败（`TestExplicitImportIsStableVersionedAndReported`、`TestRequireEmptyTargetRejectsFactsInAnyQuizCraftTable` 等），因为 CI 这个作业根本走不到 testcontainers——`quizcraft-go.yml:44` 把 `QUIZCRAFT_TEST_DATABASE_URL` 设在 job 级 `env`，`:45-47` 是 `postgres:16-alpine` 的 service 容器，schema 由 `:75` 的 psql 循环预先灌好。正确姿势是每次 `dropdb`/`createdb` 后按序把 13 个 up 迁移各跑两遍，再跑用例；`account-portfolio` 不受此限。
 
 顺带把两个兄弟作业里此前只「声称」跑过的部分也真跑了：quizcraft-go 的 6 个二进制与 account-portfolio 的 3 个二进制都编得出，SHA 嵌入有 `strings` 证据，四条 `-h` 泄密断言全过。
 
