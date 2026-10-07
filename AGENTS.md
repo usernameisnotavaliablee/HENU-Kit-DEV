@@ -63,8 +63,8 @@
 
 ## CI 现状（实测，代价以天计）
 
-- `.github/workflows/` 共 14 个 workflow：14 个配 `pull_request:`，13 个配 `push: branches: [main]`，只有 2 个配 `workflow_dispatch`（`deploy-henukit.yml`、`quizcraft-go.yml`）。
-- 本 fork 的 PR 事件不产生 run：PR #2 的 opened / reopened / synchronize 三次都是 0 run（`gh api …/actions/runs` 的 `total_count` 不增，`gh pr checks 2` 只报 `no checks reported`），而同一时段 `gh workflow run` 立刻出 run。→ 别等 PR 红绿；要真 CI 用 `gh workflow run <workflow> --ref <branch>`。
+- `.github/workflows/` 共 14 个 workflow：14 个配 `pull_request:`，13 个配 `push: branches: [main]`，原先只有 2 个配 `workflow_dispatch`（`deploy-henukit.yml`、`quizcraft-go.yml`），本 PR 又给 `console-gateway.yml` 与 `portal-gateway.yml` 加上 → 共 4 个。
+- 本 fork 的 PR 事件不产生 run：PR #2 的 opened / reopened / synchronize 三次都是 0 run（`gh api …/actions/runs` 的 `total_count` 不增，`gh pr checks 2` 只报 `no checks reported`），而同一时段 `gh workflow run` 立刻出 run。→ 别等 PR 红绿；要真 CI 用 `gh workflow run <workflow> --ref <branch>`，而**没有 `workflow_dispatch` 的作业在本 fork 根本跑不起来**：要验哪个作业，先给它加一行 `workflow_dispatch`（本 PR 给 `console-gateway.yml`、`portal-gateway.yml` 加上了，另 10 个还没有）。
 - `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本仓 issues 关闭（`hasIssuesEnabled: false`）→ 无 `hc-<n>` 可引用，`codex/learning-feedback` 必红；`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
 
 ## 经验教训
@@ -78,6 +78,7 @@
 - 按用例分块统计，别数字符串出现次数：一次失败会重复打印同句 → 17 条红里 16 条同因，按块是 seal 14 / prepare 1 / activate 1，按字符串是 19/1/1。
 - 条件句别写成 CI 事实：CI 有 Docker，三批都跑 → 写「本机因 X 在第一处中止；CI 里会…」。
 - 引日志条目先 `git log -S'### 86 —' -- HANDOFF.md` 定位引入它的提交，否则会错引条目号。
+- 同类生成物的 SHA 注释不止一种格式（`Code generated from … (SHA256 …)`、`SourceSHA256 = "…"`、`portal-summary` 的双输入 hash）→ 按一种正则数会漏数，报数前先把格式枚举出来。
 
 ### 本机环境（本机 ≠ CI）
 
@@ -94,4 +95,4 @@
 - 改了契约/生成物就重跑所有消费方生成器并 `git diff --exit-code`；漏一个 `cmd/*contractgen*`，CI 的 `git diff --exit-code` 就红（只改文件头 SHA 也算）。
 - 一个回合只做一个大操作，push 后再写日志；日志条目要能被仓库证据复核（数字、条目号、文件路径）。
 - 三轴评审的返工几乎都出在计数与口径，不出在代码：写完自查「计数 / 全称 / 条件句 / 引用出处」四项。
-- 分清「文档还能再打磨」与「目标是否达成」：本分支真 CI 已全绿（`gh workflow run quizcraft-go.yml --ref codex/learning-feedback`，run `37659720284`，13 步全过），剩下的 `branch-name` 必红与学习报告切流窗口都要人工决定 → 继续润色文档不是进展。
+- 分清「文档还能再打磨」与「目标是否达成」：`quizcraft-go` 作业真 CI 已全绿（`gh workflow run quizcraft-go.yml --ref codex/learning-feedback`，run `37660869073` @ `6622a09d`，13 步全过），剩下的 `branch-name` 必红与学习报告切流窗口都要人工决定 → 继续润色文档不是进展。
