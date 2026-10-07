@@ -77,16 +77,16 @@
 - 先枚举清单再报数量：`*/cmd/*contractgen*` 命中 15 个目录，其中 1 个由 `products/quizcraft/go-service/scripts/generate-contract.sh` 驱动（直接 `go run` 的是 14 个）。
 - 按用例分块统计，别数字符串出现次数：一次失败会重复打印同句 → 17 条红里 16 条同因，按块是 seal 14 / prepare 1 / activate 1，按字符串是 19/1/1。
 - 条件句别写成 CI 事实：CI 有 Docker，三批都跑 → 写「本机因 X 在第一处中止；CI 里会…」。
-- 引日志条目先 `git log -S'### NN —'` 定位引入它的提交，否则会错引条目号。
+- 引日志条目先 `git log -S'### 86 —' -- HANDOFF.md` 定位引入它的提交，否则会错引条目号。
 
 ### 本机环境（本机 ≠ CI）
 
 - `HOME` **不能**重定向给需要 Next dev 的浏览器门禁（`Could not find the Next.js package` → `PageNotFoundError` / `.next` 的 `ENOENT` → Playwright `Timed out waiting 120000ms from config.webServer`）；Go 侧相反，必须显式给 `GOCACHE`/`GOMODCACHE`/`GOPATH`，否则 `failed to initialize build cache`。两套重定向互斥 → 配方见 `docs/DEVELOPMENT.md` §14。
-- npm 要同时给 `npm_config_cache` 与 `npm_config_logs_dir`，否则以 `npm error Log files were not written…` 中止。
+- npm 要同时给 `npm_config_cache` 与 `npm_config_logs_dir`，否则以 `npm error Log files were not written…` 中止；语境与反例见 `docs/DEVELOPMENT.md` §14。
 - 本机 Node 26 默认开 experimental webstorage → `apps/console` 的 `src/lib/pending-operations.spec.ts` 挂 1 条；加 `NODE_OPTIONS=--no-experimental-webstorage` 即 19/19。CI 固定 node 22。
 - 无 Docker 时的红必须点名文件 + 错误再归因：`spawnSync docker ENOENT`、`panic: rootless Docker not found`（testcontainers）、`JSON.parse` 空 compose 输出、materials 的 `fixed Node runtime is unavailable`、缺 `shellcheck`/systemd。「环境问题」不算归因。
 - 需要 Docker 的步骤先找该工具的独立二进制：`sqlc` 官方 release 是纯 Go 静态二进制，可直接复现 `docker run sqlc/sqlc:1.31.0 generate`（`go install …@v1.31.0` 因 go.mod 带 replace 指令不可行）。真 CI 第一次（run `37657421506`，main）就红在只有 Docker 那半跑得到的 `sqlc generate` 缺 75 行。
-- 子代理环境可能与本机不同（它要 `chromium_headless_shell-1228`，本机缓存 1243）→ 它能 `--list` 数用例但验不了通过，别把它的「跑不了」当证据。
+- 子代理环境可能与本机不同（它要 `chromium_headless_shell-1228`，本机缓存 1243）：依赖本机缓存/二进制的门禁（浏览器 e2e）它只能 `--list` 数用例、验不了通过 → 别把它的「跑不了」当证据；它跑得了的门禁照样给出精确数。
 
 ### 流程
 
