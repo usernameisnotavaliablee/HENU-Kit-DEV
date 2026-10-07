@@ -495,7 +495,7 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 | §8 | 支付（WeChat 键 / EasyPay / 订单表） | 通过/失败/待人工 | | D3 决策输入 |
 | §9 | 残留（study-api 404 / 10086 / 旧容器） | 通过/失败/待人工 | | |
 | §10 | 证据归档 | 通过 | | `$LOG` 路径 |
-| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401；worker=0 时 queued 必须为 0 |
+| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401（写与清除需 `PORTAL_PRACTICE_COMMANDS_ENABLED=1`）；worker=0 时从未切流过 queued 应为 0 |
 
 **回填动作（核验完成后，在仓库内执行）：**
 1. 更新 `docs/operations/CURRENT_PRODUCTION_STATE.md` §6「待服务器核验清单」：已核验项打勾并写证据日期；把「仓库无法自答、必须服务器回答」的结论写进 §1–§4 相应小节。
@@ -507,7 +507,7 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 
 ## §11 学习报告（暗态默认）：只读取证（约 4 分钟）
 
-**目的**：会员侧「学习报告」出厂**全程暗态**（四个开关默认 0）。本节只确认生产**仍是暗态**；切流后则确认已按顺序打开、且没有异常积压。开关语义、回退顺序、403/429/503 的分工与会员可见文案口径见 `practice-wiring-matrix.md` §7/§8 与 `quizcraft-learning-feedback-spec.md` LF-07，**本节只讲「在服务器上怎么只看不动」**。
+**目的**：会员侧「学习报告」出厂**全程暗态**（网关、浏览器与 worker 三个开关默认 0；调度间隔默认 `10m`，但 worker 关闭时调度器不构造，见 11.4）。本节只确认生产**仍是暗态**；切流后则确认已按顺序打开、且没有异常积压。开关语义、回退顺序、403/429/503 的分工与会员可见文案口径见 `practice-wiring-matrix.md` §7/§8 与 `quizcraft-learning-feedback-spec.md` LF-07，**本节只讲「在服务器上怎么只看不动」**。
 
 **本节附加安全规则**：下面所有请求都**不带会员会话 Cookie**（暗态门与鉴权都在网关进程内，未认证请求不会触达 Core）。**绝不要**在核验会话里用真实会员 Cookie 调 `DELETE`——那会真的清掉该会员已生成的报告。
 
@@ -538,17 +538,25 @@ probe_lr() { # $1=名称 $2=期望码 $3...=curl 参数
 # 读路由（偏好/最新报告/任务）与写路由（生成、保存偏好）：暗态 = 503 practice learning reports are not enabled
 probe_lr "读：偏好" 503 "$B/learning-reports/preferences" | tee -a "$LOG"
 probe_lr "写：生成报告" 503 -X POST "$B/learning-reports" | tee -a "$LOG"
-# 唯一豁免：清除路由。未认证 → 401 not authenticated（暗态与切流后都一样）
-#   → 若这里变 503：豁免被收窄（会员在回退期间无法撤回数据）；若变 2xx/404：没鉴权就真的删了，属事故
+# 唯一豁免：清除路由。未认证 → 401 not authenticated（暗态与切流后都一样；前提见下方「前置条件」）
+#   → 503 practice learning reports are not enabled：豁免被收窄（会员在回退期间无法撤回数据）
+#   → 503 practice_commands_unavailable：练习命令总开关关着（§2 的 PORTAL_PRACTICE_COMMANDS_ENABLED），不是豁免问题
+#   → 2xx/404：没鉴权就真的删了，属事故
 probe_lr "清除（未认证，不发 Cookie）" 401 -X DELETE "$B/learning-reports" | tee -a "$LOG"
 ```
 
-**判读**：暗态下前两条必须 `503`（该码同时覆盖「开关关闭」与「Core 客户端未接线」，见矩阵 §8，不要据此判定服务故障）；第三条必须是 `401`。切流后再跑，前两条应变为 `401`（未认证先于业务校验），第三条仍是 `401`。
+**前置条件**：只有**读路由**的 503 直接来自学习报告开关；写路由与清除路由都先经过 `practiceCommand`，所以 **`PORTAL_PRACTICE_COMMANDS_ENABLED=1`** 是它们返回「暗态 503 / 未认证 401」而不是 `503 practice_commands_unavailable`（「服务暂时不可用，请稍后再来」）的前提（该键在 §2 的键矩阵里，示例契约默认 `0`，生产实测见 `CURRENT_PRODUCTION_STATE.md`）。探针会打印响应体前 200 字节，用 code 区分两种 503。
+
+**判读**：暗态下前两条应为 `503 practice learning reports are not enabled`（读路由还有第二种来源：Core 客户端未接线，见矩阵 §8；不要据此判定服务故障）；第三条未认证应为 `401 not authenticated`。切流后再跑，前两条应变为 `401`（未认证先于业务校验），第三条仍是 `401`。写/清除探针若拿到 `503 practice_commands_unavailable`，先按 §2 查命令总开关，不要当学习报告的问题。
 
 ```bash
-echo "== 11.3 积压与失败（切流后才有意义；暗态下应恒为 0）==" | tee -a "$LOG"
+echo "== 11.3 积压与失败（判据是「不增长」，不是绝对为 0）==" | tee -a "$LOG"
+# 从未切流过：暗态下 queued 必然为 0（见 11.4）。
+# 曾经切流或回退过：已入队的任务行会保留且无人处理（worker 关闭），所以可能一直有 queued 行；
+#   此时 queued-behind 告警属**预期**（告警文案会说 worker 落后或已关闭），记录即可，不要据此判定故障或再次回退。
 # 本 Runbook 的 DBQ 只连 docker postgres，而学习报告表在宿主机 postgres 的 quizcraft_v2 库，
-# 所以这里不提供 psql 直查；改用仓库自带只读健康检查（计数是成本代理，不是计费）：
+# 所以这里不提供 psql 直查；改用仓库自带只读健康检查（计数是成本代理，不是计费）。
+# 在仓库模块目录 products/quizcraft/go-service 下执行：
 #   QUIZCRAFT_V2_DATABASE_URL='<只读连接串，不写入日志>' go run ./cmd/learninghealth -json -fail-on-alert
 echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learninghealth（-queued-behind 默认 30m，-failure-budget 默认 0）" | tee -a "$LOG"
 ```
@@ -556,7 +564,7 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 **通过判据**：
 - 11.1 五个键存在且为暗态期望值（切流后应与既定切流计划一致）；
 - 11.2 三条状态码符合上述判读；
-- 11.3 无告警、`queued`/`running` 不增长（暗态下应为 0）；
+- 11.3 `queued`/`running` **不增长**（从未切流过时应为 0；曾切流或回退过时残留队列与 queued-behind 告警属预期，以「不增长」为准）；
 - 任一不符 → `[FAIL]`，按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
 
 **11.4 worker=0 的含义（避免误判「任务积压」）**：`cmd/server/learning_provider.go` 只在 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1` 时才构造 worker 设置（其中包含自动排期间隔），因此 **worker 关闭时调度器根本不存在**，不会有任何自动任务入队——暗态下的 `queued` 必然为 0，出现任务行就说明有人开过 worker。`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0` 是给「worker 开着但不自动扫」用的（回退顺序第 ④ 步）。

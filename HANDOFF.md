@@ -800,3 +800,15 @@
 **没关掉的缺口（如实写进附录第 12 条）**：本 Runbook 的 `DBQ` 只连 docker postgres，而学习报告表在**宿主机 postgres 的 `quizcraft_v2`**，所以 §11 不提供 psql 直查——改用仓库自带的只读 `cmd/learninghealth`，并标注 `[MANUAL]`：需要在能访问该库的运维机上跑。服务器上 `quizcraft_v2` 的只读连接方式只有现场能确认，这正是附录存在的意义。
 
 验证：`practice-wiring-matrix.md` §7/§8、spec LF-07、`cmd/learninghealth` 的 flag、七条路由（读三条 + 写四条）与容器名（compose project `henukit` → `henukit-portal-1`）逐条对照过；`node --test scripts/ops/tests/learning-feedback-dark.test.mjs` 3 pass（该测试会解析矩阵文档）；本轮只改文档，无代码变化。
+
+### 65 — §11 自查出了三处会误导值班的说法（两轴复核查出，已修）
+
+自己写的手册照样被自己抓到假期望：
+
+1. **「四个开关默认 0」是错的**：`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL` 出厂就是 `10m`（`.env.henukit.example:133`）。同一节 17 行后我自己又写了「默认 10m 但 worker 关闭时不生效」——照「目的」那句核验的人看到 10m 就会误报 `[FAIL]`。改成「网关、浏览器与 worker 三个开关默认 0；调度间隔默认 `10m`，但 worker 关闭时调度器不构造」。
+2. **写路由与清除路由的期望值漏了一个前置条件**：只有**读**路由的 503 直接来自学习报告开关（它还额外测 `h.quizCraft == nil`）；写与清除都先过 `practiceCommand`，而它在命令客户端未接线时返回 **另一个** 503——`practice_commands_unavailable`（`handler.go`）。于是「清除未认证 = 401」和「若清除变 503 就是豁免被收窄」在生产把 `PORTAL_PRACTICE_COMMANDS_ENABLED` 关掉时会**把良性 503 读成数据权利事故**。现在 §11.2 明写 `PORTAL_PRACTICE_COMMANDS_ENABLED=1` 是写/清除探针的前提，并给出用响应体 code 区分两种 503 的判法（生产实测该键为 `1`，见 `CURRENT_PRODUCTION_STATE.md`）。顺手把矩阵 §8 那行同样的半真话补全（写路由在命令总开关关闭时先返回另一个码）。
+3. **「暗态下 queued 恒为 0」对回退后的生产是错的**：行列会保留且无人处理（worker 关闭），`HealthAlerts` 的 queued-behind 告警会在「worker 落后或已关闭」时触发，`-fail-on-alert` 直接退出 1 → 一个**正确回退过**的生产会挂在「11.3 无告警」这条判据上，而 §11.5 还叫它再回退一次。改成以「不增长」为判据，并说明从未切流过才是 0、残留队列与 queued-behind 告警属预期、记录即可。另外给 `go run ./cmd/learninghealth` 补上模块目录（`products/quizcraft/go-service`），否则从仓库根复制不可用。
+
+顺带确认的两件事（都写进文档）：`PORTAL_PRACTICE_COMMANDS_ENABLED` 的判定是 `== "1"`（`internal/config/config.go`），生产实测为 `1`；§11 的探针路径与网关路由表逐条一致（GET 偏好/latest/tasks、POST 生成、PUT 偏好、DELETE 清除）。
+
+教训与 op 62 同类：**手册里的「期望值」和自己后文的事实必须同源**，我给 §11 写目的时凭印象写了「四个默认 0」，而真正的来源（env 示例与 ops 测试）就在同一个 diff 里。
