@@ -382,6 +382,10 @@ Issue 必须包含：
   Go 侧恰好相反——真实 `HOME` 下 `GOCACHE` 不可写，所以要显式给：浏览器组用真实 `HOME` 加
   `GOCACHE`/`GOMODCACHE`/`GOPATH` 指向仓库 `.cache`（`test:e2e:oauth-continuation` 会 `go run` 起网关 fixture，缺了它就是
   `failed to initialize build cache at …/Library/Caches/go-build`）。两套重定向互相冲突，在这两类命令之间不存在一套环境变量通吃。
+  Node 版本也会有同款「只在本机红」的坑：本机 Node v26 默认开着 experimental webstorage（运行时会打印
+  `ExperimentalWarning: localStorage is not available because --localstorage-file was not provided`），`pnpm --filter @henukit/console run test`
+  会挂在 `src/lib/pending-operations.spec.ts` 的那条 storage 失败用例（`AssertionError: expected true to be false`，18/19）；
+  加 `NODE_OPTIONS=--no-experimental-webstorage` 后 **19/19 全过**，CI 用的是 node 22，没有这个开关。
 
 ### 路径过滤
 

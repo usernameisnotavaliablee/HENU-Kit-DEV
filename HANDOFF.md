@@ -1100,3 +1100,22 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - `Reject Account mock and fallback sources`：`node scripts/ops/check-account-production-boundary.mjs` → **PASS**（要求真实网关、生产路径里没有 Account mock 来源），这条与代码同源、直接对本分支成立。
 
 于是这个作业在本机的红/跳过全部能归到 Docker 或 Linux systemd 两个环境缺口上，没有一条与本分支的改动有关。
+
+### 85 — 反过来算「本分支会触发哪些 CI 作业」：补跑四个从没跑过的作业，逮到一处真会红的生成物漂移（已修），并记下 Node 26 webstorage 本机坑
+
+前 84 条一直是「想到哪个作业就跑哪个」。这一轮反过来做：解析每个 workflow 的 `paths:` 过滤器（`push:` 与 `pull_request:` 两处），把 `git diff --name-only 8d52d8b3...HEAD` 的文件逐条 glob 匹配，算出**这条分支真会触发哪些作业**。触发的有七个带 paths 的（account-portfolio、console-gateway、deploy-webhook、library、portal-api、portal-gateway、quizcraft-go）加两个不带 paths 的（deploy-henukit、pull-request-governance）；**不触发**的是 career、food、notice、platform-core、portal-summary（各自 paths 与本次改动零交集）。
+
+七个里，console-gateway、deploy-webhook、library、portal-api 这四个此前**一次都没在本机跑过**（它们是被共享文件拖进来的：`packages/api-contracts/openapi/account-portfolio.yaml`、`apps/portal/src/lib/api/types.ts`、两个 compose 文件、`docs/adr/README.md`）。补跑结果：
+
+| 作业 | 本机结果 |
+| --- | --- |
+| console-gateway | 契约生成物**漂移 1 处（真会红，已修，见下）**；redocly `console-gateway.yaml` valid（17 warnings）；gofmt / vet / staticcheck / govulncheck / `go test -race -count=1 ./...` / build 全过 |
+| portal-api | redocly `portal-api.yaml` valid（6 warnings）；gofmt / vet / `go test -race`（db、food、httpapi、library）全过 |
+| library | 自己的 contractgen 零 diff；redocly `library.yaml` valid；gofmt / vet / staticcheck 干净、build 过；`go test -race ./...` 只有 `./tests` 红——`panic: rootless Docker not found`（testcontainers；CI 里这一步靠 PG service），其余包（含根包、`cmd/activate-public-release`）全过 |
+| deploy-webhook | gofmt 零输出 / vet / 五个包 `-race` / 三个 `CGO_ENABLED=0` 构建 / govulncheck（exit 0）全过；13 条 `bash -n`/`sh -n` 过；未提交密钥检查过；materials 那批 95 用例 **73 过 / 17 红 / 5 跳**（16 条是 `henukit-materials-activate: fixed Node runtime is unavailable`，1 条是 `timed out waiting for …/rename-ready`；跳过的是 Docker 门控） |
+
+**逮到并修掉的缺陷**：分支改了 `packages/api-contracts/openapi/account-portfolio.yaml`，却漏了重生成它的消费方 `services/console-gateway/internal/accountportfolio/contract_generated.go`——文件头记录的 SHA 还是旧的 `5555bb8c…`，重生成后是 `89b3e39c…`。`console-gateway.yml:82` 的 `git diff --exit-code` 覆盖这个路径，所以这条在 CI 里**必红**。为确认只此一处，把全仓 14 个 Go `cmd/*contractgen*` 加上 quizcraft 的 `scripts/generate-contract.sh` 全跑了一遍：工作树里**只有这一个文件**漂移（`services/account-portfolio/internal/contract/generated.go` 自己在分支里已同步、exit 0；portal-gateway 读同一份 yaml 的对齐测试也过）。修完按原文重放该步骤（五个生成器 + `git diff --exit-code` 六个路径）→ 退出码 0。
+
+**新记一个只在本机红的坑（已写进 `docs/DEVELOPMENT.md` §14）**：本机 Node v26 默认开启 experimental webstorage，`pnpm --filter @henukit/console run test` 会挂在 `src/lib/pending-operations.spec.ts` 那条 storage 失败用例（`AssertionError: expected true to be false`，18/19 过）；加 `NODE_OPTIONS=--no-experimental-webstorage` 后 **19/19 全过**。`apps/console` 本分支零改动，CI 用的是 node 22、没有这个开关，所以这不是仓库问题；Console 的 `lint`（vue-tsc）与 `build` 在本机都过。
+
+**没跑到的（逐条点名）**：console-gateway 的 Food 集成步骤（要 `food` 角色库并起 food 服务）、library 的迁移往返（要 `library` 角色库并 `createdb`/`pg_restore`）——两处都需要本机建角色，本轮没建；`shellcheck` 本机没装（该步骤只剩 13 条 `bash -n` 跑了）；systemd-analyze verify、sudo 跨 UID 用例、特权 runner 三处是 Linux/root 专属；`docker pull node:22-alpine`、`docker compose config`、`nginx -t`、镜像构建与扫描四处是 Docker 专属。
