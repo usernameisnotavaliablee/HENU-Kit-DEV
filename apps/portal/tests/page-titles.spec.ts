@@ -16,6 +16,7 @@ const PAGES = [
   { path: "/practice/quiz", title: "练习 — 智能刷题 | HENU Kit" },
   { path: "/practice/leaderboard", title: "排行榜 — 智能刷题 | HENU Kit" },
   { path: "/practice/stats", title: "数据面板 — 智能刷题 | HENU Kit" },
+  { path: "/practice/reports", title: "学习报告 — 智能刷题 | HENU Kit" },
   { path: "/practice/favorites", title: "收藏夹 — 智能刷题 | HENU Kit" },
   { path: "/practice/favorites/bank-titles", title: "题库收藏夹 — 智能刷题 | HENU Kit" },
   { path: "/food", title: "美食榜 | HENU Kit" },

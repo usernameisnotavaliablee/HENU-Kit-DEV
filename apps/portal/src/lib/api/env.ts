@@ -58,6 +58,17 @@ export function quizCraftV2ReadsEnabled(): boolean {
 }
 
 /**
+ * QuizCraft evidence-based learning reports are a member surface that reads the
+ * member's own answers, so this browser flag defaults to 0 like every other
+ * cutover flag. A baked 1 renders the entry point, but the Gateway still answers
+ * an honest 503 until PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=1 and the command
+ * gate are enabled in the same bundle; it never falls back to sample data.
+ */
+export function quizCraftLearningReportsEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS === "1";
+}
+
+/**
  * Gateway base URL (no trailing slash).
  * Empty string = same-origin (/api/v1/... via nginx).
  */

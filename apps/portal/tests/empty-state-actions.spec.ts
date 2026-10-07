@@ -34,6 +34,19 @@ test("practice data that has not launched yet points to practice", async ({ page
   await expect(disabled.getByRole("link", { name: "去刷题", exact: true })).toHaveAttribute("href", "/practice");
 });
 
+test("learning reports that have not opened yet point to practice", async ({ page }) => {
+  await page.goto("/practice/reports");
+  await waitForHydration(page);
+
+  const disabled = page.getByTestId("practice-reports-disabled");
+  await expect(disabled).toContainText("学习报告暂未开放");
+  // 暗态分支没有关闭/清除控件，页头就不能承诺「随时可以关闭或清除」（与登录前同理）。
+  await expect(page.getByText("只有你主动开启并同意后才会生成。")).toBeVisible();
+  await expect(page.getByText("随时可以关闭或清除。")).toHaveCount(0);
+  await expect(disabled).not.toContainText("EMPTY");
+  await expect(disabled.getByRole("link", { name: "去刷题", exact: true })).toHaveAttribute("href", "/practice");
+});
+
 test("a leaderboard that has not opened yet points to practice", async ({ page }) => {
   await page.goto("/practice/leaderboard");
   await waitForHydration(page);

@@ -27,8 +27,12 @@ var (
 	ErrPracticeCommandForbidden    = errors.New("QuizCraft denied access to the practice session")
 	ErrPracticeCommandNotFound     = errors.New("QuizCraft practice session was not found")
 	ErrPracticeCommandConflict     = errors.New("QuizCraft practice command conflicted")
-	ErrPracticeCommandUnavailable  = errors.New("QuizCraft practice commands are unavailable")
-	ErrPracticeCommandInvalid      = errors.New("QuizCraft returned an invalid practice command response")
+	// Core's abuse guard for member-requested generation. It is not a quota and
+	// not a fault: the Gateway must answer 429 instead of pretending the
+	// dependency is down.
+	ErrPracticeCommandRateLimited = errors.New("QuizCraft practice command was rate limited")
+	ErrPracticeCommandUnavailable = errors.New("QuizCraft practice commands are unavailable")
+	ErrPracticeCommandInvalid     = errors.New("QuizCraft returned an invalid practice command response")
 )
 
 // CommandClient owns only the two Portal-initiated practice commands. Its
@@ -46,6 +50,29 @@ type CommandClient struct {
 type CommandResult struct {
 	Raw             json.RawMessage
 	AnonymousCookie *http.Cookie
+}
+
+// CoreRejection is a Core rejection that still names its reason. Both the command
+// and the read boundary use it: the status sentinels stay the classification
+// every caller already switches on (Unwrap keeps errors.Is working), while Code
+// carries Core's own machine-readable code so a member-facing surface can say
+// what to do next instead of showing one generic failure for every rejection.
+type CoreRejection struct {
+	Sentinel error
+	Code     string
+}
+
+func (r *CoreRejection) Error() string { return r.Sentinel.Error() }
+
+func (r *CoreRejection) Unwrap() error { return r.Sentinel }
+
+// RejectedCode returns Core's error code when the rejection carried one.
+func RejectedCode(err error) string {
+	var rejection *CoreRejection
+	if errors.As(err, &rejection) {
+		return rejection.Code
+	}
+	return ""
 }
 
 // NewCommandClient creates the default-off write client. The caller is
@@ -113,7 +140,10 @@ func (c *CommandClient) CreateFavoritesSession(ctx context.Context, bankID, acto
 
 type commandEnvelopeValidator func([]byte) error
 
-func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie, expectedStatus int, validate commandEnvelopeValidator) (CommandResult, error) {
+// command performs exactly one signed Core write. extraStatuses documents the
+// additional success codes a command may answer with the same envelope (for
+// example a reused learning report request answering 200 instead of 202).
+func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, requestID, idempotencyKey string, raw []byte, anonymousCookie *http.Cookie, expectedStatus int, validate commandEnvelopeValidator, extraStatuses ...int) (CommandResult, error) {
 	if c == nil || c.signer == nil || c.httpClient == nil || strings.TrimSpace(requestID) == "" || !ValidIdempotencyKey(idempotencyKey) || len(raw) == 0 || len(raw) > 2<<20 {
 		return CommandResult{}, ErrPracticeCommandBadRequest
 	}
@@ -149,18 +179,22 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 	switch response.StatusCode {
 	case expectedStatus:
 	case http.StatusBadRequest:
-		return CommandResult{}, ErrPracticeCommandBadRequest
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandBadRequest)
 	case http.StatusUnauthorized:
-		return CommandResult{}, ErrPracticeCommandUnauthorized
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandUnauthorized)
 	case http.StatusForbidden:
-		return CommandResult{}, ErrPracticeCommandForbidden
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandForbidden)
 	case http.StatusNotFound:
-		return CommandResult{}, ErrPracticeCommandNotFound
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandNotFound)
 	case http.StatusConflict:
-		return CommandResult{}, ErrPracticeCommandConflict
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandConflict)
+	case http.StatusTooManyRequests:
+		return CommandResult{}, coreRejection(response, ErrPracticeCommandRateLimited)
 	default:
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
-		return CommandResult{}, fmt.Errorf("QuizCraft Portal command status %d: %w", response.StatusCode, ErrPracticeCommandUnavailable)
+		if !containsStatus(extraStatuses, response.StatusCode) {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+			return CommandResult{}, fmt.Errorf("QuizCraft Portal command status %d: %w", response.StatusCode, ErrPracticeCommandUnavailable)
+		}
 	}
 	rawResponse, err := io.ReadAll(io.LimitReader(response.Body, 2<<20+1))
 	if err != nil || len(rawResponse) == 0 || len(rawResponse) > 2<<20 || validate(rawResponse) != nil {
@@ -173,11 +207,66 @@ func (c *CommandClient) command(ctx context.Context, method, path, actorUserID, 
 	return CommandResult{Raw: rawResponse, AnonymousCookie: cookie}, nil
 }
 
+// coreRejection keeps the status sentinel and, when Core named a reason, that
+// reason. The rejection body is always read to the end: besides carrying the
+// code it has to be drained or the keep-alive connection is wasted.
+func coreRejection(response *http.Response, sentinel error) error {
+	code := coreRejectionCode(response.Body)
+	if code == "" {
+		return sentinel
+	}
+	return &CoreRejection{Sentinel: sentinel, Code: code}
+}
+
+// coreRejectionCode reads Core's error envelope and returns only a code that
+// matches the documented machine shape. An upstream body must never be able to
+// push arbitrary text into the browser contract.
+func coreRejectionCode(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, 64<<10))
+	if err != nil {
+		return ""
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(raw, &envelope) != nil {
+		return ""
+	}
+	code := strings.TrimSpace(envelope.Error.Code)
+	if !validCoreErrorCode(code) {
+		return ""
+	}
+	return code
+}
+
+func validCoreErrorCode(value string) bool {
+	if len(value) < 3 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidIdempotencyKey is shared by Gateway's public boundary and its Core
 // command client so the browser contract cannot drift before signing.
 func ValidIdempotencyKey(value string) bool {
 	value = strings.TrimSpace(value)
 	return len(value) >= 16 && len(value) <= 160
+}
+
+func containsStatus(statuses []int, want int) bool {
+	for _, status := range statuses {
+		if status == want {
+			return true
+		}
+	}
+	return false
 }
 
 func validPracticeCommandUUID(value string) bool {
@@ -360,8 +449,16 @@ func validatePracticeAnswerEnvelope(raw []byte) error {
 	return nil
 }
 
+// validPracticeSessionMode accepts every mode the QuizCraft contract defines,
+// including favorites and the pinned learning-report set. Rejecting a mode the
+// Core legitimately returns would turn a valid session into a failed read.
 func validPracticeSessionMode(value string) bool {
-	return value == "random" || value == "difficult" || value == "chapter"
+	switch value {
+	case "random", "difficult", "chapter", "favorites", "report":
+		return true
+	default:
+		return false
+	}
 }
 
 func validPracticeQuestionType(value string) bool {

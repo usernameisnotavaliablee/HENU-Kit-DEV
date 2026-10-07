@@ -36,27 +36,31 @@ import (
 
 // Handler is the Portal Gateway HTTP handler.
 type Handler struct {
-	sessionCodec       *session.Codec
-	platform           *platformcore.Client
-	displayNames       *practice.DisplayNamesResolver
-	quizCraft          *practice.Client
-	portalAPI          *http.Client
-	portalAPIURL       string
-	libraryDownloads   *librarydownload.Client
-	accountPortfolio   *accountportfolio.Client
-	foodPosts          *foodposts.Client
-	career             *career.Client
-	practiceCommands   *practice.CommandClient
-	quizCraftCatalog   *practice.Client
-	redis              *redis.Client
-	portalOrigin       string
-	platformCoreURL    string
-	publicPlatformURL  string
-	clientID           string
-	redirectURI        string
-	localOAuthCookie   string
-	localSessionCookie string
-	trustedProxies     []*net.IPNet
+	sessionCodec     *session.Codec
+	platform         *platformcore.Client
+	displayNames     *practice.DisplayNamesResolver
+	quizCraft        *practice.Client
+	portalAPI        *http.Client
+	portalAPIURL     string
+	libraryDownloads *librarydownload.Client
+	accountPortfolio *accountportfolio.Client
+	foodPosts        *foodposts.Client
+	career           *career.Client
+	practiceCommands *practice.CommandClient
+	quizCraftCatalog *practice.Client
+	// learningReportsEnabled is the explicit learning-report cutover gate. The
+	// routes are registered unconditionally (ADR-0036) and answer an honest 503
+	// until the gate is on and the V2 read client exists.
+	learningReportsEnabled bool
+	redis                  *redis.Client
+	portalOrigin           string
+	platformCoreURL        string
+	publicPlatformURL      string
+	clientID               string
+	redirectURI            string
+	localOAuthCookie       string
+	localSessionCookie     string
+	trustedProxies         []*net.IPNet
 }
 
 var (
@@ -178,27 +182,28 @@ func New(cfg config.Config, rdb *redis.Client) (*Handler, error) {
 		return platform.DisplayNames(ctx, userIDs, requestID)
 	})
 	return &Handler{
-		sessionCodec:       codec,
-		platform:           platform,
-		displayNames:       displayNames,
-		quizCraft:          quizCraft,
-		portalAPI:          &http.Client{Timeout: 10 * time.Second},
-		portalAPIURL:       cfg.PortalAPIURL,
-		libraryDownloads:   libraryDownloads,
-		accountPortfolio:   portfolio,
-		foodPosts:          foodPosts,
-		career:             careerClient,
-		practiceCommands:   practiceCommands,
-		quizCraftCatalog:   quizCraftCatalog,
-		redis:              rdb,
-		portalOrigin:       cfg.PortalOrigin,
-		platformCoreURL:    cfg.PlatformCoreURL,
-		publicPlatformURL:  firstNonEmpty(cfg.PlatformCorePublicURL, cfg.PlatformCoreURL),
-		clientID:           cfg.PlatformClientID,
-		redirectURI:        cfg.PortalRedirectURI,
-		localOAuthCookie:   firstNonEmpty(cfg.LocalOAuthCookieName, "henukit_portal_oauth_local"),
-		localSessionCookie: firstNonEmpty(cfg.LocalSessionCookieName, "henukit_portal_session_local"),
-		trustedProxies:     trustedProxies,
+		sessionCodec:           codec,
+		platform:               platform,
+		displayNames:           displayNames,
+		quizCraft:              quizCraft,
+		portalAPI:              &http.Client{Timeout: 10 * time.Second},
+		portalAPIURL:           cfg.PortalAPIURL,
+		libraryDownloads:       libraryDownloads,
+		accountPortfolio:       portfolio,
+		foodPosts:              foodPosts,
+		career:                 careerClient,
+		practiceCommands:       practiceCommands,
+		quizCraftCatalog:       quizCraftCatalog,
+		learningReportsEnabled: cfg.QuizCraftLearningReportsEnabled,
+		redis:                  rdb,
+		portalOrigin:           cfg.PortalOrigin,
+		platformCoreURL:        cfg.PlatformCoreURL,
+		publicPlatformURL:      firstNonEmpty(cfg.PlatformCorePublicURL, cfg.PlatformCoreURL),
+		clientID:               cfg.PlatformClientID,
+		redirectURI:            cfg.PortalRedirectURI,
+		localOAuthCookie:       firstNonEmpty(cfg.LocalOAuthCookieName, "henukit_portal_oauth_local"),
+		localSessionCookie:     firstNonEmpty(cfg.LocalSessionCookieName, "henukit_portal_session_local"),
+		trustedProxies:         trustedProxies,
 	}, nil
 }
 
@@ -255,6 +260,22 @@ func (h *Handler) Router() chi.Router {
 	r.Put("/api/v1/practice/banks/{bank_id}/favorites/{question_id}", h.favoriteQuestion)
 	r.Delete("/api/v1/practice/banks/{bank_id}/favorites/{question_id}", h.unfavoriteQuestion)
 	r.Post("/api/v1/practice/banks/{bank_id}/favorites/practice-sessions", h.createFavoritesSession)
+	// Learning reports are the evidence-based feedback surface. Like stats and
+	// favorites they are actor-bound signed reads: the browser identity comes
+	// only from the verified Portal Session, and the gate keeps the surface dark
+	// until the #166-style cutover turns it on explicitly.
+	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/preferences", h.learningReportPreferences)
+	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/latest", h.latestLearningReport)
+	r.Get("/api/v1/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", h.learningReportTask)
+	// Learning-report writes reuse the practice command credential and the
+	// idempotency-key contract; like the reads they register unconditionally and
+	// fail closed (503) while the learning surface or the command client is off;
+	// the clear route is the one exception, so withdrawing data survives a rollback
+	// (see docs/operations/practice-wiring-matrix.md §7).
+	r.Put("/api/v1/practice/banks/{bank_id}/learning-reports/preferences", h.updateLearningReportPreferences)
+	r.Post("/api/v1/practice/banks/{bank_id}/learning-reports", h.requestLearningReport)
+	r.Delete("/api/v1/practice/banks/{bank_id}/learning-reports", h.clearLearningReports)
+	r.Post("/api/v1/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions", h.createLearningReportSession)
 
 	// The owner-backed download command must shadow the public-data wildcard.
 	// Browser callers select only a material ID, never a storage key or URL.
@@ -972,6 +993,23 @@ func (h *Handler) practiceCommand(w http.ResponseWriter, r *http.Request, succes
 }
 
 func (h *Handler) writePracticeCommandFailure(w http.ResponseWriter, r *http.Request, err error) {
+	// Core names the rejections a member can do something about. The status-only
+	// mapping below cannot express those, and one generic message for every
+	// rejection is exactly what leaves a member stuck, so the code is forwarded
+	// for the two cases Portal renders. Codes it does not render keep the shared
+	// mapping, which is also what keeps this from widening the browser contract
+	// for every practice command.
+	switch practice.RejectedCode(err) {
+	case "learning_consent_outdated":
+		writeError(w, r, http.StatusBadRequest, "learning_consent_outdated", "分析授权已过期，请先关闭学习报告，再重新开启")
+		return
+	case "learning_entitlement_required":
+		// 这里故意用字面量而不是 learningEntitlementRequiredCode：Portal 的
+		// gateway-errors.test.ts 按 `writeError(..., "code")` 的字面量扫描，
+		// 换成常量会让这个会员可见 code 从「每个 code 都有文案决定」的守护里消失。
+		writeError(w, r, http.StatusForbidden, "learning_entitlement_required", "学习报告需要有效的会员权益，请确认会员状态后再试")
+		return
+	}
 	switch {
 	case errors.Is(err, practice.ErrPracticeCommandBadRequest):
 		writeJSON(w, http.StatusBadRequest, contract.ErrorEnvelope{Error: "practice_command_invalid", Message: "请求内容不完整，请检查后重试", RequestID: requestIDOf(w, r)})
@@ -981,6 +1019,10 @@ func (h *Handler) writePracticeCommandFailure(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusNotFound, contract.ErrorEnvelope{Error: "practice_session_not_found", Message: "练习记录不存在，请刷新后重试", RequestID: requestIDOf(w, r)})
 	case errors.Is(err, practice.ErrPracticeCommandConflict):
 		writeJSON(w, http.StatusConflict, contract.ErrorEnvelope{Error: "practice_command_conflict", Message: "操作内容有更新，请刷新后重试", RequestID: requestIDOf(w, r)})
+	case errors.Is(err, practice.ErrPracticeCommandRateLimited):
+		// Abuse protection, not a failed dependency and not a quota: the member
+		// can retry the same request later.
+		writeJSON(w, http.StatusTooManyRequests, contract.ErrorEnvelope{Error: "practice_command_rate_limited", Message: "操作太频繁了，请稍后再试", RequestID: requestIDOf(w, r)})
 	case errors.Is(err, practice.ErrPracticeCommandInvalid):
 		writeJSON(w, http.StatusBadGateway, contract.ErrorEnvelope{Error: "practice_command_invalid_response", Message: "服务暂时不可用，请稍后再来", RequestID: requestIDOf(w, r)})
 	default:

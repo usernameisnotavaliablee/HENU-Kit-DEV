@@ -49,3 +49,37 @@ func validWith(values map[string]string, key, value string) map[string]string {
 	copy[key] = value
 	return copy
 }
+
+func TestQuizCraftLearningReportsGateIsExplicitAndRequiresTheV2ReadClient(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		value       string
+		v2Reads     bool
+		wantEnabled bool
+		wantError   bool
+	}{
+		{name: "unset is safely dark", value: "", v2Reads: true},
+		{name: "zero is safely dark", value: "0", v2Reads: true},
+		{name: "invalid flag fails closed", value: "on", v2Reads: true, wantError: true},
+		{name: "one without the V2 read client fails closed", value: "1", v2Reads: false, wantError: true},
+		{name: "one with the V2 read client enables the surface", value: "1", v2Reads: true, wantEnabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			enabled, err := quizCraftLearningReportsFromEnv(func(key string) string {
+				if key == "PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS" {
+					return test.value
+				}
+				return ""
+			}, test.v2Reads)
+			if test.wantError {
+				if err == nil {
+					t.Fatal("quizCraftLearningReportsFromEnv() succeeded, want error")
+				}
+				return
+			}
+			if err != nil || enabled != test.wantEnabled {
+				t.Fatalf("quizCraftLearningReportsFromEnv() = %v, %v", enabled, err)
+			}
+		})
+	}
+}

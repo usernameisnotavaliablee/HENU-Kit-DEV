@@ -104,6 +104,35 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/ReplayDetected' }
         '503': { $ref: '#/components/responses/DependencyUnavailable' }
+  /api/v1/internal/quizcraft/entitlements/{user_id}:
+    get:
+      operationId: getQuizCraftLifetimeEntitlement
+      summary: Read only one server-owned learning job user's current lifetime entitlement
+      description: >-
+        Dedicated QuizCraft service credential only. X-Actor-User-Id must equal
+        user_id. Missing membership returns lifetime false without initializing
+        account data. Dependency failures return 503, never a cached grant.
+      parameters:
+        - $ref: '#/components/parameters/ServiceID'
+        - $ref: '#/components/parameters/KeyID'
+        - $ref: '#/components/parameters/Timestamp'
+        - $ref: '#/components/parameters/Nonce'
+        - $ref: '#/components/parameters/ActorUserID'
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Minimal current membership status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuizCraftEntitlementEnvelope' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/ReplayDetected' }
+        '503': { $ref: '#/components/responses/DependencyUnavailable' }
   /api/v1/account/notifications:
     get:
       operationId: getAccountNotifications
@@ -832,6 +861,19 @@ components:
             - { type: integer, format: int64, minimum: 1, maximum: 9007199254740991 }
         reason: { type: string }
         created_at: { type: string, format: date-time }
+    QuizCraftEntitlementEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [lifetime, version]
+          properties:
+            lifetime: { type: boolean }
+            version: { type: integer, minimum: 0 }
+        request_id: { type: string }
     MembershipEnvelope:
       type: object
       required: [data, request_id]

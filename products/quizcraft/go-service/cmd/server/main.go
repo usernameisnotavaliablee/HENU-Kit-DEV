@@ -34,6 +34,15 @@ func main() {
 		fail(fmt.Errorf("unknown QuizCraft command"))
 	}
 	authSecret := requiredEnv("QUIZCRAFT_AUTH_HMAC_SECRET")
+	entitlement, err := learningEntitlementFromEnv()
+	fail(err)
+	worker, err := learningWorkerFromEnv()
+	fail(err)
+	manualLimit, err := learningManualLimitFromEnv()
+	fail(err)
+	if worker != nil && entitlement == nil {
+		fail(errors.New("QuizCraft learning report worker requires the signed entitlement client"))
+	}
 	address := os.Getenv("QUIZCRAFT_HTTP_ADDR")
 	if address == "" {
 		address = ":8080"
@@ -53,6 +62,9 @@ func main() {
 	handler, err := quizcraft.NewPracticeHTTP(quizcraft.PracticeHTTPConfig{
 		Database:              pool,
 		AuthHMACSecret:        []byte(authSecret),
+		LearningEntitlement:   entitlement,
+		LearningVersions:      learningVersions(worker),
+		LearningManualLimit:   manualLimit,
 		LegacyBaseURL:         os.Getenv("QUIZCRAFT_LEGACY_BASE_URL"),
 		LegacyCompareSecret:   os.Getenv("QUIZCRAFT_LEGACY_COMPARE_SECRET"),
 		SummaryClientID:       os.Getenv("QUIZCRAFT_SUMMARY_CLIENT_ID"),
@@ -75,6 +87,58 @@ func main() {
 	})
 	fail(err)
 	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	// The report worker is opt-in and only starts with a validated provider and
+	// the signed entitlement client; every other deployment stays dark.
+	if worker != nil {
+		service, err := quizcraft.New(quizcraft.Config{Database: pool, LearningManualLimit: manualLimit})
+		fail(err)
+		workerContext, stopWorker := context.WithCancel(context.Background())
+		defer stopWorker()
+		log.Printf("QuizCraft learning report worker started (poll %s, lease %s)", worker.Poll, worker.Lease)
+		go func() {
+			if err := quizcraft.RunLearningWorker(workerContext, worker.Poll, func(stepContext context.Context) (bool, error) {
+				processed, err := service.ProcessNextLearningReport(stepContext, entitlement, worker.Provider, worker.Versions, worker.Lease)
+				if err != nil {
+					// The job row already carries the retry state; this line is
+					// the only operator-visible trace of a failing queue.
+					log.Printf("QuizCraft learning report step failed: %v", err)
+				}
+				return processed, err
+			}); err != nil {
+				log.Printf("QuizCraft learning report worker stopped: %v", err)
+			}
+		}()
+		// Automatic scheduling is part of the same opt-in worker: it only queues
+		// work, and the queue repository rechecks consent, content and the due
+		// time under the preference lock.
+		if worker.Schedule > 0 {
+			log.Printf("QuizCraft learning report scheduler started (every %s, batch %d)", worker.Schedule, learningSchedulerBatch)
+			go func() {
+				if err := quizcraft.RunLearningScheduler(workerContext, worker.Schedule, func(stepContext context.Context) error {
+					// Drain a backlog in batches instead of one batch per tick.
+					// Only queued work counts as progress: rows the repository
+					// rejects keep their due time, so a batch of them must not
+					// make the scheduler spin.
+					for stepContext.Err() == nil {
+						queued, skipped, err := service.QueueDueLearningReports(stepContext, worker.Versions, learningSchedulerBatch)
+						if err != nil {
+							log.Printf("QuizCraft learning report schedule failed: %v", err)
+							return err
+						}
+						if queued > 0 || skipped > 0 {
+							log.Printf("QuizCraft learning report schedule queued %d skipped %d", queued, skipped)
+						}
+						if queued < learningSchedulerBatch {
+							return nil
+						}
+					}
+					return nil
+				}); err != nil {
+					log.Printf("QuizCraft learning report scheduler stopped: %v", err)
+				}
+			}()
+		}
+	}
 	log.Printf("QuizCraft Practice shadow service listening on %s", address)
 	err = server.ListenAndServe()
 	if !errors.Is(err, http.ErrServerClosed) {
@@ -94,4 +158,15 @@ func fail(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+// learningVersions pins manual report requests to the worker's model, prompt and
+// policy. Without a configured worker there is nothing to run the job, so the
+// zero value keeps generation unavailable instead of queueing work no worker
+// accepts.
+func learningVersions(worker *learningWorkerSettings) quizcraft.LearningJobVersions {
+	if worker == nil {
+		return quizcraft.LearningJobVersions{}
+	}
+	return worker.Versions
 }

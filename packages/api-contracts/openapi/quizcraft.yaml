@@ -12,7 +12,510 @@ tags:
   - { name: Ranking, description: Public auditable rankings for signed-in learners and guests. }
   - { name: Feedback, description: Corrections linked to stable bank and question identity. }
   - { name: Workshop, description: Scoped QuizCraft-owned bank lifecycle administration. }
+  - { name: LearningReports, description: Actor-bound lifetime-member learning feedback; disabled until all release gates pass. }
 paths:
+  /api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences: {
+    "get": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "getPortalLearningReportPreferences",
+      "summary": "Read course-scoped feedback preferences",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Missing preferences return disabled, seven-day defaults.",
+      "security": [
+        {
+          "portalCatalogBasic": [],
+          "portalCatalogSignature": [],
+          "portalCatalogPermission": [],
+          "portalCatalogScope": [],
+          "portalCatalogProduct": [],
+          "portalCatalogActor": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/ServiceReplay"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "200": {
+          "description": "Owner preferences",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportPreferencesEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "put": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "updatePortalLearningReportPreferences",
+      "summary": "Replace feedback preferences and consent",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Enabling requires explicit external-analysis consent. Goal is changeable, not a permanent user category. Disabling invalidates queued/in-flight generations. Owners may disable or clear derived data even after membership revocation; cleanup never reads reports or starts model work.",
+      "security": [
+        {
+          "portalPracticeBasic": [],
+          "portalPracticeSignature": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        },
+        {
+          "$ref": "#/components/parameters/IdempotencyKey"
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/Conflict"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "200": {
+          "description": "Saved preferences",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportPreferencesEnvelope"
+              }
+            }
+          }
+        }
+      },
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/LearningReportPreferencesUpdate"
+            }
+          }
+        }
+      }
+    }
+  }
+  /api/v1/portal/practice/banks/{bank_id}/learning-reports: {
+    "post": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "requestPortalLearningReport",
+      "summary": "Request an evidence-based learning report",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Identical valid inputs reuse existing output or task. Manual requests have no daily quota and consume no credits; abuse rate limiting only. Manual requests do not reset the automatic schedule.",
+      "security": [
+        {
+          "portalPracticeBasic": [],
+          "portalPracticeSignature": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        },
+        {
+          "$ref": "#/components/parameters/IdempotencyKey"
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/Conflict"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "200": {
+          "description": "Reused result or pending task",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportTaskEnvelope"
+              }
+            }
+          }
+        },
+        "202": {
+          "description": "Queued for background processing",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportTaskEnvelope"
+              }
+            }
+          }
+        },
+        "429": {
+          "description": "Abuse rate limit; not a usage quota",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ErrorEnvelope"
+              }
+            }
+          }
+        }
+      }
+    },
+    "delete": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "clearPortalLearningReports",
+      "summary": "Clear derived feedback and cancel outstanding work",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Disable consent, increment invalidation revision, clear snapshots/reports and cancel jobs atomically. Late results cannot repopulate data. Preserve original practice attempts. Owners may disable or clear derived data even after membership revocation; cleanup never reads reports or starts model work.",
+      "security": [
+        {
+          "portalPracticeBasic": [],
+          "portalPracticeSignature": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        },
+        {
+          "$ref": "#/components/parameters/IdempotencyKey"
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/Conflict"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "200": {
+          "description": "Derived feedback cleared",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportClearResultEnvelope"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  /api/v1/portal/practice/banks/{bank_id}/learning-reports/latest: {
+    "get": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "getPortalLatestLearningReport",
+      "summary": "Read the latest course report",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Return 404 if absent. Report data remains actor-bound. Stale reports are marked and cannot launch obsolete recommendations.",
+      "security": [
+        {
+          "portalCatalogBasic": [],
+          "portalCatalogSignature": [],
+          "portalCatalogPermission": [],
+          "portalCatalogScope": [],
+          "portalCatalogProduct": [],
+          "portalCatalogActor": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/ServiceReplay"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "200": {
+          "description": "Latest report",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportEnvelope"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  /api/v1/portal/practice/banks/{bank_id}/learning-reports/tasks/{task_id}: {
+    "get": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "getPortalLearningReportTask",
+      "summary": "Read an owner-scoped report task",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Task IDs never grant access across actors or banks.",
+      "security": [
+        {
+          "portalCatalogBasic": [],
+          "portalCatalogSignature": [],
+          "portalCatalogPermission": [],
+          "portalCatalogScope": [],
+          "portalCatalogProduct": [],
+          "portalCatalogActor": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        },
+        {
+          "name": "task_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/ServiceReplay"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "200": {
+          "description": "Task status",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningReportTaskEnvelope"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  /api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions: {
+    "post": {
+      "x-internal": true,
+      "tags": [
+        "LearningReports"
+      ],
+      "operationId": "createPortalLearningReportPracticeSession",
+      "summary": "Practice the verified report recommendation",
+      "description": "Internal-only, disabled by default. Verified owner and live lifetime entitlement required for generation and report/lesson access; dependency errors fail closed. No guest access. Bank/chapter scope uses published content only. Revalidate publication, approved content version and current access. Use server-selected existing questions; do not accept client question IDs, generate new questions or change scoring.",
+      "security": [
+        {
+          "portalPracticeBasic": [],
+          "portalPracticeSignature": []
+        }
+      ],
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/BankID"
+        },
+        {
+          "name": "X-Actor-User-Id",
+          "in": "header",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "Verified Portal actor, included in the service HMAC; never accepted from request JSON."
+        },
+        {
+          "name": "report_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "$ref": "#/components/parameters/IdempotencyKey"
+        }
+      ],
+      "responses": {
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "403": {
+          "$ref": "#/components/responses/Forbidden"
+        },
+        "404": {
+          "$ref": "#/components/responses/NotFound"
+        },
+        "409": {
+          "$ref": "#/components/responses/Conflict"
+        },
+        "503": {
+          "$ref": "#/components/responses/ServiceUnavailable"
+        },
+        "201": {
+          "description": "Pinned practice session",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PracticeSessionEnvelope"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
   /healthz:
     get:
       summary: Check the Practice shadow process
@@ -641,6 +1144,77 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/workshop/banks/{bank_id}/learning-content:
+    get:
+      summary: List learning content versions with their review state
+      tags: [Workshop]
+      operationId: listWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+      responses:
+        '200': { description: Learning content versions owned by this bank, content: { application/json: { schema: { $ref: '#/components/schemas/WorkshopLearningContentEnvelope' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      summary: Import a validated learning content draft awaiting human review
+      description: The draft is stored as `draft` without reviewer identity; only the separate approve operation records a human decision.
+      tags: [Workshop]
+      operationId: importWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LearningContentDraft' } } } }
+      responses:
+        '201': { description: Stored draft without reviewer identity, content: { application/json: { schema: { $ref: '#/components/schemas/OperationEnvelope' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/approve:
+    post:
+      summary: Record a human review of a learning content draft
+      description: Approval names the reviewing actor and is required before any member-facing report can use this content.
+      tags: [Workshop]
+      operationId: approveWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+        - $ref: '#/components/parameters/LearningContentVersionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LearningContentReviewCommand' } } } }
+      responses:
+        '200': { description: Approval write result, content: { application/json: { schema: { $ref: '#/components/schemas/OperationEnvelope' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/retire:
+    post:
+      summary: Retire approved learning content that is no longer active
+      tags: [Workshop]
+      operationId: retireWorkshopLearningContent
+      security: [{ workshopSessionCookie: [] }]
+      parameters:
+        - $ref: '#/components/parameters/BankID'
+        - $ref: '#/components/parameters/LearningContentVersionID'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LearningContentReviewCommand' } } } }
+      responses:
+        '200': { description: Retire write result, content: { application/json: { schema: { $ref: '#/components/schemas/OperationEnvelope' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /api/v1/workshop/feedback/{feedback_id}:
     get:
       summary: Read full product-owned feedback from an Operations Inbox deep link
@@ -682,6 +1256,7 @@ components:
     SessionID: { name: session_id, in: path, required: true, schema: { type: string, format: uuid } }
     OperationKindParam: { name: operation_kind, in: path, required: true, schema: { $ref: '#/components/schemas/OperationKind' } }
     RankingPeriodParam: { name: period, in: query, required: false, schema: { type: string, enum: [weekly, lifetime], default: weekly } }
+    LearningContentVersionID: { name: content_version_id, in: path, required: true, schema: { type: string, format: uuid } }
   responses:
     BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     Unauthorized: { description: Missing or invalid actor credentials, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
@@ -691,6 +1266,665 @@ components:
     ServiceReplay: { description: Dedicated service request nonce was already used, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
     ServiceUnavailable: { description: PostgreSQL or a required service is unavailable, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } } }
   schemas:
+    LearningContentDraft: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "tags", "questions"],
+      "properties": {
+        "schema_version": { "type": "integer", "enum": [1] },
+        "tags": { "type": "array", "maxItems": 300, "items": { "$ref": "#/components/schemas/LearningContentTag" } },
+        "questions": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/components/schemas/LearningContentQuestion" } },
+        "sources": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/components/schemas/LearningContentSource" } },
+        "lessons": { "type": "array", "maxItems": 300, "items": { "$ref": "#/components/schemas/LearningContentLesson" } }
+      }
+    }
+    LearningContentTag: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "definition"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "kind": { "type": "string", "enum": ["knowledge", "ability"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "definition": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    }
+    LearningContentQuestion: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question_id", "question_version_id", "tag_ids"],
+      "properties": {
+        "question_id": { "type": "string", "format": "uuid" },
+        "question_version_id": { "type": "string", "format": "uuid" },
+        "tag_ids": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string" } }
+      }
+    }
+    LearningContentSource: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "repository", "commit", "path", "sha256", "locator", "usage_basis"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "repository": { "type": "string", "minLength": 1 },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "locator": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "usage_basis": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    }
+    LearningContentLesson: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "body", "tag_ids", "source_ids"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 10000 },
+        "tag_ids": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string" } },
+        "source_ids": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "type": "string" } }
+      }
+    }
+    LearningContentReviewCommand: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "note": { "type": "string", "maxLength": 1000, "default": "" },
+        "activate": { "type": "boolean", "default": true, "description": "Point the course learning catalog at this version." },
+        "enable": { "type": "boolean", "default": false, "description": "Turn the course learning catalog on for members." }
+      }
+    }
+    LearningContentVersion: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_version_id", "bank_id", "bank_version_id", "content_sha256", "status", "created_at", "active", "question_count", "lesson_count"],
+      "properties": {
+        "content_version_id": { "type": "string", "format": "uuid" },
+        "bank_id": { "type": "string", "format": "uuid" },
+        "bank_version_id": { "type": "string", "format": "uuid" },
+        "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "status": { "type": "string", "enum": ["draft", "approved", "retired"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "reviewed_by": { "type": ["string", "null"], "format": "uuid" },
+        "reviewed_at": { "type": ["string", "null"], "format": "date-time" },
+        "active": { "type": "boolean" },
+        "question_count": { "type": "integer", "minimum": 0 },
+        "lesson_count": { "type": "integer", "minimum": 0 },
+        "catalog_enabled": { "type": "boolean" }
+      }
+    }
+    WorkshopLearningContentEnvelope: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request_id", "data"],
+      "properties": {
+        "request_id": { "type": "string" },
+        "data": { "type": "array", "items": { "$ref": "#/components/schemas/LearningContentVersion" } }
+      }
+    }
+    LearningReportPreferencesUpdate: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "interval_days",
+        "goal",
+        "chapter_ids",
+        "external_analysis_consent"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "interval_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 7
+        },
+        "goal": {
+          "type": "string",
+          "enum": [
+            "follow_course",
+            "exam_review"
+          ],
+          "default": "follow_course"
+        },
+        "chapter_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "maxItems": 50,
+          "uniqueItems": true,
+          "default": []
+        },
+        "external_analysis_consent": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+    LearningReportPreferences: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "interval_days",
+        "goal",
+        "chapter_ids",
+        "external_analysis_consent",
+        "bank_id",
+        "revision"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "interval_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30,
+          "default": 7
+        },
+        "goal": {
+          "type": "string",
+          "enum": [
+            "follow_course",
+            "exam_review"
+          ],
+          "default": "follow_course"
+        },
+        "chapter_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "maxItems": 50,
+          "uniqueItems": true,
+          "default": []
+        },
+        "external_analysis_consent": {
+          "type": "boolean",
+          "default": false
+        },
+        "bank_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "next_due_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+    LearningReportStatistic: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag_id",
+        "tag_kind",
+        "label",
+        "attempt_count",
+        "unique_question_count",
+        "first_correct_count",
+        "repeat_attempt_count",
+        "repeat_correct_count",
+        "latest_correct_count"
+      ],
+      "properties": {
+        "tag_id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "tag_kind": {
+          "type": "string",
+          "enum": [
+            "knowledge",
+            "ability"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "attempt_count": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "unique_question_count": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "first_correct_count": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "repeat_attempt_count": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "repeat_correct_count": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        },
+        "latest_correct_count": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        }
+      }
+    }
+    LearningReportEvidence: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "question_id",
+        "question_version_id",
+        "submitted_at",
+        "correct",
+        "question",
+        "submitted_answer",
+        "expected_answer"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "question_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "question_version_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "submitted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "correct": {
+          "type": "boolean"
+        },
+        "question": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "submitted_answer": {},
+        "expected_answer": {}
+      }
+    }
+    LearningReportFinding: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag_id",
+        "status",
+        "observation",
+        "evidence_ids"
+      ],
+      "properties": {
+        "tag_id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "supported",
+            "tentative",
+            "uncovered"
+          ]
+        },
+        "observation": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "possible_reason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "maxItems": 24,
+          "uniqueItems": true
+        }
+      }
+    }
+    LearningReportSource: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "title",
+        "version",
+        "locator"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "locator": {
+          "type": "string",
+          "maxLength": 500
+        }
+      }
+    }
+    LearningReportLesson: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lesson_id",
+        "title",
+        "body",
+        "sources"
+      ],
+      "properties": {
+        "lesson_id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/LearningReportSource"
+          },
+          "maxItems": 20
+        }
+      }
+    }
+    LearningReportAction: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "practice",
+            "diagnostic",
+            "content_unavailable",
+            "no_action"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "tag_id": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "lesson": {
+          "$ref": "#/components/schemas/LearningReportLesson"
+        },
+        "question_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "maxItems": 10,
+          "uniqueItems": true
+        }
+      }
+    }
+    LearningReportTask: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "bank_id",
+        "status",
+        "created_at"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "bank_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "running",
+            "ready",
+            "failed",
+            "paused",
+            "cancelled"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "report_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason_code": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "retry_after_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+    LearningReport: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_id",
+        "bank_id",
+        "content_version_id",
+        "status",
+        "goal",
+        "evidence_until",
+        "created_at",
+        "statistics",
+        "evidence",
+        "findings",
+        "next_step"
+      ],
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "bank_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "content_version_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ready",
+            "insufficient_evidence",
+            "stale"
+          ]
+        },
+        "goal": {
+          "type": "string",
+          "enum": [
+            "follow_course",
+            "exam_review"
+          ],
+          "default": "follow_course"
+        },
+        "evidence_until": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "statistics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/LearningReportStatistic"
+          },
+          "maxItems": 300
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/LearningReportEvidence"
+          },
+          "maxItems": 24
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/components/schemas/LearningReportFinding"
+          },
+          "maxItems": 3
+        },
+        "next_step": {
+          "$ref": "#/components/schemas/LearningReportAction"
+        }
+      }
+    }
+    LearningReportClearResult: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cleared",
+        "revision"
+      ],
+      "properties": {
+        "cleared": {
+          "type": "boolean"
+        },
+        "revision": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 0
+        }
+      }
+    }
+    LearningReportPreferencesEnvelope: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "data"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/components/schemas/LearningReportPreferences"
+        }
+      }
+    }
+    LearningReportTaskEnvelope: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "data"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/components/schemas/LearningReportTask"
+        }
+      }
+    }
+    LearningReportEnvelope: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "data"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/components/schemas/LearningReport"
+        }
+      }
+    }
+    LearningReportClearResultEnvelope: {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "data"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/components/schemas/LearningReportClearResult"
+        }
+      }
+    }
     RequestID: { type: string, pattern: '^req_[A-Za-z0-9_-]+$', maxLength: 120 }
     Error:
       type: object
@@ -760,10 +1994,10 @@ components:
                   value: { type: string, maxLength: 80 }
                   hint: { type: string, maxLength: 120 }
     QuestionType: { type: string, enum: [single, multi, judge, blank] }
-    PracticeSessionMode: { type: string, enum: [random, difficult, chapter, favorites] }
+    PracticeSessionMode: { type: string, enum: [random, difficult, chapter, favorites, report] }
     OperationKind:
       type: string
-      enum: [create_practice_session, submit_practice_answer, favorite_question, unfavorite_question, create_favorites_session, create_feedback, create_workshop_bank, create_bank_version, import_bank, validate_version, publish_version, unpublish_version, rollback_bank]
+      enum: [create_practice_session, submit_practice_answer, favorite_question, unfavorite_question, create_favorites_session, create_feedback, create_workshop_bank, create_bank_version, import_bank, validate_version, publish_version, unpublish_version, rollback_bank, import_learning_content, approve_learning_content, retire_learning_content]
     BankVersion:
       type: object
       required: [bank_id, bank_version_id, bank_key, name, content_sha256, question_count, chapters]

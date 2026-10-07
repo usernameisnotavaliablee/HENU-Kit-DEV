@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type DependencyList, type Dispatch, type SetStateAction } from "react";
-import { formatPortalError, portalErrorRequestId, PortalUnauthorizedError } from "@/lib/api/client";
+import { formatPortalError, portalErrorCode, portalErrorRequestId, PortalUnauthorizedError } from "@/lib/api/client";
 import { useDeferredFetch } from "@/lib/api/use-deferred-fetch";
 
 /**
@@ -12,7 +12,8 @@ import { useDeferredFetch } from "@/lib/api/use-deferred-fetch";
 export type FetchState<T> =
   | { status: "loading" }
   | { status: "anonymous" }
-  | { status: "error"; message: string; requestId: string | null }
+  // code 是可选的：老调用方忽略它，学习报告用它区分「权益不足」和真正的故障。
+  | { status: "error"; message: string; requestId: string | null; code?: string | null }
   | { status: "ready"; data: T };
 
 /**
@@ -38,7 +39,7 @@ export function useFetchState<T>(
           setState({ status: "anonymous" });
           return;
         }
-        setState({ status: "error", message: formatPortalError(error), requestId: portalErrorRequestId(error) });
+        setState({ status: "error", message: formatPortalError(error), requestId: portalErrorRequestId(error), code: portalErrorCode(error) });
         return;
       }
       if (data) {

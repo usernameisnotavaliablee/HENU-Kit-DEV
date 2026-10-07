@@ -33,6 +33,34 @@
 - 浏览器：Chromium、Firefox、WebKit；移动端至少 360px 和 390px。
 - Mock：Platform OpenAPI Mock、Quiz Legacy Fake、DirectMail Fake、学校页面 Fixtures、Deploy Dry-run。
 - 测试数据必须可创建、隔离和清理；不得使用真实学生敏感数据作为常规 Fixture。
+- **无 Docker 的本机等价复现**（容器不可用时，下面这些失败是环境缺失，不是缺陷信号）：
+  - 契约漂移无需 Docker：`go run ./cmd/contractgen`（`services/account-portfolio`）或
+    `go run ./cmd/contractgen && go run ./cmd/quizcraftcontractgen`（`services/portal-gateway`）或
+    `bash products/quizcraft/go-service/scripts/generate-contract.sh` 之后 `git diff --exit-code`。
+    判据是「生成器确实重写了文件且 diff 为空」，而不是「命令退出 0」——生成器静默失败时 diff 同样为空。
+    只有 `products/quizcraft/go-service/internal/store` 的 `sqlc generate` 必须 Docker（CI 用 `sqlc/sqlc:1.31.0`）；
+    `services/platform-core/internal/store` 在 CI 里是 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`，无需 Docker。
+  - 两个集成测试包在无 Docker 时会 **panic**（`rootless Docker not found`），指向本机 PostgreSQL 即可正常跑：
+    `ACCOUNT_PORTFOLIO_TEST_DATABASE_URL=postgres://…`（`services/account-portfolio`，TestMain 自己应用迁移）；
+    `QUIZCRAFT_TEST_DATABASE_URL=postgres://…`（`products/quizcraft/go-service`，此逃生口**不会**应用迁移，
+    需先按序执行 `db/migrations/*.up.sql`，否则用例在空库上失败）。那个库**每次运行前要重建**：CI 这个作业走不到
+    testcontainers——`quizcraft-go.yml:44` 把 `QUIZCRAFT_TEST_DATABASE_URL` 设在 job 级 `env`，`:45-47` 是
+    `postgres:16-alpine` 的 service 容器，schema 由 `:75` 的 psql 循环预先灌好；本机复用同一个库时这两层都没有，
+    上一次留下的行会把一批用例打成秒级失败（如 `TestExplicitImportIsStableVersionedAndReported`、
+    `TestRequireEmptyTargetRejectsFactsInAnyQuizCraftTable`）。`account-portfolio` 不同：它的 TestMain 无论是否设变量
+    都会 `ApplyMigrations`，且该包用 `tests/main_test.go` 的 `clearAccountPortfolio` 在用例内 TRUNCATE，故可复用。
+    `products/quizcraft/go-service/cmd/reconcile` 的 `TestReconcileCLIBlocksARealPartialImportThenResumesTheSameRun`
+    没有逃生口，必须 Docker。
+  - 运维测试目录**不可整体一起跑**：`scripts/ops/tests/watch-henukit-actions.test.mjs` 与
+    `scripts/ops/tests/package-henukit-runtime.test.mjs` 必须 `node --test --test-concurrency=1 <file>` 单独执行。
+    两条的原因**不同**（CI 的 `deploy-henukit` 作业分别注明）：前者是短命 fake runtime 的调度在跨文件负载下会把
+    「成功的激活」压成 1 秒超时；后者要隔离于同样创建并改写临时仓库的跨文件 fixture，避免临时 Git checkout 被判为不干净。
+  - 构建门禁（Portal / Console / QuizCraft）的命令与「生成代码一致性由谁判定」见 `docs/DEVELOPMENT.md` §14 CI 的
+    「本机等价复现（无 Docker）」。
+  - 依赖 Docker 的断言按文件报不同错，别按错串找错文件：`deploy-henukit-workflow.test.mjs` 的 4 条 compose 断言是
+    `spawnSync docker ENOENT`；`package-henukit-runtime.test.mjs` 的那 1 条是 `docker: command not found` 后管道输出为空 →
+    `JSON.parse` 抛 `SyntaxError: Unexpected end of JSON input`；材料密封脚本（`services/deploy-webhook/deploy/henukit-materials-seal`
+    等只查 `/usr/bin/node` 与 `/usr/local/bin/node`）在没有该 Node 时单独报 `fixed Node runtime is unavailable`。
 
 ## 4. Phase 0–1 验收
 

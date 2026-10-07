@@ -7,6 +7,7 @@ import (
 	"go/format"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -25,6 +26,7 @@ type parameter struct {
 	In       string `yaml:"in"`
 	Required bool   `yaml:"required"`
 	Schema   schema `yaml:"schema"`
+	Ref      string `yaml:"$ref"`
 }
 
 type response struct {
@@ -93,6 +95,7 @@ type document struct {
 	Components struct {
 		Schemas         map[string]schema         `yaml:"schemas"`
 		SecuritySchemes map[string]securityScheme `yaml:"securitySchemes"`
+		Parameters      map[string]parameter      `yaml:"parameters"`
 	} `yaml:"components"`
 }
 
@@ -145,6 +148,13 @@ func main() {
 	favoritePortalQuestionPath, favoritePortalQuestionMethod, favoritePortalQuestionOperation := requireOperation(spec.Paths, "favoritePortalQuestion")
 	unfavoritePortalQuestionPath, unfavoritePortalQuestionMethod, unfavoritePortalQuestionOperation := requireOperation(spec.Paths, "unfavoritePortalQuestion")
 	createPortalFavoritesSessionPath, createPortalFavoritesSessionMethod, createPortalFavoritesSessionOperation := requireOperation(spec.Paths, "createPortalFavoritesSession")
+	getPortalLearningReportPreferencesPath, getPortalLearningReportPreferencesMethod, getPortalLearningReportPreferencesOperation := requireOperation(spec.Paths, "getPortalLearningReportPreferences")
+	getPortalLatestLearningReportPath, getPortalLatestLearningReportMethod, getPortalLatestLearningReportOperation := requireOperation(spec.Paths, "getPortalLatestLearningReport")
+	getPortalLearningReportTaskPath, getPortalLearningReportTaskMethod, getPortalLearningReportTaskOperation := requireOperation(spec.Paths, "getPortalLearningReportTask")
+	updatePortalLearningReportPreferencesPath, updatePortalLearningReportPreferencesMethod, updatePortalLearningReportPreferencesOperation := requireOperation(spec.Paths, "updatePortalLearningReportPreferences")
+	requestPortalLearningReportPath, requestPortalLearningReportMethod, requestPortalLearningReportOperation := requireOperation(spec.Paths, "requestPortalLearningReport")
+	clearPortalLearningReportsPath, clearPortalLearningReportsMethod, clearPortalLearningReportsOperation := requireOperation(spec.Paths, "clearPortalLearningReports")
+	createPortalLearningReportPracticeSessionPath, createPortalLearningReportPracticeSessionMethod, createPortalLearningReportPracticeSessionOperation := requireOperation(spec.Paths, "createPortalLearningReportPracticeSession")
 	validatePortalReadOperation("listPracticeBanks", catalogMethod, catalogOperation, "BankListEnvelope", catalogSecurityRequirements)
 	validatePortalReadOperation("getPersonalPracticeStats", statsMethod, statsOperation, "PersonalPracticeStatsEnvelope", personalStatsSecurityRequirements)
 	validatePersonalStatsActorBinding(statsOperation)
@@ -162,15 +172,58 @@ func main() {
 	validatePortalPracticeCommandOperation("favoritePortalQuestion", favoritePortalQuestionPath, favoritePortalQuestionMethod, favoritePortalQuestionOperation, "200", "OperationEnvelope")
 	validatePortalPracticeCommandOperation("unfavoritePortalQuestion", unfavoritePortalQuestionPath, unfavoritePortalQuestionMethod, unfavoritePortalQuestionOperation, "200", "OperationEnvelope")
 	validatePortalPracticeCommandOperation("createPortalFavoritesSession", createPortalFavoritesSessionPath, createPortalFavoritesSessionMethod, createPortalFavoritesSessionOperation, "201", "PracticeSessionEnvelope")
+	validatePortalReadOperation("getPortalLearningReportPreferences", getPortalLearningReportPreferencesMethod, getPortalLearningReportPreferencesOperation, "LearningReportPreferencesEnvelope", personalStatsSecurityRequirements)
+	validatePersonalStatsActorBinding(getPortalLearningReportPreferencesOperation)
+	validatePortalReadOperation("getPortalLatestLearningReport", getPortalLatestLearningReportMethod, getPortalLatestLearningReportOperation, "LearningReportEnvelope", personalStatsSecurityRequirements)
+	validatePersonalStatsActorBinding(getPortalLatestLearningReportOperation)
+	validatePortalReadOperation("getPortalLearningReportTask", getPortalLearningReportTaskMethod, getPortalLearningReportTaskOperation, "LearningReportTaskEnvelope", personalStatsSecurityRequirements)
+	validatePersonalStatsActorBinding(getPortalLearningReportTaskOperation)
+	validatePortalPracticeCommandOperation("updatePortalLearningReportPreferences", updatePortalLearningReportPreferencesPath, updatePortalLearningReportPreferencesMethod, updatePortalLearningReportPreferencesOperation, "200", "LearningReportPreferencesEnvelope")
+	requireIdempotencyKeyParameter("updatePortalLearningReportPreferences", updatePortalLearningReportPreferencesOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("updatePortalLearningReportPreferences", updatePortalLearningReportPreferencesOperation, spec.Components.Parameters)
+	validatePortalPracticeCommandOperation("requestPortalLearningReport", requestPortalLearningReportPath, requestPortalLearningReportMethod, requestPortalLearningReportOperation, "202", "LearningReportTaskEnvelope")
+	// A manual request that reuses an existing report or task answers 200 with
+	// the same envelope, so both success statuses must stay documented.
+	requireCommandSuccess("requestPortalLearningReport", requestPortalLearningReportOperation, "200", "LearningReportTaskEnvelope")
+	requireIdempotencyKeyParameter("requestPortalLearningReport", requestPortalLearningReportOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("requestPortalLearningReport", requestPortalLearningReportOperation, spec.Components.Parameters)
+	validatePortalPracticeCommandOperation("clearPortalLearningReports", clearPortalLearningReportsPath, clearPortalLearningReportsMethod, clearPortalLearningReportsOperation, "200", "LearningReportClearResultEnvelope")
+	requireIdempotencyKeyParameter("clearPortalLearningReports", clearPortalLearningReportsOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("clearPortalLearningReports", clearPortalLearningReportsOperation, spec.Components.Parameters)
+	validatePortalPracticeCommandOperation("createPortalLearningReportPracticeSession", createPortalLearningReportPracticeSessionPath, createPortalLearningReportPracticeSessionMethod, createPortalLearningReportPracticeSessionOperation, "201", "PracticeSessionEnvelope")
+	requireIdempotencyKeyParameter("createPortalLearningReportPracticeSession", createPortalLearningReportPracticeSessionOperation, spec.Components.Parameters)
+	requireActorHeaderParameter("createPortalLearningReportPracticeSession", createPortalLearningReportPracticeSessionOperation, spec.Components.Parameters)
 	validateCatalogSecurity(spec.Components.SecuritySchemes, personalStatsSecurityRequirements)
 	validatePortalPracticeCommandSecurity(spec.Components.SecuritySchemes)
 	validateCatalogSchema(spec.Components.Schemas)
 	validateRankingSchema(spec.Components.Schemas)
 	validatePersonalStatsSchema(spec.Components.Schemas)
 	validateFeedbackStatusSchema(spec.Components.Schemas)
+	validateLearningReportSchema(spec.Components.Schemas)
 
 	digest := fmt.Sprintf("%x", sha256.Sum256(source))
-	generated, err := format.Source([]byte(render(catalogPath, statsPath, overallRankingPath, bankRankingPath, createPortalPracticeSessionPath, submitPortalPracticeAnswerPath, createPortalPracticeFeedbackPath, getPortalPracticeFeedbackStatusPath, getPortalFavoritesOverviewPath, listPortalFavoriteQuestionsPath, favoritePortalQuestionPath, unfavoritePortalQuestionPath, createPortalFavoritesSessionPath, digest)))
+	generated, err := format.Source([]byte(render(pathConstants([]pathConstant{
+		{"ListPracticeBanksPath", catalogPath},
+		{"GetPersonalPracticeStatsPath", statsPath},
+		{"OverallRankingPath", overallRankingPath},
+		{"BankRankingPath", bankRankingPath},
+		{"CreatePortalPracticeSessionPath", createPortalPracticeSessionPath},
+		{"SubmitPortalPracticeAnswerPath", submitPortalPracticeAnswerPath},
+		{"CreatePortalPracticeFeedbackPath", createPortalPracticeFeedbackPath},
+		{"GetPortalPracticeFeedbackStatusPath", getPortalPracticeFeedbackStatusPath},
+		{"GetPortalFavoritesOverviewPath", getPortalFavoritesOverviewPath},
+		{"ListPortalFavoriteQuestionsPath", listPortalFavoriteQuestionsPath},
+		{"FavoritePortalQuestionPath", favoritePortalQuestionPath},
+		{"UnfavoritePortalQuestionPath", unfavoritePortalQuestionPath},
+		{"CreatePortalFavoritesSessionPath", createPortalFavoritesSessionPath},
+		{"GetPortalLearningReportPreferencesPath", getPortalLearningReportPreferencesPath},
+		{"GetPortalLatestLearningReportPath", getPortalLatestLearningReportPath},
+		{"GetPortalLearningReportTaskPath", getPortalLearningReportTaskPath},
+		{"UpdatePortalLearningReportPreferencesPath", updatePortalLearningReportPreferencesPath},
+		{"RequestPortalLearningReportPath", requestPortalLearningReportPath},
+		{"ClearPortalLearningReportsPath", clearPortalLearningReportsPath},
+		{"CreatePortalLearningReportPracticeSessionPath", createPortalLearningReportPracticeSessionPath},
+	}), digest)))
 	fail(err)
 	fail(os.WriteFile(*outputPath, generated, 0o644))
 }
@@ -256,6 +309,54 @@ func validatePortalPracticeCommandOperation(operationID, path, method string, op
 			fail(fmt.Errorf("%s is missing security scheme %s", operationID, requirement.name))
 		}
 	}
+}
+
+// requireCommandSuccess pins one extra documented success response for a
+// command that can answer more than one status with the same envelope.
+func requireCommandSuccess(operationID string, operation operation, status, envelope string) {
+	response, ok := operation.Responses[status]
+	if !ok || response.Content["application/json"].Schema.Ref != "#/components/schemas/"+envelope {
+		fail(fmt.Errorf("%s %s response must be %s", operationID, status, envelope))
+	}
+}
+
+// requireIdempotencyKeyParameter keeps the browser contract and the Core write
+// contract aligned: every learning-report write is idempotent by key, so the
+// parameter must stay documented before Gateway starts forwarding it. The
+// parameter is a component reference in the source contract, so the component
+// must be resolved instead of relying on the inline name.
+func requireIdempotencyKeyParameter(operationID string, operation operation, components map[string]parameter) {
+	for _, parameter := range operation.Parameters {
+		resolved, ok := resolveParameter(parameter, components)
+		if ok && resolved.Name == "Idempotency-Key" && resolved.In == "header" && resolved.Required {
+			return
+		}
+	}
+	fail(fmt.Errorf("%s must require the Idempotency-Key header", operationID))
+}
+
+// requireActorHeaderParameter pins the sixth signed segment: the verified owner
+// must travel as a required UUID header, never as request JSON.
+func requireActorHeaderParameter(operationID string, operation operation, components map[string]parameter) {
+	for _, parameter := range operation.Parameters {
+		resolved, ok := resolveParameter(parameter, components)
+		if ok && resolved.Name == "X-Actor-User-Id" && resolved.In == "header" && resolved.Required && resolved.Schema.Type == "string" && resolved.Schema.Format == "uuid" {
+			return
+		}
+	}
+	fail(fmt.Errorf("%s must require UUID X-Actor-User-Id header binding", operationID))
+}
+
+func resolveParameter(parameter parameter, components map[string]parameter) (parameter, bool) {
+	if parameter.Ref == "" {
+		return parameter, true
+	}
+	name := parameter.Ref[strings.LastIndex(parameter.Ref, "/")+1:]
+	resolved, found := components[name]
+	if !found {
+		return parameter, false
+	}
+	return resolved, true
 }
 
 func validatePersonalStatsActorBinding(operation operation) {
@@ -400,6 +501,136 @@ func validateFeedbackStatusSchema(schemas map[string]schema) {
 	}
 }
 
+// validateLearningReportSchema pins the read shapes the Gateway mirrors for
+// evidence-based learning reports. The generated structs re-serialize only
+// these members, so an unmodelled Core field can never reach a browser.
+func validateLearningReportSchema(schemas map[string]schema) {
+	requireClosedEnvelope(schemas, "LearningReportPreferencesEnvelope", "LearningReportPreferences")
+	requireClosedEnvelope(schemas, "LearningReportTaskEnvelope", "LearningReportTask")
+	requireClosedEnvelope(schemas, "LearningReportEnvelope", "LearningReport")
+
+	preferences := requireClosedSchema(schemas, "LearningReportPreferences", []string{"enabled", "interval_days", "goal", "chapter_ids", "external_analysis_consent", "bank_id", "revision"})
+	requireProperty(preferences, "enabled", "boolean")
+	requireProperty(preferences, "interval_days", "integer")
+	requireProperty(preferences, "external_analysis_consent", "boolean")
+	requireProperty(preferences, "bank_id", "string")
+	requireProperty(preferences, "revision", "integer")
+	requireEnum(preferences, "goal", []string{"follow_course", "exam_review"})
+	requireArrayOfType(preferences, "chapter_ids", "string")
+
+	task := requireClosedSchema(schemas, "LearningReportTask", []string{"task_id", "bank_id", "status", "created_at"})
+	requireUUIDProperty(task, "task_id")
+	requireUUIDProperty(task, "bank_id")
+	requireProperty(task, "created_at", "string")
+	requireEnum(task, "status", []string{"queued", "running", "ready", "failed", "paused", "cancelled"})
+
+	report := requireClosedSchema(schemas, "LearningReport", []string{"report_id", "bank_id", "content_version_id", "status", "goal", "evidence_until", "created_at", "statistics", "evidence", "findings", "next_step"})
+	requireUUIDProperty(report, "report_id")
+	requireUUIDProperty(report, "bank_id")
+	requireUUIDProperty(report, "content_version_id")
+	requireProperty(report, "evidence_until", "string")
+	requireProperty(report, "created_at", "string")
+	requireEnum(report, "status", []string{"ready", "insufficient_evidence", "stale"})
+	requireEnum(report, "goal", []string{"follow_course", "exam_review"})
+	requireArrayOfRef(report, "statistics", "LearningReportStatistic")
+	requireArrayOfRef(report, "evidence", "LearningReportEvidence")
+	requireArrayOfRef(report, "findings", "LearningReportFinding")
+	requireRefProperty(report, "next_step", "LearningReportAction")
+
+	statistic := requireClosedSchema(schemas, "LearningReportStatistic", []string{"tag_id", "tag_kind", "label", "attempt_count", "unique_question_count", "first_correct_count", "repeat_attempt_count", "repeat_correct_count", "latest_correct_count"})
+	requireEnum(statistic, "tag_kind", []string{"knowledge", "ability"})
+	for _, property := range []string{"attempt_count", "unique_question_count", "first_correct_count", "repeat_attempt_count", "repeat_correct_count", "latest_correct_count"} {
+		requireProperty(statistic, property, "integer")
+	}
+
+	// submitted_answer and expected_answer are unconstrained JSON values (an
+	// answer is a number, a string or a list depending on the question type),
+	// so only their presence is pinned here.
+	evidence := requireClosedSchema(schemas, "LearningReportEvidence", []string{"evidence_id", "question_id", "question_version_id", "submitted_at", "correct", "question"})
+	for _, property := range []string{"submitted_answer", "expected_answer"} {
+		if _, ok := evidence.Properties[property]; !ok {
+			fail(fmt.Errorf("LearningReportEvidence.%s must be present", property))
+		}
+	}
+	requireUUIDProperty(evidence, "question_id")
+	requireUUIDProperty(evidence, "question_version_id")
+	requireProperty(evidence, "submitted_at", "string")
+	requireProperty(evidence, "correct", "boolean")
+	requireProperty(evidence, "question", "string")
+
+	finding := requireClosedSchema(schemas, "LearningReportFinding", []string{"tag_id", "status", "observation", "evidence_ids"})
+	requireEnum(finding, "status", []string{"supported", "tentative", "uncovered"})
+	requireArrayOfType(finding, "evidence_ids", "string")
+
+	action := requireClosedSchema(schemas, "LearningReportAction", []string{"kind", "reason"})
+	requireEnum(action, "kind", []string{"practice", "diagnostic", "content_unavailable", "no_action"})
+	requireRefProperty(action, "lesson", "LearningReportLesson")
+	if questionIDs, ok := action.Properties["question_ids"]; !ok || questionIDs.Type != "array" || questionIDs.Items == nil || questionIDs.Items.Type != "string" || questionIDs.Items.Format != "uuid" {
+		fail(fmt.Errorf("LearningReportAction.question_ids must be an optional array of uuid strings"))
+	}
+
+	lesson := requireClosedSchema(schemas, "LearningReportLesson", []string{"lesson_id", "title", "body", "sources"})
+	requireArrayOfRef(lesson, "sources", "LearningReportSource")
+
+	source := requireClosedSchema(schemas, "LearningReportSource", []string{"source_id", "title", "version", "locator"})
+	for _, property := range []string{"source_id", "title", "version", "locator"} {
+		requireProperty(source, property, "string")
+	}
+}
+
+func requireClosedEnvelope(schemas map[string]schema, name, data string) {
+	envelope := requireClosedSchema(schemas, name, []string{"request_id", "data"})
+	requireProperty(envelope, "request_id", "string")
+	requireRefProperty(envelope, "data", data)
+}
+
+func requireClosedSchema(schemas map[string]schema, name string, required []string) schema {
+	requireObject(schemas, name, required)
+	value := schemas[name]
+	requireClosedObject(value, name)
+	return value
+}
+
+func requireRefProperty(value schema, name, want string) {
+	property, ok := value.Properties[name]
+	if !ok || property.Ref != "#/components/schemas/"+want {
+		fail(fmt.Errorf("%s.%s must reference %s", name, name, want))
+	}
+}
+
+func requireUUIDProperty(value schema, name string) {
+	property, ok := value.Properties[name]
+	if !ok || property.Type != "string" || property.Format != "uuid" {
+		fail(fmt.Errorf("property %s must be a uuid string", name))
+	}
+}
+
+func requireEnum(value schema, name string, want []string) {
+	property, ok := value.Properties[name]
+	if !ok || property.Type != "string" {
+		fail(fmt.Errorf("property %s must be a string enum", name))
+	}
+	for _, member := range want {
+		if !contains(property.Enum, member) {
+			fail(fmt.Errorf("property %s must allow %s", name, member))
+		}
+	}
+}
+
+func requireArrayOfType(value schema, name, wantType string) {
+	property, ok := value.Properties[name]
+	if !ok || property.Type != "array" || property.Items == nil || property.Items.Type != schemaType(wantType) {
+		fail(fmt.Errorf("property %s must be an array of %s", name, wantType))
+	}
+}
+
+func requireArrayOfRef(value schema, name, want string) {
+	property, ok := value.Properties[name]
+	if !ok || property.Type != "array" || property.Items == nil || property.Items.Ref != "#/components/schemas/"+want {
+		fail(fmt.Errorf("property %s must be an array of %s", name, want))
+	}
+}
+
 func requireObject(schemas map[string]schema, name string, required []string) {
 	value, ok := schemas[name]
 	if !ok {
@@ -441,25 +672,30 @@ func contains(values []string, want string) bool {
 	return false
 }
 
-func render(catalogPath, statsPath, overallRankingPath, bankRankingPath, createPortalPracticeSessionPath, submitPortalPracticeAnswerPath, createPortalPracticeFeedbackPath, getPortalPracticeFeedbackStatusPath, getPortalFavoritesOverviewPath, listPortalFavoriteQuestionsPath, favoritePortalQuestionPath, unfavoritePortalQuestionPath, createPortalFavoritesSessionPath, digest string) string {
+// pathConstant is one generated contract route constant. The constants are
+// rendered from a slice rather than positional Sprintf arguments so a misordered
+// route cannot silently label the wrong path.
+type pathConstant struct {
+	name  string
+	value string
+}
+
+func pathConstants(constants []pathConstant) string {
+	block := strings.Builder{}
+	for _, constant := range constants {
+		block.WriteString("\nconst " + constant.name + " = " + strconv.Quote(constant.value))
+	}
+	block.WriteString("\n")
+	return block.String()
+}
+
+func render(constants, digest string) string {
 	return fmt.Sprintf(`// Code generated by cmd/quizcraftcontractgen from quizcraft.yaml; DO NOT EDIT.
 package practice
 
 const QuizCraftCatalogContractSHA256 = %q
 const QuizCraftRankingContractSHA256 = QuizCraftCatalogContractSHA256
-const ListPracticeBanksPath = %q
-const GetPersonalPracticeStatsPath = %q
-const OverallRankingPath = %q
-const BankRankingPath = %q
-const CreatePortalPracticeSessionPath = %q
-const SubmitPortalPracticeAnswerPath = %q
-const CreatePortalPracticeFeedbackPath = %q
-const GetPortalPracticeFeedbackStatusPath = %q
-const GetPortalFavoritesOverviewPath = %q
-const ListPortalFavoriteQuestionsPath = %q
-const FavoritePortalQuestionPath = %q
-const UnfavoritePortalQuestionPath = %q
-const CreatePortalFavoritesSessionPath = %q
+%s
 
 // BankListEnvelope is the generated read-only QuizCraft catalog response.
 // Its data members are the published, and therefore available, bank versions.
@@ -585,7 +821,120 @@ type FavoriteQuestion struct {
 	Available         bool   `+"`json:\"available\"`"+`
 	QuestionVersionID string `+"`json:\"question_version_id,omitempty\"`"+`
 }
-`, digest, catalogPath, statsPath, overallRankingPath, bankRankingPath, createPortalPracticeSessionPath, submitPortalPracticeAnswerPath, createPortalPracticeFeedbackPath, getPortalPracticeFeedbackStatusPath, getPortalFavoritesOverviewPath, listPortalFavoriteQuestionsPath, favoritePortalQuestionPath, unfavoritePortalQuestionPath, createPortalFavoritesSessionPath)
+
+// LearningReportPreferencesEnvelope is one signed-in Portal user's
+// course-scoped feedback preferences. Missing preferences are reported by the
+// Core as disabled seven-day defaults, never as a mock.
+type LearningReportPreferencesEnvelope struct {
+	RequestID string                    `+"`json:\"request_id\"`"+`
+	Data      LearningReportPreferences `+"`json:\"data\"`"+`
+}
+
+type LearningReportPreferences struct {
+	Enabled                 bool     `+"`json:\"enabled\"`"+`
+	IntervalDays            int      `+"`json:\"interval_days\"`"+`
+	Goal                    string   `+"`json:\"goal\"`"+`
+	ChapterIDs              []string `+"`json:\"chapter_ids\"`"+`
+	ExternalAnalysisConsent bool     `+"`json:\"external_analysis_consent\"`"+`
+	BankID                  string   `+"`json:\"bank_id\"`"+`
+	Revision                int64    `+"`json:\"revision\"`"+`
+	NextDueAt               *string  `+"`json:\"next_due_at,omitempty\"`"+`
+	UpdatedAt               *string  `+"`json:\"updated_at,omitempty\"`"+`
+}
+
+// LearningReportTaskEnvelope is one queued or finished course-report task.
+// The Gateway mirrors only the Portal-visible progress fields.
+type LearningReportTaskEnvelope struct {
+	RequestID string             `+"`json:\"request_id\"`"+`
+	Data      LearningReportTask `+"`json:\"data\"`"+`
+}
+
+type LearningReportTask struct {
+	TaskID            string  `+"`json:\"task_id\"`"+`
+	BankID            string  `+"`json:\"bank_id\"`"+`
+	Status            string  `+"`json:\"status\"`"+`
+	CreatedAt         string  `+"`json:\"created_at\"`"+`
+	ReportID          *string `+"`json:\"report_id,omitempty\"`"+`
+	ReasonCode        *string `+"`json:\"reason_code,omitempty\"`"+`
+	RetryAfterSeconds *int    `+"`json:\"retry_after_seconds,omitempty\"`"+`
+}
+
+// LearningReportEnvelope is one published course report. It carries the
+// server-derived statistics, the owner's own answer evidence and the model's
+// explicitly hypothetical observations; the Gateway re-serializes only these
+// mirrored members, so no unmodelled Core field can reach a browser.
+type LearningReportEnvelope struct {
+	RequestID string         `+"`json:\"request_id\"`"+`
+	Data      LearningReport `+"`json:\"data\"`"+`
+}
+
+type LearningReport struct {
+	ReportID         string                    `+"`json:\"report_id\"`"+`
+	BankID           string                    `+"`json:\"bank_id\"`"+`
+	ContentVersionID string                    `+"`json:\"content_version_id\"`"+`
+	Status           string                    `+"`json:\"status\"`"+`
+	Goal             string                    `+"`json:\"goal\"`"+`
+	EvidenceUntil    string                    `+"`json:\"evidence_until\"`"+`
+	CreatedAt        string                    `+"`json:\"created_at\"`"+`
+	Statistics       []LearningReportStatistic `+"`json:\"statistics\"`"+`
+	Evidence         []LearningReportEvidence  `+"`json:\"evidence\"`"+`
+	Findings         []LearningReportFinding   `+"`json:\"findings\"`"+`
+	NextStep         LearningReportAction      `+"`json:\"next_step\"`"+`
+}
+
+type LearningReportStatistic struct {
+	TagID               string `+"`json:\"tag_id\"`"+`
+	TagKind             string `+"`json:\"tag_kind\"`"+`
+	Label               string `+"`json:\"label\"`"+`
+	AttemptCount        int64  `+"`json:\"attempt_count\"`"+`
+	UniqueQuestionCount int64  `+"`json:\"unique_question_count\"`"+`
+	FirstCorrectCount   int64  `+"`json:\"first_correct_count\"`"+`
+	RepeatAttemptCount  int64  `+"`json:\"repeat_attempt_count\"`"+`
+	RepeatCorrectCount  int64  `+"`json:\"repeat_correct_count\"`"+`
+	LatestCorrectCount  int64  `+"`json:\"latest_correct_count\"`"+`
+}
+
+type LearningReportEvidence struct {
+	EvidenceID        string `+"`json:\"evidence_id\"`"+`
+	QuestionID        string `+"`json:\"question_id\"`"+`
+	QuestionVersionID string `+"`json:\"question_version_id\"`"+`
+	SubmittedAt       string `+"`json:\"submitted_at\"`"+`
+	Correct           bool   `+"`json:\"correct\"`"+`
+	Question          string `+"`json:\"question\"`"+`
+	SubmittedAnswer   any    `+"`json:\"submitted_answer\"`"+`
+	ExpectedAnswer    any    `+"`json:\"expected_answer\"`"+`
+}
+
+type LearningReportFinding struct {
+	TagID          string   `+"`json:\"tag_id\"`"+`
+	Status         string   `+"`json:\"status\"`"+`
+	Observation    string   `+"`json:\"observation\"`"+`
+	PossibleReason *string  `+"`json:\"possible_reason,omitempty\"`"+`
+	EvidenceIDs    []string `+"`json:\"evidence_ids\"`"+`
+}
+
+type LearningReportAction struct {
+	Kind        string                 `+"`json:\"kind\"`"+`
+	Reason      string                 `+"`json:\"reason\"`"+`
+	TagID       *string                `+"`json:\"tag_id,omitempty\"`"+`
+	Lesson      *LearningReportLesson  `+"`json:\"lesson,omitempty\"`"+`
+	QuestionIDs []string               `+"`json:\"question_ids,omitempty\"`"+`
+}
+
+type LearningReportLesson struct {
+	LessonID string                 `+"`json:\"lesson_id\"`"+`
+	Title    string                 `+"`json:\"title\"`"+`
+	Body     string                 `+"`json:\"body\"`"+`
+	Sources  []LearningReportSource `+"`json:\"sources\"`"+`
+}
+
+type LearningReportSource struct {
+	SourceID string `+"`json:\"source_id\"`"+`
+	Title    string `+"`json:\"title\"`"+`
+	Version  string `+"`json:\"version\"`"+`
+	Locator  string `+"`json:\"locator\"`"+`
+}
+`, digest, constants)
 }
 
 func fail(err error) {

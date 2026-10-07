@@ -8,11 +8,14 @@ import type { ConsoleSummaryEnvelope } from '../models/ConsoleSummaryEnvelope';
 import type { CreateBankVersion } from '../models/CreateBankVersion';
 import type { CreateWorkshopBank } from '../models/CreateWorkshopBank';
 import type { ImportReportEnvelope } from '../models/ImportReportEnvelope';
+import type { LearningContentDraft } from '../models/LearningContentDraft';
+import type { LearningContentReviewCommand } from '../models/LearningContentReviewCommand';
 import type { OperationEnvelope } from '../models/OperationEnvelope';
 import type { RollbackCommand } from '../models/RollbackCommand';
 import type { VersionCommand } from '../models/VersionCommand';
 import type { WorkshopBankListEnvelope } from '../models/WorkshopBankListEnvelope';
 import type { WorkshopFeedbackEnvelope } from '../models/WorkshopFeedbackEnvelope';
+import type { WorkshopLearningContentEnvelope } from '../models/WorkshopLearningContentEnvelope';
 import type { WorkshopVersionDetailEnvelope } from '../models/WorkshopVersionDetailEnvelope';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -323,6 +326,143 @@ export class WorkshopService {
             errors: {
                 401: `Missing or invalid actor credentials`,
                 403: `Permission code or product Scope denied`,
+                409: `Idempotency payload or optimistic version conflict`,
+                503: `PostgreSQL or a required service is unavailable`,
+            },
+        });
+    }
+    /**
+     * List learning content versions with their review state
+     * @returns WorkshopLearningContentEnvelope Learning content versions owned by this bank
+     * @throws ApiError
+     */
+    public static listWorkshopLearningContent({
+        bankId,
+    }: {
+        bankId: string,
+    }): CancelablePromise<WorkshopLearningContentEnvelope> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/v1/workshop/banks/{bank_id}/learning-content',
+            path: {
+                'bank_id': bankId,
+            },
+            errors: {
+                401: `Missing or invalid actor credentials`,
+                403: `Permission code or product Scope denied`,
+                404: `Resource or operation is unknown to this actor`,
+                503: `PostgreSQL or a required service is unavailable`,
+            },
+        });
+    }
+    /**
+     * Import a validated learning content draft awaiting human review
+     * The draft is stored as `draft` without reviewer identity; only the separate approve operation records a human decision.
+     * @returns OperationEnvelope Stored draft without reviewer identity
+     * @throws ApiError
+     */
+    public static importWorkshopLearningContent({
+        bankId,
+        idempotencyKey,
+        requestBody,
+    }: {
+        bankId: string,
+        idempotencyKey: string,
+        requestBody: LearningContentDraft,
+    }): CancelablePromise<OperationEnvelope> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/workshop/banks/{bank_id}/learning-content',
+            path: {
+                'bank_id': bankId,
+            },
+            headers: {
+                'Idempotency-Key': idempotencyKey,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Invalid request`,
+                401: `Missing or invalid actor credentials`,
+                403: `Permission code or product Scope denied`,
+                404: `Resource or operation is unknown to this actor`,
+                409: `Idempotency payload or optimistic version conflict`,
+                503: `PostgreSQL or a required service is unavailable`,
+            },
+        });
+    }
+    /**
+     * Record a human review of a learning content draft
+     * Approval names the reviewing actor and is required before any member-facing report can use this content.
+     * @returns OperationEnvelope Approval write result
+     * @throws ApiError
+     */
+    public static approveWorkshopLearningContent({
+        bankId,
+        contentVersionId,
+        idempotencyKey,
+        requestBody,
+    }: {
+        bankId: string,
+        contentVersionId: string,
+        idempotencyKey: string,
+        requestBody: LearningContentReviewCommand,
+    }): CancelablePromise<OperationEnvelope> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/approve',
+            path: {
+                'bank_id': bankId,
+                'content_version_id': contentVersionId,
+            },
+            headers: {
+                'Idempotency-Key': idempotencyKey,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Invalid request`,
+                401: `Missing or invalid actor credentials`,
+                403: `Permission code or product Scope denied`,
+                404: `Resource or operation is unknown to this actor`,
+                409: `Idempotency payload or optimistic version conflict`,
+                503: `PostgreSQL or a required service is unavailable`,
+            },
+        });
+    }
+    /**
+     * Retire approved learning content that is no longer active
+     * @returns OperationEnvelope Retire write result
+     * @throws ApiError
+     */
+    public static retireWorkshopLearningContent({
+        bankId,
+        contentVersionId,
+        idempotencyKey,
+        requestBody,
+    }: {
+        bankId: string,
+        contentVersionId: string,
+        idempotencyKey: string,
+        requestBody: LearningContentReviewCommand,
+    }): CancelablePromise<OperationEnvelope> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/retire',
+            path: {
+                'bank_id': bankId,
+                'content_version_id': contentVersionId,
+            },
+            headers: {
+                'Idempotency-Key': idempotencyKey,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                400: `Invalid request`,
+                401: `Missing or invalid actor credentials`,
+                403: `Permission code or product Scope denied`,
+                404: `Resource or operation is unknown to this actor`,
                 409: `Idempotency payload or optimistic version conflict`,
                 503: `PostgreSQL or a required service is unavailable`,
             },

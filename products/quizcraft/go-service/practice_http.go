@@ -24,12 +24,24 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"henukit.dev/quizcraft/internal/contract"
 	"henukit.dev/quizcraft/internal/store"
 )
 
 type PracticeHTTPConfig struct {
-	Database            *pgxpool.Pool
-	AuthHMACSecret      []byte
+	Database       *pgxpool.Pool
+	AuthHMACSecret []byte
+	// Optional live Account Portfolio caller. Read routes need it plus the
+	// catalog caller; write routes additionally need the Portal command
+	// identity.
+	LearningEntitlement *LearningEntitlementClient
+	// LearningVersions is the server-pinned model, prompt and policy for
+	// reports requested through the API. It must match the running worker or
+	// the worker rejects the job, so it comes from the same configuration.
+	LearningVersions LearningJobVersions
+	// LearningManualLimit is the per-member, per-course abuse guard for
+	// member-requested generation; 0 disables it. It never limits scheduled work.
+	LearningManualLimit int
 	LegacyBaseURL       string
 	LegacyCompareSecret string
 	HTTPClient          *http.Client
@@ -61,6 +73,9 @@ type practiceHTTP struct {
 	database                *pgxpool.Pool
 	queries                 *store.Queries
 	authHMACSecret          []byte
+	learningEntitlement     *LearningEntitlementClient
+	learningVersions        LearningJobVersions
+	learningService         *Service
 	legacyBaseURL           string
 	legacyCompareSecret     string
 	httpClient              *http.Client
@@ -250,7 +265,7 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 	if releaseSHA == "" {
 		releaseSHA = "development"
 	}
-	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
+	service := &practiceHTTP{database: config.Database, queries: store.New(config.Database), authHMACSecret: config.AuthHMACSecret, learningEntitlement: config.LearningEntitlement, learningVersions: config.LearningVersions, learningService: &Service{database: config.Database, learningManualLimit: config.LearningManualLimit}, legacyBaseURL: legacyBaseURL, legacyCompareSecret: config.LegacyCompareSecret, httpClient: client, now: now, summaryClientID: config.SummaryClientID, summaryKeys: config.SummaryKeys, catalogClientID: config.CatalogClientID, catalogKeys: config.CatalogKeys, portalCommandClientID: config.PortalCommandClientID, portalCommandKeys: config.PortalCommandKeys, portalCommandsEnabled: config.PortalCommandsEnabled, allowTestWorkshopClaims: config.AllowTestWorkshopClaims, writesDisabled: config.WritesDisabled, releaseSHA: releaseSHA, cutoverEvidenceSecret: config.CutoverEvidenceSecret}
 	if platformCount == len(platformValues) {
 		platform, err := newPlatformClient(config.PlatformCoreURL, config.PlatformClientID, config.PlatformClientSecret, config.PlatformKeyID, client)
 		if err != nil {
@@ -291,6 +306,25 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 		router.With(service.authenticatePortalPersonalStats).Get("/api/v1/portal/practice/favorites", service.portalFavoritesOverview)
 		router.With(service.authenticatePortalPersonalStats).Get("/api/v1/portal/practice/banks/{bank_id}/favorites", service.portalFavoritesList)
 	}
+	// Course feedback reads stay dark until the signed entitlement caller exists.
+	// They reuse the Portal Gateway personal boundary; writes remain a separate
+	// command boundary that is not implemented yet.
+	if service.learningEntitlement != nil && service.catalogClientID != "" && len(service.catalogKeys) > 0 {
+		learningReads := router.With(service.authenticatePortalPersonalStats)
+		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences", service.portalLearningReportPreferences)
+		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/latest", service.portalLatestLearningReport)
+		learningReads.Get("/api/v1/portal/practice/banks/{bank_id}/learning-reports/tasks/{task_id}", service.portalLearningReportTask)
+	}
+	// Writes use the separate Portal command identity and stay behind the
+	// write-cutover switch. Clearing and disabling remain available to an owner
+	// after revocation; enabling and generating are checked per request.
+	if service.learningEntitlement != nil && service.portalCommandsEnabled && service.portalCommandClientID != "" {
+		learningWrites := router.With(service.authenticatePortalCommand).With(service.requireWritesEnabled)
+		learningWrites.Put("/api/v1/portal/practice/banks/{bank_id}/learning-reports/preferences", service.portalUpdateLearningReportPreferences)
+		learningWrites.Post("/api/v1/portal/practice/banks/{bank_id}/learning-reports", service.portalRequestLearningReport)
+		learningWrites.Delete("/api/v1/portal/practice/banks/{bank_id}/learning-reports", service.portalClearLearningReports)
+		learningWrites.Post("/api/v1/portal/practice/banks/{bank_id}/learning-reports/results/{report_id}/practice-sessions", service.portalCreateLearningReportPracticeSession)
+	}
 	writes := router.With(service.requireWritesEnabled)
 	writes.Get("/api/v1/feedback", service.listFeedbackStatuses)
 	writes.Post("/api/v1/feedback", service.createFeedback)
@@ -308,6 +342,10 @@ func NewPracticeHTTP(config PracticeHTTPConfig) (http.Handler, error) {
 	writes.Post("/api/v1/workshop/banks/{bank_id}/versions/{bank_version_id}/publish", service.publishWorkshopVersion)
 	writes.Post("/api/v1/workshop/banks/{bank_id}/versions/{bank_version_id}/unpublish", service.unpublishWorkshopVersion)
 	writes.Post("/api/v1/workshop/banks/{bank_id}/rollback", service.rollbackWorkshopBank)
+	router.Get("/api/v1/workshop/banks/{bank_id}/learning-content", service.listWorkshopLearningContent)
+	writes.Post("/api/v1/workshop/banks/{bank_id}/learning-content", service.importWorkshopLearningContent)
+	writes.Post("/api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/approve", service.approveWorkshopLearningContent)
+	writes.Post("/api/v1/workshop/banks/{bank_id}/learning-content/{content_version_id}/retire", service.retireWorkshopLearningContent)
 	router.Get("/api/v1/workshop/feedback/{feedback_id}", service.getWorkshopFeedback)
 	router.Get("/api/v1/favorites", service.listFavoriteFolders)
 	router.Get("/api/v1/banks/{bank_id}/favorites", service.listFavoriteQuestions)
@@ -353,7 +391,9 @@ func (service *practiceHTTP) operationStatus(writer http.ResponseWriter, request
 		return
 	}
 	kind := chi.URLParam(request, "operation_kind")
-	if kind != "create_practice_session" && kind != "submit_practice_answer" && kind != "favorite_question" && kind != "unfavorite_question" && kind != "create_favorites_session" && kind != "create_feedback" && kind != "create_workshop_bank" && kind != "create_bank_version" && kind != "import_bank" && kind != "validate_version" && kind != "publish_version" && kind != "unpublish_version" && kind != "rollback_bank" {
+	// The contract enum is the single list of operation kinds this Core
+	// implements: a new kind must not need a second hand-maintained switch here.
+	if !contract.OperationKind(kind).Valid() {
 		writeError(writer, http.StatusNotFound, "operation_unknown", "operation is not implemented by Practice Core")
 		return
 	}

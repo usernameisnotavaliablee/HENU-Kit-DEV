@@ -567,6 +567,14 @@ func (service *practiceHTTP) rollbackWorkshopBank(writer http.ResponseWriter, re
 }
 
 func (service *practiceHTTP) runWorkshopMutation(writer http.ResponseWriter, request *http.Request, actor practiceActor, kind string, status int, raw []byte, resourceID uuid.UUID, mutate func(context.Context, pgx.Tx, string) error) {
+	service.runWorkshopMutationResource(writer, request, actor, kind, status, raw, func() uuid.UUID { return resourceID }, mutate)
+}
+
+// runWorkshopMutationResource is the same command wrapper for mutations that only
+// learn the resource they acted on while they run, such as an import that may
+// resolve to an existing draft. The callback is read after the mutation returns,
+// so the stored idempotency record and response name the resource that exists.
+func (service *practiceHTTP) runWorkshopMutationResource(writer http.ResponseWriter, request *http.Request, actor practiceActor, kind string, status int, raw []byte, resourceID func() uuid.UUID, mutate func(context.Context, pgx.Tx, string) error) {
 	idempotencyKey, ok := requiredIdempotencyKey(writer, request)
 	if !ok {
 		return
@@ -603,9 +611,10 @@ func (service *practiceHTTP) runWorkshopMutation(writer http.ResponseWriter, req
 		}
 		return
 	}
-	response := responseEnvelope{RequestID: outerRequestID, Data: map[string]any{"operation_id": uuid.NewSHA1(resourceID, []byte(kind+":"+idempotencyKey)), "state": "succeeded", "idempotency_key": idempotencyKey, "request_id": outerRequestID, "resource_id": resourceID}}
+	storedResourceID := resourceID()
+	response := responseEnvelope{RequestID: outerRequestID, Data: map[string]any{"operation_id": uuid.NewSHA1(storedResourceID, []byte(kind+":"+idempotencyKey)), "state": "succeeded", "idempotency_key": idempotencyKey, "request_id": outerRequestID, "resource_id": storedResourceID}}
 	encoded, _ := json.Marshal(response)
-	if err := storeIdempotency(request.Context(), queries, actor.key, kind, idempotencyKey, requestHash, status, encoded, resourceID); err != nil {
+	if err := storeIdempotency(request.Context(), queries, actor.key, kind, idempotencyKey, requestHash, status, encoded, storedResourceID); err != nil {
 		writeError(writer, http.StatusServiceUnavailable, "database_unavailable", "QuizCraft Workshop is temporarily unavailable")
 		return
 	}

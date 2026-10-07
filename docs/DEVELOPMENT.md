@@ -365,6 +365,24 @@ Issue 必须包含：
 - PostgreSQL consistency
 - Go adapter contract tests
 
+### 本机等价复现（无 Docker）
+
+需要 Docker 的是依赖容器/镜像的门禁，例如 Go 集成测试的 testcontainers 分支、`products/quizcraft/go-service` 的 `sqlc/sqlc` 镜像、trivy 的镜像与密钥扫描（`aquasec/trivy`）、compose 渲染与 Docker build——这份列举是示意而非穷尽，判断标准是「该门禁是否要起容器/镜像」。其余可在无 Docker 的本机直接跑：
+
+- 构建门禁：`pnpm run build:portal`（Next.js + 付费资料与 mock 两项产物检查）、`pnpm run build:quizcraft`（`tsc` + vite build + 管理端会话与切流产物检查）、`pnpm --filter @henukit/console run lint` 与 `pnpm run build:console`。
+- **生成代码与生成器是否一致，由「重新生成 + `git diff --exit-code`」判定，不由构建判定**：只改契约而没重新生成时，陈旧的客户端自洽，构建照样通过；构建能抓到的是重新生成之后调用点的不兼容。契约改动请连着生成器与构建一起跑。
+- 无 Docker 时的失败分类（哪些红是环境缺失）见 `docs/development/testing-acceptance-spec.md` §3。
+- Go 静态检查用与 CI 相同的版本：`go install honnef.co/go/tools/cmd/staticcheck@2026.1` 与 `go install golang.org/x/vuln/cmd/govulncheck@v1.6.0`（需网络），然后各模块 `staticcheck ./...`、`govulncheck ./...`。**staticcheck 需要一个可写的 `HOME`**：它把缓存写在 `$HOME/Library/Caches/staticcheck`，在把 `HOME` 指向只读位置的环境里会直接报 `failed to initialize build cache … operation not permitted` 退出——放在管道里时这个失败很容易被 `| tail` 吞掉、看着像通过。可行写法：`mkdir -p .cache/fakehome && HOME=$PWD/.cache/fakehome staticcheck ./...`。
+- 浏览器门禁（Portal 的 Playwright；默认配置除 Next dev 外还会起 Console 的 Vite，无需 Docker）：`pnpm --filter @henukit/portal test:e2e:learning-reports`、
+  `test:e2e:practice`、`test:e2e:oauth-continuation`，以及 `test:e2e:responsive` 那一大组里按改动挑几个 spec 跑
+  （`exec playwright test tests/sub-site-nav.spec.ts tests/page-titles.spec.ts tests/touch-targets.spec.ts tests/empty-state-actions.spec.ts`）。
+  **别把 `HOME` 重定向给它们**：`HOME` 指向空目录时 Next dev 起不来，日志第一行是 `Could not find the Next.js package (next/package.json)`，接着 `PageNotFoundError: route not found /page` 加
+  `.next/dev/server/pages/_app/build-manifest.json` 的 `ENOENT`，最后是 Playwright 的 `Timed out waiting 120000ms from config.webServer`；
+  同一命令同一 head 实测：重定向 `HOME` 时根路径 HTTP 500，真实 `HOME` 时 200，而只重定向 `npm_config_cache` 无害。
+  Go 侧恰好相反——真实 `HOME` 下 `GOCACHE` 不可写，所以要显式给：浏览器组用真实 `HOME` 加
+  `GOCACHE`/`GOMODCACHE`/`GOPATH` 指向仓库 `.cache`（`test:e2e:oauth-continuation` 会 `go run` 起网关 fixture，缺了它就是
+  `failed to initialize build cache at …/Library/Caches/go-build`）。两套重定向互相冲突，在这两类命令之间不存在一套环境变量通吃。
+
 ### 路径过滤
 
 只运行受影响部署单元，但共享 token、契约、基础设施和 Migration 变更触发所有消费方相关测试。每天或每晚运行一次全量回归。

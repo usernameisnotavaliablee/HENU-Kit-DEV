@@ -96,6 +96,14 @@ function sessionIDFromLocation(): string {
   return new URLSearchParams(window.location.search).get("session_id")?.trim() ?? "";
 }
 
+// A handed-off session keeps its origin in the URL until the member leaves it,
+// so an expired handoff can name the surface that can re-create it.
+function sessionOriginFromLocation(): "report" | null {
+  return new URLSearchParams(window.location.search).get("from") === "report"
+    ? "report"
+    : null;
+}
+
 type IdempotencyMemory = { current: Record<string, string> };
 
 function idempotencyKeyFor(scope: string, prefix: string, memory: IdempotencyMemory) {
@@ -177,7 +185,6 @@ export default function QuizPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [setup, setSetup] = useState<PracticeSetup | null>(null);
   const [session, setSession] = useState<PortalPracticeSessionResponse["data"] | null>(null);
-  const [restart, setRestart] = useState(0);
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerResult>>({});
   const [drafts, setDrafts] = useState<Record<string, unknown>>({});
@@ -225,7 +232,11 @@ export default function QuizPage() {
             setSession(payload);
             setLoadState(payload.questions.length === 0 ? "empty" : "ready");
           } else {
-            setLoadError("收藏练习会话已失效，请返回收藏夹重新发起。");
+            setLoadError(
+              sessionOriginFromLocation() === "report"
+                ? "学习报告的练习会话已失效，请返回学习报告重新发起。"
+                : "收藏练习会话已失效，请返回收藏夹重新发起。"
+            );
             setLoadState("error");
           }
         }
@@ -249,7 +260,7 @@ export default function QuizPage() {
     return () => {
       cancelled = true;
     };
-  }, [restart]);
+  }, []);
 
   useEffect(() => {
     if (loadState !== "ready") return;
@@ -492,12 +503,6 @@ export default function QuizPage() {
     if (explainRef.current) gsap.set(explainRef.current, { height: 0 });
   };
 
-  const retrySessionLoad = () => {
-    resetSessionView();
-    setLoadState("loading");
-    setRestart((value) => value + 1);
-  };
-
   const startCommittedSession = async (selection: SessionSelection): Promise<string | null> => {
     if (!setup || !isValidQuestionCount(selection.questionCount)) {
       return "当前组卷设置无效，请重新选择题数。";
@@ -531,12 +536,16 @@ export default function QuizPage() {
   };
 
   const startAnotherSession = () => {
-    // A handoff favorites session carries no bank params to re-create from;
-    // send the user back to the folder for a fresh favorites session.
+    // A handed-off session carries no bank params to re-create from; send the
+    // user back to the surface that can mint another one.
     if (sessionIDFromLocation()) {
       const bankIDValue = session?.bank_id;
       if (bankIDValue) {
-        void router.replace(`/practice/favorites/${encodeURIComponent(bankIDValue)}`);
+        void router.replace(
+          sessionOriginFromLocation() === "report"
+            ? `/practice/reports?bank_id=${encodeURIComponent(bankIDValue)}`
+            : `/practice/favorites/${encodeURIComponent(bankIDValue)}`
+        );
         return;
       }
     }
@@ -554,22 +563,39 @@ export default function QuizPage() {
     return <PracticeState title="请先选择题库" detail={loadError ?? "请从题库目录选择练习后开始。"} />;
   }
   if (loadState === "error") {
+    // 交接记录只写在 sessionStorage 里那一份，只有写入方（学习报告或收藏夹）能重建它；
+    // 重试读的还是同一份，要么不存在要么不可解析，所以这里给回去处而不是重试按钮。
     return (
       <PracticeState
         title="练习暂时不可用"
         detail={loadError ?? "暂时无法创建练习会话，请稍后重试。"}
-        actionLabel="重试"
-        onAction={retrySessionLoad}
+        action={
+          sessionOriginFromLocation() === "report"
+            ? { label: "返回学习报告", href: "/practice/reports" }
+            : { label: "返回收藏夹", href: "/practice/favorites" }
+        }
       />
     );
   }
   if (loadState === "empty") {
-    return session?.mode === "favorites" ? (
-      <PracticeState
-        title="收藏夹里暂时没有可练习题目"
-        detail="不可用的收藏不会进入练习；可以返回收藏夹查看或取消收藏。"
-      />
-    ) : (
+    if (session?.mode === "favorites") {
+      return (
+        <PracticeState
+          title="收藏夹里暂时没有可练习题目"
+          detail="不可用的收藏不会进入练习；可以返回收藏夹查看或取消收藏。"
+        />
+      );
+    }
+    if (session?.mode === "report") {
+      return (
+        <PracticeState
+          title="这份报告暂时没有可练习的题目"
+          detail="报告推荐的题目暂时练不了（可能已下架或不在当前范围）。"
+          action={{ label: "返回学习报告", href: "/practice/reports" }}
+        />
+      );
+    }
+    return (
       <PracticeState title="当前题库没有可练习题目" detail="请返回题库目录重新选择。" />
     );
   }
@@ -1024,16 +1050,22 @@ export default function QuizPage() {
   );
 }
 
+/** 去别处用链接，就地改条件用按钮（与 components/data-state.tsx 的 EmptyAction 同一约定）。 */
+type PracticeStateAction =
+  | { label: string; href: string }
+  | { label: string; onClick: () => void };
+
+const practiceStateActionClass =
+  "border border-ink bg-ink px-6 py-3 font-mono text-sm text-paper transition-colors hover:border-accent hover:bg-accent hover:text-ink";
+
 function PracticeState({
   title,
   detail,
-  actionLabel,
-  onAction,
+  action,
 }: {
   title: string;
   detail: string;
-  actionLabel?: string;
-  onAction?: () => void;
+  action?: PracticeStateAction;
 }) {
   return (
     // 与页头同一个内容框，左缘与返回链接对齐；卡片仍限在 max-w-3xl。
@@ -1046,11 +1078,16 @@ function PracticeState({
           <h1 className="mt-5 text-2xl font-medium md:text-3xl">{title}</h1>
           <p className="mt-4 max-w-xl text-sm leading-7 text-ink/70">{detail}</p>
           <div className="mt-8 flex flex-wrap gap-4">
-            {actionLabel && onAction && (
-              <button type="button" onClick={onAction} className="border border-ink bg-ink px-6 py-3 font-mono text-sm text-paper transition-colors hover:border-accent hover:bg-accent hover:text-ink">
-                {actionLabel}
-              </button>
-            )}
+            {action &&
+              ("href" in action ? (
+                <TransitionLink href={action.href} className={practiceStateActionClass}>
+                  {action.label}
+                </TransitionLink>
+              ) : (
+                <button type="button" onClick={action.onClick} className={practiceStateActionClass}>
+                  {action.label}
+                </button>
+              ))}
             <TransitionLink href="/practice" className="border border-ink/30 px-6 py-3 font-mono text-sm text-ink transition-colors hover:border-accent hover:text-accent-text">
               返回题库目录 →
             </TransitionLink>

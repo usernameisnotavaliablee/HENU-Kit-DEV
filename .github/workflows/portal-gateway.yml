@@ -8,6 +8,10 @@ on:
       - packages/api-contracts/openapi/portal-gateway.yaml
       - packages/api-contracts/openapi/account-portfolio.yaml
       - packages/api-contracts/openapi/quizcraft.yaml
+      # The joint job runs a real QuizCraft Core binary against this Gateway, so a
+      # Core-only change has to run it too. Without this the cross-service chain
+      # would only ever run when the Gateway side happened to change as well.
+      - products/quizcraft/go-service/**
       - .github/workflows/portal-gateway.yml
   push:
     branches: [main]
@@ -17,6 +21,10 @@ on:
       - packages/api-contracts/openapi/portal-gateway.yaml
       - packages/api-contracts/openapi/account-portfolio.yaml
       - packages/api-contracts/openapi/quizcraft.yaml
+      # The joint job runs a real QuizCraft Core binary against this Gateway, so a
+      # Core-only change has to run it too. Without this the cross-service chain
+      # would only ever run when the Gateway side happened to change as well.
+      - products/quizcraft/go-service/**
       - .github/workflows/portal-gateway.yml
 
 permissions:
@@ -57,3 +65,45 @@ jobs:
           set -euo pipefail
           go vet ./...
           go test -race -count=1 ./...
+
+  joint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The member learning-report chain against a real Core process is the only
+      # PostgreSQL-backed evidence for the feature: it runs a built Core binary,
+      # migrates a scratch database and then asserts the member chain plus its
+      # documented negatives. QUIZCRAFT_JOINT_REQUIRED keeps it from silently
+      # skipping when the database is missing.
+      QUIZCRAFT_JOINT_DATABASE_URL: postgres://quizcraft:quizcraft@localhost:5432/postgres?sslmode=disable
+      QUIZCRAFT_JOINT_ALLOW_DESTRUCTIVE_RECREATE: "1"
+      QUIZCRAFT_JOINT_REQUIRED: "1"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_DB: quizcraft_test, POSTGRES_USER: quizcraft, POSTGRES_PASSWORD: quizcraft }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U quizcraft -d quizcraft_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: products/quizcraft/go-service/go.mod
+          cache-dependency-path: |
+            services/portal-gateway/go.sum
+            products/quizcraft/go-service/go.sum
+
+      - name: Install psql
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Learning report member chain against a real Core
+        working-directory: services/portal-gateway
+        run: |
+          set -euo pipefail
+          go test ./internal/httpapi \
+            -run TestQuizCraftLearningReportMemberChainAcrossARealCore -count=1 -v

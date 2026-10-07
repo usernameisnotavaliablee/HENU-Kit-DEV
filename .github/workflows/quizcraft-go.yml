@@ -84,13 +84,19 @@ jobs:
             QUIZCRAFT_V2_DATABASE_URL='postgres://quizcraft:quizcraft@localhost:5432/quizcraft_v2?sslmode=disable' QUIZCRAFT_RESTORE_ADMIN_URL='postgres://quizcraft:quizcraft@localhost:5432/postgres?sslmode=disable' go run ./cmd/backuprestore -backup-directory /tmp/quizcraft-v2-recovery-drill
             psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -c "DELETE FROM quizcraft_banks WHERE id='00000000-0000-0000-0000-000000000159'"
           )
-          test "$(psql -h localhost -U quizcraft -d quizcraft_v2 -Atc "SELECT (SELECT count(*) FROM quizcraft_schema_migrations)=11 AND to_regclass('public.quizcraft_banks') IS NOT NULL AND to_regclass('public.quizcraft_practice_attempts') IS NOT NULL AND to_regclass('public.quizcraft_feedback_status_facts') IS NOT NULL")" = t
+          # Count what the directory actually holds: a literal here drifts the
+          # moment a migration is added, and the failure then looks like a
+          # schema bug instead of a stale assertion.
+          expected_migrations="$(ls products/quizcraft/go-service/db/migrations/*.up.sql | wc -l | tr -d ' ')"
+          test "$(psql -h localhost -U quizcraft -d quizcraft_v2 -Atc "SELECT (SELECT count(*) FROM quizcraft_schema_migrations)=${expected_migrations} AND to_regclass('public.quizcraft_banks') IS NOT NULL AND to_regclass('public.quizcraft_practice_attempts') IS NOT NULL AND to_regclass('public.quizcraft_feedback_status_facts') IS NOT NULL")" = t
           pg_dump -h localhost -U quizcraft -d quizcraft_v2 --format=custom --file=/tmp/quizcraft-recovery.dump
           psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -c "INSERT INTO quizcraft_banks(id,bank_key,name) VALUES('00000000-0000-0000-0000-000000000007','computer_fundamentals','Legacy underscore probe')"
           if psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -f products/quizcraft/go-service/db/migrations/000007_legacy_bank_keys.down.sql; then exit 1; fi
           test "$(psql -h localhost -U quizcraft -d quizcraft_v2 -Atc "SELECT bank_key FROM quizcraft_banks WHERE id='00000000-0000-0000-0000-000000000007'")" = computer_fundamentals
           test "$(psql -h localhost -U quizcraft -d quizcraft_v2 -Atc "SELECT count(*) FROM pg_constraint WHERE conrelid='quizcraft_banks'::regclass AND conname='quizcraft_banks_bank_key_check'")" = 1
           psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -c "DELETE FROM quizcraft_banks WHERE id='00000000-0000-0000-0000-000000000007'"
+          psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -f products/quizcraft/go-service/db/migrations/000013_learning_report_practice_mode.down.sql
+          psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -f products/quizcraft/go-service/db/migrations/000012_learning_reports.down.sql
           psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -f products/quizcraft/go-service/db/migrations/000011_learning_state_latest_attempt.down.sql
           psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -f products/quizcraft/go-service/db/migrations/000010_feedback_status_facts.down.sql
           psql -h localhost -U quizcraft -d quizcraft_v2 -v ON_ERROR_STOP=1 -f products/quizcraft/go-service/db/migrations/000009_resumable_migration_artifacts.down.sql
@@ -159,7 +165,7 @@ jobs:
           python -m pip install -r products/quizcraft/requirements.txt pytest
           python -m py_compile products/quizcraft/server.py products/quizcraft/db_storage.py
           cd products/quizcraft
-          PYTHONPATH=. python -m pytest -q tests/test_shadow_compare.py tests/test_migration_event_outbox.py tests/test_feedback_migration_boundary.py tests/test_cutover_read_only.py tests/test_ranking_privacy.py
+          PYTHONPATH=. python -m pytest -q tests/test_shadow_compare.py tests/test_migration_event_outbox.py tests/test_feedback_migration_boundary.py tests/test_cutover_read_only.py tests/test_ranking_privacy.py tests/test_learning_report_contract.py tests/test_learning_feedback_inventory.py
       - name: Verify React generated-client shadow flow
         run: |
           set -euo pipefail

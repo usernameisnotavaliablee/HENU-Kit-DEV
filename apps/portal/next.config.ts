@@ -61,6 +61,7 @@ const nextConfig: NextConfig = {
         "/library/shelf",
         "/practice/favorites/:path*",
         "/practice/quiz",
+        "/practice/reports",
         "/practice/stats",
       ].map((source) => ({ source, headers: noIndexHeaders })),
     ];

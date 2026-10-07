@@ -83,6 +83,7 @@ describe("Portal search discovery routes", () => {
       "/library/shelf",
       "/practice/favorites/:path*",
       "/practice/quiz",
+      "/practice/reports",
       "/practice/stats",
     ]);
   });
