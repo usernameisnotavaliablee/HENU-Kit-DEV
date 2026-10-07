@@ -282,7 +282,7 @@ func validateLearningReport(result LearningReportEnvelope, expectedBankID string
 	}
 	switch report.NextStep.Kind {
 	case "practice", "diagnostic":
-		if report.NextStep.QuestionIDs == nil || len(report.NextStep.QuestionIDs) == 0 || len(report.NextStep.QuestionIDs) > learningReportMaxQuestionIDs {
+		if len(report.NextStep.QuestionIDs) == 0 || len(report.NextStep.QuestionIDs) > learningReportMaxQuestionIDs {
 			return ErrInvalidStats
 		}
 		seen := make(map[string]struct{}, len(report.NextStep.QuestionIDs))

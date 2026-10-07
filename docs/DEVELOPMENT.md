@@ -372,6 +372,7 @@ Issue 必须包含：
 - 构建门禁：`pnpm run build:portal`（Next.js + 付费资料与 mock 两项产物检查）、`pnpm run build:quizcraft`（`tsc` + vite build + 管理端会话与切流产物检查）、`pnpm --filter @henukit/console run lint` 与 `pnpm run build:console`。
 - **生成代码与生成器是否一致，由「重新生成 + `git diff --exit-code`」判定，不由构建判定**：只改契约而没重新生成时，陈旧的客户端自洽，构建照样通过；构建能抓到的是重新生成之后调用点的不兼容。契约改动请连着生成器与构建一起跑。
 - 无 Docker 时的失败分类（哪些红是环境缺失）见 `docs/development/testing-acceptance-spec.md` §3。
+- Go 静态检查用与 CI 相同的版本：`go install honnef.co/go/tools/cmd/staticcheck@2026.1` 与 `go install golang.org/x/vuln/cmd/govulncheck@v1.6.0`（需网络），然后各模块 `staticcheck ./...`、`govulncheck ./...`。**staticcheck 需要一个可写的 `HOME`**：它把缓存写在 `$HOME/Library/Caches/staticcheck`，在把 `HOME` 指向只读位置的环境里会直接报 `failed to initialize build cache … operation not permitted` 退出——放在管道里时这个失败很容易被 `| tail` 吞掉、看着像通过。
 
 ### 路径过滤
 

@@ -992,3 +992,25 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 第 77/79 条把引号那件事写成「它自己写『四对』，实际只换了一对」。文案轴回到 `a0a5f3cd` 逐行数：第 75 条原有的引号在 `a0a5f3cd` 就换了（`d7ab96cd` 时 4 行带 ASCII 引号，到 `a0a5f3cd` 只剩 2 行），**剩下的是第 75 条末行那一对旧措辞，加上第 76 条自己在同一次提交里新写的两对**——所以要清的是「一对残留 + 两对新引入」，不是「三对没换」。已按此改写两处。
 
 落点还是同一个动作缺失：**报数/报范围前回查产物**。这次连「改了多少」这种看似最安全的小数字也没躲过去，而核对成本只有一条 `git show <head>:HANDOFF.md | sed -n … | grep -c '"'`。同一轮里我已经因此改了五处（sqlc 模块、CI 注释、trivy、编号、计数），这是第六处——规律很清楚：**凡是带数字或带「都/只/全」的句子，写完就去数一遍**。
+
+### 81 — staticcheck / govulncheck 也补上了：分支主模块的检查比它的兄弟模块少
+
+第 71/75 条补的是测试面和构建面；这轮补**静态分析面**——CI 里 `staticcheck@2026.1` 与 `govulncheck@v1.6.0` 是 Go 作业的常规步骤，而我从没在这一头跑过。
+
+工具用 CI 的同一版本 `go install` 进工作区（`staticcheck@2026.1`、`govulncheck@v1.6.0`，需网络）。结果：
+
+| 模块 | staticcheck | govulncheck |
+| --- | --- | --- |
+| `services/portal-gateway` | 20 条：18 条 `ST1005` 落在 `career`/`foodposts`/`librarydownload`/`cmd/contractgen`（既有上游代码）、1 条 `ST1005` 在 `handler.go:1050`（既有，jry21223 2026-08-07）、**1 条 `S1009` 落在本分支** | No vulnerabilities found |
+| `services/account-portfolio` | 干净 | 同上 |
+| `products/quizcraft/go-service` | 干净（此前的 `SA1012` 已在更早轮次修掉） | 同上 |
+
+那 1 条分支内的 `S1009` 是 `internal/practice/learning_reports.go:285` 的 `QuestionIDs == nil || len(QuestionIDs) == 0`——nil 检查被 `len()==0` 覆盖。**只修这一条**：另外 19 条都不在本分支改动面上（同文件里那些 `== nil || len(x) > N` 形式**不是**同类问题，nil 检查在那里是有意义的语义）。修完 gofmt / vet / `staticcheck ./internal/practice/` / 该包测试全绿；因为是**动了代码**，又在改动后的状态上重跑了两项：
+网关全模块 `go test -race -count=1 ./...`（10 个包全 ok）与旗舰联合作业 `…MemberChainAcrossARealCore`（**54 assertions passed**，4 个子用例全过，1.75s，真实 Core + 13 迁移两遍）。
+
+**两条值得记的环境与结构事实**：
+
+1. **staticcheck 需要一个可写的 `HOME`**（它写 `$HOME/Library/Caches/staticcheck`）。第一次跑就撞上：沙箱里该路径不可写，它报 `failed to initialize build cache … operation not permitted` 就退出——而我当时把它放在 `| tail -15` 管道里，`$?` 拿到的是 `tail` 的 0，**看起来像通过**。这与第 71 条记的 npm `~/.npm/_logs` 是同一类陷阱（工具写不了自己的缓存目录 → 静默假绿），已把配方（`HOME=$PWD/.cache/fakehome`）写进 `docs/DEVELOPMENT.md` §14。
+顺带补跑了根 `test:libraryctl`（`node --test scripts/libraryctl/tests/*.test.mjs`，此前从未跑过）：**13/13 通过**。
+
+2. **分支的主模块反而检查更少**：`account-portfolio.yml:103-104` 与 `quizcraft-go.yml:145-146` 都跑 staticcheck + govulncheck，而 `portal-gateway.yml` 的 Go 步骤只有 `go vet ./...` + `go test -race ./...`——本分支改动最多的模块正是它。我没有改 CI（那会引入一个我无法在 fork 上验证的新门禁），但这条适合给人类决定：要不要把这两个步骤补进 gateway 作业。
