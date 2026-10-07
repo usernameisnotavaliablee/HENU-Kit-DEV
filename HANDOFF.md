@@ -914,7 +914,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - `package-henukit-runtime.test.mjs`：`Runtime packaging creates a temporary Git checkout and validates it is clean. Keep it isolated from cross-file fixtures that also create and mutate temporary repositories.` —— 临时 Git checkout 的干净性，与超时无关。
 - `watch-henukit-actions.test.mjs`：`…so scheduling cannot turn a successful activation into a one-second timeout.` —— 才是 1 秒超时。
 
-已按文件分别写明各自理由。（顺带被证实的另一件事：本轮翻出自己在更早轮次留下的 `.cache/ci-quizcraft/contract-check.log`——里面就是 `go run …/sqlc@v1.31.0` 因 replace 指令报错的记录，说明 quizcraft 的 sqlc 确实不能脱离镜像跑，第 72 条那句话不是保守写法而是事实。原文把这处证据记成「标准轴找到的」，第 74 条更正：那是本会话自己的运行产物，本会话自己核过的那一个轴没有写过 `.cache/`——这句不能推广成「所有轴都没写过」，那是不可验证的全称否定。）
+已按文件分别写明各自理由。（顺带被证实的另一件事：本轮翻出自己在更早轮次留下的 `.cache/ci-quizcraft/contract-check.log`——里面就是 `go run …/sqlc@v1.31.0` 因 replace 指令报错的记录，说明 quizcraft 的 sqlc 确实不能脱离镜像跑，第 72 条那句话不是保守写法而是事实。原文把这处证据记成「标准轴找到的」，第 74 条更正：那是本会话自己的运行产物，标准轴复核时自己声明它没有写过 `.cache/`——这句不能推广成「所有轴都没写过」，那是不可验证的全称否定。）
 
 这已经是同一轮里第四次栽在同一个动作上：**写「只有/都是/同样的」之前没有把两个候选都打开看**（`release_build_args`、Console 守卫、sqlc 模块、这次的注释）。第 70/72 条都写了这条教训，说明「记下教训」不管用——真正管用的是动作：凡是要写全称判断，先把所有候选逐一打开确认，再动笔。
 
@@ -926,7 +926,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 ### 75 — 构建面也补上了：三个构建全绿，顺带把治理门禁查清（只有 branch-name 必然红）
 
-第 71 条补的是"测试"面，这轮把**构建**面也跑了——它是分支影响面里唯一还没碰过的一类门禁，而且风险很实在：本分支重新生成过 `products/quizcraft/web-app/src/generated/quizcraft-api` 的 TS 客户端，也新增了 Portal 页面，**生成代码漂移会在这里被 `tsc` 抓到**。
+第 71 条补的是「测试」面，这轮把**构建**面也跑了——它是分支影响面里唯一还没碰过的一类门禁，而且风险很实在：本分支重新生成过 `products/quizcraft/web-app/src/generated/quizcraft-api` 的 TS 客户端，也新增了 Portal 页面，**生成代码漂移会在这里被 `tsc` 抓到**。
 
 | 门禁 | 结果 |
 | --- | --- |
@@ -937,8 +937,21 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 **治理门禁审计**（`.github/workflows/pull-request-governance.yml` 两个作业）：
 
 - `review-evidence`：正文三行（`Review-Head` / `Standards-Review` / `Spec-Review`）与正则期望完全相等 → 通过。
-- `branch-name`：要求 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本分支是 `codex/learning-feedback` → **必然红，且不是代码问题**。`hc-<issue>` 需要一个 issue 号，而本仓库 **issues 已关闭**，没有可引用的真实编号；改名分支还要重开 PR（`head.ref` 变了）。所以出路只有人工选一条：改名重开、或放宽该规则。已写进 PR 正文，不让它以一个"红叉"的形式默默挂着。
+- `branch-name`：要求 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本分支是 `codex/learning-feedback` → **必然红，且不是代码问题**。`hc-<issue>` 需要一个 issue 号，而本仓库 **issues 已关闭**，没有可引用的真实编号；改名分支还要重开 PR（`head.ref` 变了）。所以出路只有人工选一条：改名重开、或放宽该规则。这条说明随重钉一起进正文，不让它以一个「红叉」的形式默默挂着。
 
-**PR 模板逐节比对**：模板 14 节全部存在且有内容（背景/目标/范围/明确不做/影响模块/API 数据事件/产品边界/品牌与可访问性/安全与隐私/验证/发布/回滚/截图/Reviewer 重点）。勾选项逐条核对过，只有一处是错的——「影响模块」里同时勾了 `Documentation only`（那是"仅文档"的含义，与真实的代码改动矛盾），已去掉；`Study Web/Admin/API/Worker`、`Platform Core/Worker`、`Design Tokens` 保持不勾（本分支确实没动）。
+**PR 模板逐节比对**：模板 14 节全部存在且有内容（背景/目标/范围/明确不做/影响模块/API 数据事件/产品边界/品牌与可访问性/安全与隐私/验证/发布/回滚/截图/Reviewer 重点）。勾选项逐条核对过，只有一处是错的——「影响模块」里同时勾了 `Documentation only`（那是「仅文档」的含义，与真实的代码改动矛盾），应当去掉；`Study Web/Admin/API/Worker`、`Platform Core/Worker`、`Design Tokens` 保持不勾（本分支确实没动）。**这处正文编辑与下面的治理说明当时只写进了本地正文文件，还没推送**——两个轴各自去拉线上正文核对，都指出「已去掉 / 已写进 PR 正文」与事实不符（见第 76 条）。
 
 顺带把第 74 条留下的一处全称否定改了：原文「另一个轴从未写过 `.cache/`」= 不可验证，改成"本会话自己核过的那一个轴没写过"，并注明不能推广。
+
+### 76 — 三轴各自去拉了线上正文来核对，抓出「日志说已做、正文没动」
+
+第 75 条把两处 PR 正文编辑写成了完成时（去掉 `Documentation only` 的错勾、把治理说明写进正文）。事实是：那两处只改进过我本地的正文草稿文件，**还没有推到 GitHub**。标准轴和文案轴各自用 `gh pr view` 与 `gh api …/pulls/1` 两条路径拉了线上正文，都指出 `- [x] Documentation only` 还在、正文里搜不到 `治理/governance/门禁/改名/hc-` 任何字样——文案轴还核了 `updated_at` 与 `head.sha` 排除了缓存。日志描述的是"我打算做"，正文记录的却是"已经发生"，两者当时不一致。
+
+修法：正文现在真的推上去了（本轮重钉时一起），第 75 条改成「当时只写进本地草稿」并指向本条；同时把第 75 条里混进中文的四对 ASCII 引号换成「」，把第 74 条含糊的「本会话自己核过的那一个轴」改成「标准轴复核时自己声明」。
+
+另外两条实质修正（规格轴 + 标准轴各自独立提出同一条）：
+
+1. **`tsc` 抓不到生成代码漂移**——我在 `testing-acceptance-spec.md` §3 新写的那句是错的，而且与同一段上面两行自己立的判据（「生成器确实重写了文件且 diff 为空」）自相矛盾。只改契约而不重新生成时，陈旧客户端自洽，构建照样全绿；构建能抓到的是**重新生成之后**调用点的不兼容。已删掉 §3 那句。
+2. **那段放错了文档**：§3 是「测试环境」（它存在的意义是给失败分类：哪些红是环境缺失），门禁清单的家在 `docs/DEVELOPMENT.md` §14 CI。已把内容搬到 §14 新增的「本机等价复现（无 Docker）」小节，并按上面第 1 条改正判据，§3 只留一行指回。
+
+教训（第 74 条同类，但这次错在时序）：**日志的动词时态要和产物对齐**——「已推送」与「已写进本地草稿」是两件事，下一次会话读到前者会以为线上正文可信。证据指涉对象（正文、日志、文件）只要不同一，就得分别核。

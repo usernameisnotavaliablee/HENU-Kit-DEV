@@ -365,6 +365,14 @@ Issue 必须包含：
 - PostgreSQL consistency
 - Go adapter contract tests
 
+### 本机等价复现（无 Docker）
+
+上面这些门禁里只有依赖容器/镜像的部分必须有 Docker（Go 集成测试的 testcontainers 分支、`products/quizcraft/go-service` 的 `sqlc/sqlc` 镜像、compose 渲染、Docker build）；其余可在无 Docker 的本机直接跑：
+
+- 构建门禁：`pnpm run build:portal`（Next.js + 付费资料与 mock 两项产物检查）、`pnpm run build:quizcraft`（`tsc` + vite build + 管理端会话与切流产物检查）、`pnpm --filter @henukit/console run lint` 与 `pnpm run build:console`。
+- **生成代码与生成器是否一致，由「重新生成 + `git diff --exit-code`」判定，不由构建判定**：只改契约而没重新生成时，陈旧的客户端自洽，构建照样通过；构建能抓到的是重新生成之后调用点的不兼容。契约改动请连着生成器与构建一起跑。
+- 无 Docker 时的失败分类（哪些红是环境缺失）见 `docs/development/testing-acceptance-spec.md` §3。
+
 ### 路径过滤
 
 只运行受影响部署单元，但共享 token、契约、基础设施和 Migration 变更触发所有消费方相关测试。每天或每晚运行一次全量回归。
