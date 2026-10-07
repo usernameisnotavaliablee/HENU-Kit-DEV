@@ -806,7 +806,7 @@
 自己写的手册照样被自己抓到假期望：
 
 1. **「四个开关默认 0」是错的**：`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL` 出厂就是 `10m`（`.env.henukit.example:133`）。同一节 17 行后我自己又写了「默认 10m 但 worker 关闭时不生效」——照「目的」那句核验的人看到 10m 就会误报 `[FAIL]`。改成「网关、浏览器与 worker 三个开关默认 0；调度间隔默认 `10m`，但 worker 关闭时调度器不构造」。
-2. **写路由与清除路由的期望值漏了一个前置条件**：只有**读**路由的 503 直接来自学习报告开关（它还额外测 `h.quizCraft == nil`）；写与清除都先过 `practiceCommand`，而它在命令客户端未接线时返回 **另一个** 503——`practice_commands_unavailable`（`handler.go`）。于是「清除未认证 = 401」和「若清除变 503 就是豁免被收窄」在生产把 `PORTAL_PRACTICE_COMMANDS_ENABLED` 关掉时会**把良性 503 读成数据权利事故**。现在 §11.2 明写 `PORTAL_PRACTICE_COMMANDS_ENABLED=1` 是写/清除探针的前提，并给出用响应体 code 区分两种 503 的判法（生产实测该键为 `1`，见 `CURRENT_PRODUCTION_STATE.md`）。顺手把矩阵 §8 那行同样的半真话补全（写路由在命令总开关关闭时先返回另一个码）。
+2. **清除路由的期望值漏了一个前置条件**：读与写在暗态下都由学习报告开关自己拦下（`learningReportRead`/`learningReportWrite` 的第一道判断），而清除路由是唯一没有这道门的（它就是要绕开暗态），所以它直接进 `practiceCommand`——后者在命令客户端未接线时返回 **另一个** 503 `practice_commands_unavailable`（`handler.go`）。于是「清除未认证 = 401」和「若清除变 503 就是豁免被收窄」在生产把 `PORTAL_PRACTICE_COMMANDS_ENABLED` 关掉时会**把良性 503 读成数据权利事故**。现在 §11.2 明写 `PORTAL_PRACTICE_COMMANDS_ENABLED=1` 是清除探针的前提，并给出用响应体 code 区分两种 503 的判法（生产实测该键为 `1`，见 `CURRENT_PRODUCTION_STATE.md`）。顺手把矩阵 §8 那行补全（写路由要先被学习报告门拦下，切流后才进命令层）。（本条原先把前置条件也扣在写路由头上，第 67 条按两轴复核更正。）
 3. **「暗态下 queued 恒为 0」对回退后的生产是错的**：行列会保留且无人处理（worker 关闭），`HealthAlerts` 的 queued-behind 告警会在「worker 落后或已关闭」时触发，`-fail-on-alert` 直接退出 1 → 一个**正确回退过**的生产会挂在「11.3 无告警」这条判据上，而 §11.5 还叫它再回退一次。改成以「不增长」为判据，并说明从未切流过才是 0、残留队列与 queued-behind 告警属预期、记录即可。另外给 `go run ./cmd/learninghealth` 补上模块目录（`products/quizcraft/go-service`），否则从仓库根复制不可用。
 
 顺带确认的两件事（都写进文档）：`PORTAL_PRACTICE_COMMANDS_ENABLED` 的判定是 `== "1"`（`internal/config/config.go`），生产实测为 `1`；§11 的探针路径与网关路由表逐条一致（GET 偏好/latest/tasks、POST 生成、PUT 偏好、DELETE 清除）。
@@ -825,3 +825,13 @@
 改成：明写 `NEXT_PUBLIC_*` 是构建期变量、容器 env 里必然看不到，产物取值由 release 构建参数决定（`scripts/ops/henukit-release-images.sh` 的 `release_build_args` 当前**不含**该键，故按 Dockerfile 默认 `0`；暗态测试还断言 release 镜像不得为 1），把可观察证据降级为 `[MANUAL]`（浏览器看 `/practice` 没有 P-06 入口 + 开启必须改构建参数并重建）。同时把 §11.5 表头「暗态 / 开启」改成「回退值 / 开启值」并给 ④ 补上「出厂即 10m」——原表把回退值 0 标成暗态值，与 §11.1 自相矛盾（这条是标准轴 F2，我在 op 65 只修了「目的」那句，没修表）。
 
 现在 §11 里没有任何一条命令是「跑不出东西」的：env 五个键来自 `$ENV_FILE`、三条路由码来自 curl、健康检查标 `[MANUAL]`、浏览器入口标 `[MANUAL]`。
+
+### 67 — 两轴各自独立抓到同一个因果错误：我把清除路由的前提扣到了写路由头上
+
+§11 的探针判法本来修对了一半：`practiceCommand` 在命令客户端未接线时会返回**另一个** 503（`practice_commands_unavailable`），所以「清除未认证 = 401」这句话需要前置条件。但我顺手把这个前提也写给了**写路由**（§11.2、§10 汇总行、矩阵 §8 行、以及第 65 条第 2 项），而它是错的：`learningReportWrite` 的**第一行**就是学习报告开关判断（`if !h.learningReportsEnabled { 503 }`），暗态下写路由根本走不到 `practiceCommand`。标准轴与文案轴本轮各自独立报了同一条，措辞几乎一致——这类「两个轴从不同角度打到同一处」的情况在本分支出现过两次，上一次是 op 59 的 `!== null` 恒真。
+
+正确说法（已落到三份文档 + 第 65 条原文）：**读与写在暗态下都由学习报告开关直接拦下；写只有切流后才继续进 `practiceCommand`；只有清除路由（唯一豁免）在任何状态下都直接进 `practiceCommand`**，所以 `PORTAL_PRACTICE_COMMANDS_ENABLED=1` 是「清除探针（任何状态）+ 写探针（切流后）」拿到 401 而非另一个 503 的前提。暗态下写探针**只可能**拿到学习报告的那个 503。
+
+顺手按规格轴未计入的一条提醒把 11.4 限定为「**从未切流过**的暗态下 queued 必然为 0」，与 11.3 的「不增长」判据对齐。
+
+第 65 条的正文是**就地更正**的（本轮 numstat 1 增 1 删 / 3 增 3 删 / 1 增 1 删，删除数非零即证明改到了原文），并在句末注明更正来自第 67 条——这条本身也是 op 62 那次的教训（说「已就地更正」就必须有删除数自证）。

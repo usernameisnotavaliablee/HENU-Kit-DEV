@@ -495,7 +495,7 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 | §8 | 支付（WeChat 键 / EasyPay / 订单表） | 通过/失败/待人工 | | D3 决策输入 |
 | §9 | 残留（study-api 404 / 10086 / 旧容器） | 通过/失败/待人工 | | |
 | §10 | 证据归档 | 通过 | | `$LOG` 路径 |
-| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401（写与清除需 `PORTAL_PRACTICE_COMMANDS_ENABLED=1`）；浏览器开关是构建期变量，只能看产物/入口；worker=0 时从未切流过 queued 应为 0 |
+| §11 | 学习报告暗态核验（开关值 / 三条路由码 / 积压） | 通过/失败/待人工 | | 暗态：读与写 503、清除（未认证）401（清除探针任何状态、写探针切流后需 `PORTAL_PRACTICE_COMMANDS_ENABLED=1`）；浏览器开关是构建期变量，只能看产物/入口；worker=0 时从未切流过 queued 应为 0 |
 
 **回填动作（核验完成后，在仓库内执行）：**
 1. 更新 `docs/operations/CURRENT_PRODUCTION_STATE.md` §6「待服务器核验清单」：已核验项打勾并写证据日期；把「仓库无法自答、必须服务器回答」的结论写进 §1–§4 相应小节。
@@ -550,7 +550,7 @@ probe_lr "写：生成报告" 503 -X POST "$B/learning-reports" | tee -a "$LOG"
 probe_lr "清除（未认证，不发 Cookie）" 401 -X DELETE "$B/learning-reports" | tee -a "$LOG"
 ```
 
-**前置条件**：只有**读路由**的 503 直接来自学习报告开关；写路由与清除路由都先经过 `practiceCommand`，所以 **`PORTAL_PRACTICE_COMMANDS_ENABLED=1`** 是它们返回「暗态 503 / 未认证 401」而不是 `503 practice_commands_unavailable`（「服务暂时不可用，请稍后再来」）的前提（该键在 §2 的键矩阵里，示例契约默认 `0`，生产实测见 `CURRENT_PRODUCTION_STATE.md`）。探针会打印响应体前 200 字节，用 code 区分两种 503。
+**前置条件**：暗态下**读与写都由学习报告开关直接拦下**（两道判断都在各路由的第一行），写路由只有**切流后**才会继续走到 `practiceCommand`；**清除路由（唯一豁免）没有这道门**，任何状态下都直接进 `practiceCommand`。所以 **`PORTAL_PRACTICE_COMMANDS_ENABLED=1`** 是「清除探针（任何状态）与写探针（切流后）拿到 `401 not authenticated`，而不是 `503 practice_commands_unavailable`（「服务暂时不可用，请稍后再来」）」的前提（该键在 §2 的键矩阵里，示例契约默认 `0`，生产实测见 `CURRENT_PRODUCTION_STATE.md`）。探针会打印响应体前 200 字节，用 code 区分两种 503——**暗态下写探针只可能拿到学习报告的那个 503**。
 
 **判读**：暗态下前两条应为 `503 practice learning reports are not enabled`（读路由还有第二种来源：Core 客户端未接线，见矩阵 §8；不要据此判定服务故障）；第三条未认证应为 `401 not authenticated`。切流后再跑，前两条应变为 `401`（未认证先于业务校验），第三条仍是 `401`。写/清除探针若拿到 `503 practice_commands_unavailable`，先按 §2 查命令总开关，不要当学习报告的问题。
 
@@ -572,7 +572,7 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 - 11.3 `queued`/`running` **不增长**（从未切流过时应为 0；曾切流或回退过时残留队列与 queued-behind 告警属预期，以「不增长」为准）；
 - 任一不符 → `[FAIL]`，按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
 
-**11.4 worker=0 的含义（避免误判「任务积压」）**：`cmd/server/learning_provider.go` 只在 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1` 时才构造 worker 设置（其中包含自动排期间隔），因此 **worker 关闭时调度器根本不存在**，不会有任何自动任务入队——暗态下的 `queued` 必然为 0，出现任务行就说明有人开过 worker。`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0` 是给「worker 开着但不自动扫」用的（回退顺序第 ④ 步）。
+**11.4 worker=0 的含义（避免误判「任务积压」）**：`cmd/server/learning_provider.go` 只在 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1` 时才构造 worker 设置（其中包含自动排期间隔），因此 **worker 关闭时调度器根本不存在**，不会有任何自动任务入队——**从未切流过**的暗态下 `queued` 必然为 0，出现任务行就说明有人开过 worker；切流或回退过之后残留的任务行会一直留着（见 11.3）。`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0` 是给「worker 开着但不自动扫」用的（回退顺序第 ④ 步）。
 
 **11.5 切流/回退顺序速查（语义与理由见矩阵 §7，此处只列变量与生效方式）**：
 
