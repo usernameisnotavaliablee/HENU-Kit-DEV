@@ -1114,7 +1114,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 | library | 自己的 contractgen 零 diff；redocly `library.yaml` valid；gofmt / vet / staticcheck 干净、build 过；`go test -race ./...` 只有 `./tests` 红——`panic: rootless Docker not found`（testcontainers；CI 里这一步靠 PG service），其余包（含根包、`cmd/activate-public-release`）全过 |
 | deploy-webhook | gofmt 零输出 / vet / 六个包 `-race`（另有 `cmd/materials-oss-canary` 无测试文件）/ 三个 `CGO_ENABLED=0` 构建 / govulncheck（exit 0）全过；13 条 `bash -n`/`sh -n` 过；`Reject committed deployment secrets`（仓库内无提交密钥）通过；materials 那批 95 用例 **73 过 / 17 红 / 5 跳**（16 条的诊断里是同一句 `<stage>: fixed Node runtime is unavailable`——按用例分 seal 14 / prepare 1 / activate 1，另 1 条是 `timed out waiting for …/rename-ready`；跳过的是 Docker 门控） |
 
-**逮到并修掉的缺陷**：分支改了 `packages/api-contracts/openapi/account-portfolio.yaml`，却漏了重生成它的消费方 `services/console-gateway/internal/accountportfolio/contract_generated.go`——文件头记录的 SHA 还是旧的 `5555bb8c…`，重生成后是 `89b3e39c…`。`console-gateway.yml` 第 82 行（本 PR 在该文件顶部加了两行之后是第 84 行）的 `git diff --exit-code` 覆盖这个路径，所以这条在 CI 里**必红**。为确认只此一处，把全仓 15 个 `cmd/*contractgen*` 目录全跑了一遍（14 个直接 `go run`，第 15 个 `products/quizcraft/go-service/cmd/contractgen` 由 `products/quizcraft/go-service/scripts/generate-contract.sh` 驱动）：工作树里**只有这一个文件**漂移（`services/account-portfolio/internal/contract/generated.go` 自己在分支里已同步、exit 0；portal-gateway 读同一份 yaml 的对齐测试也过）。修完按原文重放该步骤（五个生成器 + `git diff --exit-code` 六个路径）→ 退出码 0。
+**逮到并修掉的缺陷**：分支改了 `packages/api-contracts/openapi/account-portfolio.yaml`，却漏了重生成它的消费方 `services/console-gateway/internal/accountportfolio/contract_generated.go`——文件头记录的 SHA 还是旧的 `5555bb8c…`，重生成后是 `89b3e39c…`。`console-gateway.yml` 第 82 行（本 PR 在该文件顶部加了三行之后是第 85 行）的 `git diff --exit-code` 覆盖这个路径，所以这条在 CI 里**必红**。为确认只此一处，把全仓 15 个 `cmd/*contractgen*` 目录全跑了一遍（14 个直接 `go run`，第 15 个 `products/quizcraft/go-service/cmd/contractgen` 由 `products/quizcraft/go-service/scripts/generate-contract.sh` 驱动）：工作树里**只有这一个文件**漂移（`services/account-portfolio/internal/contract/generated.go` 自己在分支里已同步、exit 0；portal-gateway 读同一份 yaml 的对齐测试也过）。修完按原文重放该步骤（五个生成器 + `git diff --exit-code` 六个路径）→ 退出码 0。
 
 **新记一个只在本机红的坑（已写进 `docs/DEVELOPMENT.md` §14）**：本机 Node v26 默认开启 experimental webstorage，`pnpm --filter @henukit/console run test` 会挂在 `src/lib/pending-operations.spec.ts` 那条 storage 失败用例（`AssertionError: expected true to be false`，18/19 过）；加 `NODE_OPTIONS=--no-experimental-webstorage` 后 **19/19 全过**。`apps/console` 本分支零改动，CI 用的是 node 22、没有这个开关，所以这不是仓库问题；Console 的 `lint`（vue-tsc）与 `build` 在本机都过。
 
@@ -1158,7 +1158,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 
 - 结构性缺口：本 PR 同时触发 `console-gateway.yml`（`services/console-gateway/**`）与 `portal-gateway.yml`（`products/quizcraft/go-service/**`，为跨服务联合测试刻意加的路径），而这两个文件原先都没有 `workflow_dispatch`，本 fork 的 PR 事件又产生 0 run ⇒ 本 PR 的核心修复（console-gateway 的 account-portfolio 生成物）在真 CI 上**零证据**。给两个文件各加一行 `workflow_dispatch`。
 - 加了之后在 head `a802b5c2` 同时 dispatch 三个作业，三者合起来第一次全部真绿（`QuizCraft Go` 此前已在 `37659720284` 绿过一次，`Console Gateway` 与 `Portal Gateway` 则是有史以来第一次运行）：`QuizCraft Go` ✓、`Console Gateway` ✓ 4m34s（含五个生成器 + `git diff --exit-code`）、`Portal Gateway` ✓ `verify` 1m26s + `joint` 1m13s（真 QuizCraft Core 二进制对 Gateway 的联合测试）。
-- 此后到 `fb29d889` 的改动都在文档与注释层（`AGENTS.md`、`HANDOFF.md`、`docs/DEVELOPMENT.md`、`docs/development/testing-acceptance-spec.md`，以及把 `portal-gateway.yml` 里两行中文注释改成英文）——**代码与 workflow 行为与 `a802b5c2` 相同**；`c4d2b76e` 是用户自己在该分支上改的一行日志标题（「只追加」→「只追加不删减」）。
+- 此后到 `fb29d889` 的改动都在文档与注释层（`AGENTS.md`、`HANDOFF.md`、`docs/DEVELOPMENT.md`、`docs/development/testing-acceptance-spec.md`，以及把 `portal-gateway.yml` 里那行中文注释改成两行英文）——**代码与 workflow 行为与 `a802b5c2` 相同**；`c4d2b76e` 是用户自己在该分支上改的一行日志标题（「只追加」→「只追加不删减」）。
 - 同轮按 Standards / Copy 轴改的口径：第 86/88 条不再钉行号，条数只作历史注记（写这条时 20 条，它随提交变）；第 89 条把「ruby 的 stderr 没进日志」的归因改对——是测试自己 `subprocess.run(..., capture_output=True)` 吞了它，`CalledProcessError.__str__` 本就不含 stderr，所以加 `-vv` 无用，正确做法是先把 stderr 打进日志；AGENTS.md 补两条本机事实（`XDG_CACHE_HOME=/tmp/ghcache gh run view --log-failed` 绕开不可写的 `~/.cache/gh`；node 22 是 12/14 个 workflow 的 pin）。
 
 ### 91 — 三轴收口：14 条落改后再修 7 条（Spec 4 / Standards 3），触发面口径统一
@@ -1178,7 +1178,7 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
   2. `console-gateway.yml` 那句新注释是中文（该文件唯一一条注释），而 `portal-gateway.yml`（13 条）与 `quizcraft-go.yml`（8 条）的注释全是英文 → 改成英文，PR 正文里「英文注释」的说法才成立。
   3. `AGENTS.md` 的 `pnpm --filter @henukit/portal test:e2e:*` 不是真实脚本名（实有 11 个 `test:e2e:<名字>`）→ 改成占位写法并指出脚本清单位置。
 - 本条不固化任何提交数：写这条前是 15 个，加上本条与后续修复提交还会变——第 88 条那个 17+4≠20 就是同因错误，别在同一处犯第三次。
-- **QuizCraft Go 在 `89cf9a5e` 加红（run `37735645455`，第 10 步 `Vet, test, and build`）**：`govulncheck` 报新披露的 `GO-2026-6629`（`golang.org/x/text@v0.39.0` 的 `precis.Profile.String` panic，修在 v0.41.0）。取证：同一份代码在 `a802b5c2` 上是「No vulnerabilities found / 0 vulnerabilities」（run `37661750680`），且 `git diff a802b5c2..89cf9a5e -- products/quizcraft/go-service` 为空 → 红来自漏洞库时间更新，不是本 diff。影响面只有 `products/quizcraft/go-service` 一个模块（`services/platform-core` 与 `services/account-portfolio` 的 x/text 已是 v0.41.0）；合入 `main` 后 push 触发的同一个作业也会红，修法是升 `golang.org/x/text` 到 v0.41.0。
+- **QuizCraft Go 在 `89cf9a5e` 加红（run `37735645455`，第 10 步 `Vet, test, and build`）**：`govulncheck` 报新披露的 `GO-2026-6629`（`golang.org/x/text@v0.39.0` 的 `precis.Profile.String` panic，修在 v0.41.0）。取证：同一份代码在 `a802b5c2` 上是「No vulnerabilities found / 0 vulnerabilities」（run `37661750680`），且 `git diff a802b5c2..89cf9a5e -- products/quizcraft/go-service` 为空 → 红来自漏洞库时间更新，不是本 diff。影响面（就 `govulncheck` 而言）只有 `products/quizcraft/go-service` 这一个：全仓 11 个模块引用 `golang.org/x/text`，其中 6 个仍钉旧版本（`services/library`、`services/notice`、`services/portal-api`、`services/worker`、`services/console-gateway/integration/notice-owner` 是 v0.39.0，`services/api` 是 v0.40.0），但跑 `govulncheck` 的 6 个 workflow 里只有 `account-portfolio`、`platform-core`、`quizcraft-go` 依赖它，前两个已是 v0.41.0 → 会红的只有 quizcraft。那 6 个模块不在 `govulncheck` 门禁内，升它们是另一件事（`docs/operations/PRODUCTION_RELEASE_CHECKLIST.md` 要求「所有 Go 模块通过 govulncheck」，这条与现状的差距是既有问题，不是本 PR 引入）。合入 `main` 后 push 触发的同一个作业也会红，所以本 PR 一并升到 v0.41.0。
 
 ### 93 — 升 `golang.org/x/text` v0.39.0 → v0.41.0（GO-2026-6629），QuizCraft Go 复绿
 
@@ -1193,3 +1193,10 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - `console-gateway.yml` 的英文注释里还夹着中文「CI 现状」，与 portal-gateway 的 "the CI status section" 不一致 → 统一。
 - 第 93 条写「`go.mod` 与 `go.sum` 各两行」，实际 `go.mod` 是 2+/2−、`go.sum` 是 4+/4−。
 - 另三条在 PR 正文里（集成测试勾选与自身文字矛盾；`review-evidence` 被错划进「与本 PR 无关的已知红」；sqlc 本机复现那行给的是**修复前**的差值、在本 head 上重跑不会有输出），在正文下一次落盘时一并改。
+
+### 95 — 冻结 head 上的三轴终审：Standards 8 / Spec 5 / Copy 5，全部落改后无存活项
+
+- 三轴都在冻结的 `79ce84ea` 上复核（中途 head 前进到 `da592eca`，它们都按规则报告并继续只审冻结件）。上一轮报的问题：“验收规格 sqlc 不再必须 Docker”“§14 npm 前提”“SHA 四形状与三个无 SHA 类”“§14 的必须 Docker 行”“删掉的行号引用”——**全部确认闭合**。
+- 本轮新增并被 `da592eca` 修掉的：`test:e2e:*` 实为 11 个（我写过 13，两处）；`portal-gateway.yml` 那句「without this entry the job can never run」假全称（同一个 PR 里漏掉的第三处）；`console-gateway.yml` 英文注释里夹的中文「CI 现状」；第 93 条「go.mod 与 go.sum 各两行」（实际 2+/2− 与 4+/4−）。
+- 本条修掉存活的：第 85 条「加了两行之后是第 84 行」→「加了三行之后是第 85 行」（实测 `git diff --exit-code` 就在 85 行，与正文口径一致）；第 92 条「影响面只有一个模块」是假全称（11 个模块引用 `golang.org/x/text`，6 个仍钉旧版：`library`/`notice`/`portal-api`/`worker`/`console-gateway/integration/notice-owner` v0.39.0、`api` v0.40.0；但 `govulncheck` 门禁覆盖的 6 个 workflow 里只有 3 个依赖它，前两个已是 v0.41.0 → 会红的只有 quizcraft）；第 90 条「两行中文注释改成英文」→ 实际是一行中文改成两行英文；验收规格 §3 的生成器清单补上「示意而非穷尽」。
+- 正文侧（不进仓库）：集成测试勾选与自身文字矛盾、`review-evidence` 被错划成「与本 PR 无关的已知红」、sqlc 本机复现那行给的是修复前差值——都在正文下一次落盘时改掉。`docs/DEVELOPMENT.md` §20 与 `docs/README.md` 的文档清单不收 `AGENTS.md`，是既有问题、本 PR 不引入，记为已知 nit。
