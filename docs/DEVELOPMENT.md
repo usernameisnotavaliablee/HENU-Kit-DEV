@@ -83,6 +83,8 @@ feature/<area>/<issue-id>
 fix/<area>/<issue-id>
 ```
 
+本 fork `hasIssuesEnabled: false`，没有 issue 编号可引用，因此也接受不带编号的 `<type>/<area>`（`feature|fix|codex`）；门禁 `pull-request-governance.yml` 的 `branch-name` 按这条判（PR #4 放宽）。
+
 ## 5. Commit
 
 使用可检索的约定式前缀：

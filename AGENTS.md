@@ -64,8 +64,8 @@
 ## CI 现状（实测，代价以天计）
 
 - `.github/workflows/` 共 14 个 workflow：14 个配 `pull_request:`，13 个配 `push: branches: [main]`，4 个配 `workflow_dispatch`（原 2 个，PR #2 又补了 2 个——清单见下一条）。
-- **本 fork 只有 `workflow_dispatch` 会产生 run**（按事件累计：`push` 0、`pull_request` 0、`schedule` 0（14 个 workflow 无一配 `schedule:`，此行为空数据点）、`workflow_dispatch` 19）。实测：PR #2 的 opened / reopened / synchronize 三次都是 0 run，同一时段 `gh workflow run` 立刻出 run；PR #2 以 rebase 合入后 `main` 在 2026-10-08T07:19:31Z 收到 push、`gh workflow list --all` 显示 14 个 workflow 全 `active`、`actions/permissions` 是 `enabled: true, allowed_actions: all`，之后 `push` run 仍是 0。→ 别等 PR 或 push 的红绿：要真 CI 一律 `gh workflow run <workflow> --ref <branch>`；**没有 `workflow_dispatch` 的 10 个 workflow 在本 fork 没有任何触发入口**——不是「合入 `main` 之后就会被 push 触发」，而是永远不会跑。共 4 个可 dispatch：原有的 `deploy-henukit.yml`、`quizcraft-go.yml`，加上 PR #2 给 `console-gateway.yml`、`portal-gateway.yml` 补的。**要验哪个没有入口的作业，就先给它加一行 `workflow_dispatch`**（截至 PR #3 仍未加那 10 个）。
-- `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^((feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+|(feature|fix|codex)/[a-z0-9][a-z0-9-]*)$`——原规则只认 `feature|fix/<area>/hc-<n>`，而本仓 issues 关闭（`hasIssuesEnabled: false`）无 `hc-<n>` 可引用，等于必失败；PR #4 放宽成「有 issues 时仍要 issue 号，没有时 `<type>/<area>` 即可」（实测它在本 fork 从未运行：`gh api repos/:owner/:repo/actions/workflows/pull-request-governance.yml/runs -q .total_count` 是 0，`gh pr checks 2` / `gh pr checks 3` 都是 `no checks reported`）；`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
+- **PR 事件从 2026-10-08T17:58Z 起会真的产生 run**（`gh api repos/:owner/:repo/actions/runs?event=pull_request -q .total_count` 是 6，全部来自 PR #4 自己的分支；同一时刻 `push` 0、`schedule` 0、`workflow_dispatch` 19，总 run 25）。**PR #1–#3 期间不是这样**：那时 PR #2 的 opened / reopened / synchronize 三次都是 0 run、`gh pr checks 2` / `gh pr checks 3` 都是 `no checks reported`——那些观测只对**那个窗口**成立，别当成永久事实。PR #4 开出后整条发布流水线都跑了：run `37820701120` 里 `release-contract`、`portal-practice-and-binding`、`oauth-continuation`、`release-image-matrix` 都 success，`portal-responsive` 与 19 个 `image-*` 镜像构建作业也在跑（该 run 共 25 个作业）；`review-evidence` fail 只是因为正文还钉着 `pending`。`push` 累计仍是 0，但自 PR #2 合入（07:19:31Z）后再没有 push 到 `main`，所以「push 不触发」只在那之前被观测过，**既没证实也没证伪**。要真 CI：开 PR 后看 `gh pr checks`，或 `gh workflow run <workflow> --ref <branch>`。
+- `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^((feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+|(feature|fix|codex)/[a-z0-9][a-z0-9-]*)$`。原规则只认 `feature|fix/<area>/hc-<n>`：本仓 issues 关闭（`hasIssuesEnabled: false`），没有真实 issue 号可引用，本仓在用的 `codex/*` 与不带编号的 `feature/<area>` 都会被它拒——但规则**只看名字、不查 issue 是否存在**，所以「必失败」从来不准（`feature/portal/hc-166` 一直能过）。PR #4 放宽成两种形状都收：**issue 号的要求对上游也一并放掉了**（文件里没有任何 `has_issues` 引用，不是条件分支），`docs/DEVELOPMENT.md` 与 `docs/development/engineering-release-spec.md` 的「规范分支」同步补了这条。真实 CI 证据：run `37820839366` 的 `branch-name` 在 PR #4 的 head 上 pass。`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
 
 ## 经验教训
 
@@ -73,8 +73,8 @@
 
 - 计数、全称断言前先回查原物并逐个打开候选——先写结论后看证据是本分支返工主因。
 - 别从被截断的输出里取数：`| tail -5` 曾把 deploy-webhook 的 6 个 `ok` 包写成 5 个。
-- 别在管道里取退出码：`staticcheck ./... | tail -4` 的 `$?` 是 `tail` 的；门禁直接跑、直接看 `$?`。
-- 工具的参数陷阱也会伪造证据：`git rev-parse --short A B` 给两个 rev 直接 exit 128（`Needed a single revision`），要分开调；引用一条命令就得把它真跑一遍。
+- 退出码才是判据，而且要看对：`staticcheck ./... | tail -4` 的 `$?` 是 `tail` 的；`git rev-parse --short A B` 给两个 rev 会 exit 128（`fatal: Needed a single revision`）而 stdout 为空，忽略 `$?` 就当成没事。门禁直接跑、直接看 `$?`；**引用一条命令之前先把它真跑一遍**。
+- 观测要带时间戳与窗口，别写成永久事实：PR #3 时「`main` 收到 push 却 0 run」+「PR 事件 0 run」被写成「本 fork 只有 `workflow_dispatch` 会产生 run」，三小时后 PR #4 的 PR 事件就开始出 run（17:58Z），那句话立刻变成误导。写「截至 `<时间>`、按 `<命令>` 实测 …」，别写「永远 / 只有」。
 - 先枚举清单再报数量：`*/cmd/*contractgen*` 命中 15 个目录，其中 1 个由 `products/quizcraft/go-service/scripts/generate-contract.sh` 驱动（直接 `go run` 的是 14 个）。
 - 按用例分块统计，别数字符串出现次数：一次失败会重复打印同句 → 17 条红里 16 条同因，按块是 seal 14 / prepare 1 / activate 1，按字符串是 19/1/1。
 - 条件句别写成 CI 事实：CI 有 Docker，三批都跑 → 写「本机因 X 在第一处中止；CI 里会…」。
@@ -93,9 +93,9 @@
 
 ### 流程
 
-- 先算触发面再决定验什么：把每个 workflow 的 `paths:`（`pull_request` 与 `push` 两处）对本次改动做 glob，列出**配置层**会匹配哪些作业（本 fork 只有 `workflow_dispatch` 会真跑，见上「CI 现状」）。从日志条目出发会漏整条作业——`services/console-gateway` 的 account-portfolio 生成物陈旧就是这样才逮到的。
+- 先算触发面再决定验什么：把每个 workflow 的 `paths:`（`pull_request` 与 `push` 两处）对本次改动做 glob，列出**配置层**会匹配哪些作业，再按「CI 现状」判断哪些真的会跑。从日志条目出发会漏整条作业——`services/console-gateway` 的 account-portfolio 生成物陈旧就是这样才逮到的。
 - 改了契约/生成物就重跑所有消费方生成器并 `git diff --exit-code`；漏一个 `cmd/*contractgen*`，CI 的 `git diff --exit-code` 就红（只改文件头 SHA 也算）。
 - 一个回合只做一个大操作，push 后再写日志；日志条目要能被仓库证据复核（数字、条目号、文件路径）。
-- **校验与动作必须放在同一条 `&&` 链里**：`python3 - <<'PY' … PY` 换行另起的命令不吃前一条的 `&&`，断言 exit 1 之后 `gh pr merge` 照样执行（PR #3 就是在正文还写着 `Standards-Review: pending` 时被合并的）。
+- 校验与动作之间要有失败短路：`python3 - <<'PY' … PY` 之后**换行另起**的命令与前一条不构成 `&&` 链，断言 exit 1 也拦不住后面的 `gh pr merge`（PR #3 就是在正文还写着 `Standards-Review: pending` 时被合并的）→ 放进同一条 `&&` 链，或让脚本 `set -e` / 显式检查 `$?`。
 - 三轴评审的返工几乎都出在计数与口径，不出在代码：写完自查「计数 / 全称 / 条件句 / 引用出处」四项。
 - 分清「文档还能再打磨」与「目标是否达成」：PR #2 的触发面是 5 个 workflow（其中两个没有 `paths:` 过滤），能跑通的三个作业在 `a802b5c2` 上真 CI 全绿（QuizCraft Go `37661750680`、Console Gateway `37661761404`、Portal Gateway `37661770849`，均 `gh workflow run <wf>.yml --ref <branch>`），剩下的学习报告切流窗口要人工决定（`branch-name` 已在 PR #4 放宽成可满足，见「CI 现状」） → 继续润色文档不是进展。

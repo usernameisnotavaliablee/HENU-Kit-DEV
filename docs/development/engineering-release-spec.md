@@ -8,7 +8,7 @@
 ## 1. 分支与 PR
 
 - `main` 为受保护稳定分支，禁止直接 Push。
-- 小团队使用短生命周期分支：`feature/<area>/<issue-id>`、`fix/<area>/<issue-id>`。
+- 小团队使用短生命周期分支：`feature/<area>/<issue-id>`、`fix/<area>/<issue-id>`；本 fork issues 关闭、没有编号可引用时，也可用 `<type>/<area>`（`feature|fix|codex`）。
 - 每个 Issue 0.5–2 个工作日；超过 2 日必须拆分。
 - 一个 PR 只做一类变化：业务行为、Migration、目录移动、部署变更和仓库改名必须分开。
 - Draft PR 可跳过生产批准，不能跳过 Repo Governance 和受影响模块 CI。

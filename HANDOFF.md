@@ -1219,6 +1219,14 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 ### 98 — PR #3 合入 main；治理放宽；记一条 bash 顺序坑（钉住晚于合并）
 
 - 合并：`gh pr merge 3 --rebase` → `MERGED`（2026-10-08T07:37:49Z），`main` 顶端即 rebase 后的两笔（`6b46a599` + `3fdf5dd3`，4 文件 +18−9）；正文钉 `Review-Head: 55f2cda1…` + `Standards-Review: 0 findings` + `Spec-Review: 0 findings`。
-- **顺序滑落（本条要记的坑）**：那次钉住**晚于**合并。不是评审漏了，是我把校验与动作写成了两条 shell 命令——`python3 - <<'PY' … PY` 断言失败（exit 1）后，**换行另起**的 `gh pr edit … && gh pr merge …` 不共享前一条的 `&&` 链，照样执行，于是 PR 在正文还写着 `Standards-Review: pending` 时被合并。补救是合并后立刻把正文补钉成 0 findings；根治是**校验与动作放进同一条 `&&` 链**（或 `set -e`）。
-- 治理放宽（本次改动）：`pull-request-governance.yml` 的 `branch-name` 原正则 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$` 在本仓无解（issues 关闭，没有 `hc-<n>` 可引用）→ 放宽为 `^((feature|fix)/<area>/hc-<n>|(feature|fix|codex)/<area>)$`：有 issues 时仍要 issue 号，没有时 `<type>/<area>` 即可，并允许本仓在用的 `codex/` 前缀。
+- **顺序滑落（本条要记的坑）**：那次钉住**晚于**合并。不是评审漏了，是我把校验与动作写成了两条 shell 命令——`python3 - <<'PY' … PY` 断言失败（exit 1）后，**换行另起**的 `gh pr edit … && gh pr merge …` 与前一条没有 `&&` 相连，前一条 exit 1 拦不住它，照样执行，于是 PR 在正文还写着 `Standards-Review: pending` 时被合并。补救是合并后立刻把正文补钉成 0 findings；根治是**校验与动作放进同一条 `&&` 链**（或让脚本 `set -e` / 显式检查 `$?`）。
+- 治理放宽（同一 PR 的另一个提交）：`pull-request-governance.yml` 的 `branch-name` 原正则 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$` 要求 issue 号，而本仓 issues 关闭、没有真实编号可引用，本仓在用的 `codex/*` 与 `feature/<area>` 都会被拒。（规则只匹配名字、不查 issue 是否存在，「在本仓无解」是错的——`feature/portal/hc-166` 一直能过；本仓的问题是没有可用输入。）放宽为 `^((feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+|(feature|fix|codex)/[a-z0-9][a-z0-9-]*)$`，两种形状都收，**issue 号的要求对上游也一并放掉了**（代码里没有 `has_issues` 分支）；`docs/DEVELOPMENT.md`、`docs/development/engineering-release-spec.md` 的「规范分支」同步补上。
 - 本地收拾：本地 `main` 快进到 `3fdf5dd3`（原先落后 `origin/main` 111 笔）；删掉两个已合并的本地分支——`codex/learning-feedback`（`719cda3a`，20 笔，rebase 后内容已在 `main`）与 `codex/agents-ci-trigger-fix`（`55f2cda1`，2 笔）；两个同名远端分支保留。
+
+### 99 — PR #4 证伪了「本 fork 的 PR 事件不产生 run」：Actions 从 17:58Z 起把整条发布流水线都跑了
+
+- 事实：`gh api repos/:owner/:repo/actions/runs?event=pull_request -q .total_count` = **6**，全部来自 PR #4 自己的分支 `codex/agents-governance`（`37820636279` 17:58:01Z @ `b333d3e1`；`37820701095` / `37820701641` / `37820839366` 17:58:33Z–17:59:40Z @ `da0fa544`；其中 2 个是 `Build HENU Kit release artifacts`）。PR #4 创建于 17:57:57Z，第一个 run 在 4 秒后出现。按事件累计：`push` 0 / `pull_request` 6 / `schedule` 0 / `workflow_dispatch` 19，总 run 25。
+- 覆盖面比预期大：run `37820701120` 有 25 个作业——`release-contract`、`portal-practice-and-binding`、`oauth-continuation`、`release-image-matrix` 已 success，`portal-responsive` 与 **19** 个 `image-*` 镜像构建作业也在跑，不需要手动 dispatch。`pull-request-governance.yml` 的 `branch-name` 在 `da0fa544` 上 **pass**（放宽后的正则真能过），`review-evidence` fail 只因正文还钉着 `pending`。
+- 所以第 97 条与 AGENTS.md 原来那句「本 fork 只有手动 `workflow_dispatch` 会产生 run / 那 10 个没有 dispatch 的 workflow 永远不跑」**只对 PR #1–#3 那个窗口成立**。`push` 累计仍是 0，但 07:19:31Z 之后没有新的 push 到 `main`，这条既没证实也没证伪。已改 AGENTS.md「CI 现状」与「经验教训 → 取证」（新增「观测要带时间戳与窗口，别写成永久事实」）。
+- 同一次改动修掉两处我写错的：①「有 issues 时仍要 issue 号，没有时 `<type>/<area>` 即可」——代码里没有任何 `has_issues` 分支，放宽是无条件的，**issue 号要求对上游也一并放掉了**（`docs/DEVELOPMENT.md`、`docs/development/engineering-release-spec.md` 的「规范分支」同步补上）；②「原正则在本仓无解 / 等于必失败」不成立——规则只匹配名字、不查 issue 是否存在，`feature/portal/hc-166` 一直能过，本仓的问题是没有真实编号可引用。错误信息里的 `<type>/<area>[/hc-<issue>]` 也拆成两种形状分列，因为 `codex/x/hc-1` 一直是被拒的（`main` 也是）。
+- 第 97 条与第 92/93 条里被推翻的记述（PR 与 push 都不触发）**照原文保留**，由本条更正。
