@@ -379,6 +379,7 @@ Issue 必须包含：
   **别把 `HOME` 重定向给它们**：`HOME` 指向空目录时 Next dev 起不来，日志第一行是 `Could not find the Next.js package (next/package.json)`，接着 `PageNotFoundError: route not found /page` 加
   `.next/dev/server/pages/_app/build-manifest.json` 的 `ENOENT`，最后是 Playwright 的 `Timed out waiting 120000ms from config.webServer`；
   同一命令同一 head 实测：重定向 `HOME` 时根路径 HTTP 500，真实 `HOME` 时 200，而只重定向 `npm_config_cache` 无害。
+  同一类的第二个坑：npm 要同时给 `npm_config_cache` 与 `npm_config_logs_dir`（只给前者会以 `npm error Log files were not written due to an error writing to the directory` 中止）。
   Go 侧恰好相反——真实 `HOME` 下 `GOCACHE` 不可写，所以要显式给：浏览器组用真实 `HOME` 加
   `GOCACHE`/`GOMODCACHE`/`GOPATH` 指向仓库 `.cache`（`test:e2e:oauth-continuation` 会 `go run` 起网关 fixture，缺了它就是
   `failed to initialize build cache at …/Library/Caches/go-build`）。两套重定向互相冲突，在这两类命令之间不存在一套环境变量通吃。

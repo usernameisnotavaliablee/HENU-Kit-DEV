@@ -1,7 +1,8 @@
 name: Portal Gateway
 
 on:
-  # 本 fork 的 PR 事件不产生 run，没有这个入口该作业就永远跑不起来（见根 AGENTS.md「CI 现状」）。
+  # PR events on this fork produce no runs, so without this entry the job can never run
+  # (see the CI status section of the root AGENTS.md).
   workflow_dispatch:
   pull_request:
     paths:
