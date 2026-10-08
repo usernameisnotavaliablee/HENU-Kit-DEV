@@ -59,7 +59,7 @@
 
 - 版本 16.3.2，与训练数据不同：写任何 Next 代码前先读 `apps/portal/node_modules/next/dist/docs/`（monorepo 根看不到 `next` 包）；注意 deprecation。
 - 该 Next 块由 `next dev` 重写，生成器 `apps/portal/node_modules/next/dist/server/lib/generate-agent-files.js`，同时写 `AGENTS.md` 与 `CLAUDE.md`。两文件已删并进 `.gitignore` → 重新出现属正常，别提交。
-- 浏览器门禁 = `pnpm --filter @henukit/portal test:e2e:<名字>`（Playwright，不需 Docker；现有 13 个脚本，见 `apps/portal/package.json`）；环境变量陷阱见下方「本机环境」。
+- 浏览器门禁 = `pnpm --filter @henukit/portal test:e2e:<名字>`（Playwright，不需 Docker；现有 11 个 `test:e2e:*` 脚本，清单见 `apps/portal/package.json`）；环境变量陷阱见下方「本机环境」。
 
 ## CI 现状（实测，代价以天计）
 

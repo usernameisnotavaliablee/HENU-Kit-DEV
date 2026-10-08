@@ -1,8 +1,8 @@
 name: Portal Gateway
 
 on:
-  # PR events on this fork produce no runs, so without this entry the job can never run
-  # (see the CI status section of the root AGENTS.md).
+  # This fork produces no runs for PR events; before this branch reaches main there is no other
+  # trigger for this job (see the CI status section of the root AGENTS.md).
   workflow_dispatch:
   pull_request:
     paths:
