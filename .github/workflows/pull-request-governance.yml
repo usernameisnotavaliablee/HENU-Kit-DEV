@@ -16,8 +16,10 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
-          [[ "$HEAD_REF" =~ ^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$ ]] || {
-            echo "Branch '$HEAD_REF' must match feature/<area>/hc-<issue> or fix/<area>/hc-<issue>." >&2
+          # This repository has issues disabled, so there is no issue number to cite:
+          # accept <type>/<area> there, and still require the issue suffix when issues exist.
+          [[ "$HEAD_REF" =~ ^((feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+|(feature|fix|codex)/[a-z0-9][a-z0-9-]*)$ ]] || {
+            echo "Branch '$HEAD_REF' must match <type>/<area>[/hc-<issue>] with type in feature|fix|codex." >&2
             exit 1
           }
 

@@ -1215,3 +1215,10 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 因此原 AGENTS.md 那句「13 个配了 `push: branches: [main]`，只能是合入之后被 push 触发」是错的（已在本条修正）：「合入 `main` 之后 CI 会自证」这个假设在本 fork 不成立，那 10 个没有 `workflow_dispatch` 的 workflow 在这里永远不跑。
 - 顺带更正：PR #2 正文「发布」一节写的「合入后 `main` 的 push 会触发 4 个 workflow」同样是错的；正文随合并定格，留本条更正。
 - **本条更正波及的其它落点**（同一个假前提「合入 `main` 后 push 会触发」的拷贝）：`.github/workflows/console-gateway.yml` 与 `portal-gateway.yml` 顶部注释原写「before this branch reaches main there is no other trigger for this job」，已换成「本 fork 只有 `workflow_dispatch` 会跑（push 与 PR 都不触发）」并指回 `AGENTS.md` 的「CI 现状」；`AGENTS.md` 的「经验教训 → 流程」**首条**补上「配置层」限定词（配置会匹配 ≠ 真会跑）、**末条**的「本 PR」改为「PR #2」、「必红」改为条件句；第 92 条两处（「13 个 workflow 配了 `push: branches: [main]`，合入后就会被 push 触发」、「合入 `main` 后 push 触发的同一个作业也会红」）与第 93 条一处（「合入后 `main` 的 push 触发 `quizcraft-go.yml` 必红」）**属历史记述，照原文保留，只在本条更正**。
+
+### 98 — PR #3 合入 main；治理放宽；记一条 bash 顺序坑（钉住晚于合并）
+
+- 合并：`gh pr merge 3 --rebase` → `MERGED`（2026-10-08T07:37:49Z），`main` 顶端即 rebase 后的两笔（`6b46a599` + `3fdf5dd3`，4 文件 +18−9）；正文钉 `Review-Head: 55f2cda1…` + `Standards-Review: 0 findings` + `Spec-Review: 0 findings`。
+- **顺序滑落（本条要记的坑）**：那次钉住**晚于**合并。不是评审漏了，是我把校验与动作写成了两条 shell 命令——`python3 - <<'PY' … PY` 断言失败（exit 1）后，**换行另起**的 `gh pr edit … && gh pr merge …` 不共享前一条的 `&&` 链，照样执行，于是 PR 在正文还写着 `Standards-Review: pending` 时被合并。补救是合并后立刻把正文补钉成 0 findings；根治是**校验与动作放进同一条 `&&` 链**（或 `set -e`）。
+- 治理放宽（本次改动）：`pull-request-governance.yml` 的 `branch-name` 原正则 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$` 在本仓无解（issues 关闭，没有 `hc-<n>` 可引用）→ 放宽为 `^((feature|fix)/<area>/hc-<n>|(feature|fix|codex)/<area>)$`：有 issues 时仍要 issue 号，没有时 `<type>/<area>` 即可，并允许本仓在用的 `codex/` 前缀。
+- 本地收拾：本地 `main` 快进到 `3fdf5dd3`（原先落后 `origin/main` 111 笔）；删掉两个已合并的本地分支——`codex/learning-feedback`（`719cda3a`，20 笔，rebase 后内容已在 `main`）与 `codex/agents-ci-trigger-fix`（`55f2cda1`，2 笔）；两个同名远端分支保留。
