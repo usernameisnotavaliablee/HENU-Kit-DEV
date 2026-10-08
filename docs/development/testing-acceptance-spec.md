@@ -38,7 +38,8 @@
     `go run ./cmd/contractgen && go run ./cmd/quizcraftcontractgen`（`services/portal-gateway`）或
     `bash products/quizcraft/go-service/scripts/generate-contract.sh` 之后 `git diff --exit-code`。
     判据是「生成器确实重写了文件且 diff 为空」，而不是「命令退出 0」——生成器静默失败时 diff 同样为空。
-    只有 `products/quizcraft/go-service/internal/store` 的 `sqlc generate` 必须 Docker（CI 用 `sqlc/sqlc:1.31.0`）；
+    只有 `products/quizcraft/go-service/internal/store` 的 `sqlc generate` 在 CI 里走 `docker run sqlc/sqlc:1.31.0`；本机无 Docker 时用官方 release 二进制
+    （`sqlc_1.31.0_<os>_<arch>`，纯 Go 静态）跑同一份 `sqlc.yaml`，产物与 CI 逐字一致——不要因为缺 Docker 就跳过这半；
     `services/platform-core/internal/store` 在 CI 里是 `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`，无需 Docker。
   - 两个集成测试包在无 Docker 时会 **panic**（`rootless Docker not found`），指向本机 PostgreSQL 即可正常跑：
     `ACCOUNT_PORTFOLIO_TEST_DATABASE_URL=postgres://…`（`services/account-portfolio`，TestMain 自己应用迁移）；
