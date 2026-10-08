@@ -461,7 +461,7 @@ function ReportsSurface() {
               <p className="text-sm leading-7">
                 {taskStopped
                   ? "报告还在生成，过一会儿刷新本页就能看到。"
-                  : "报告正在生成，稍候会自动刷新。"}
+                  : "报告正在生成，稍后会自动刷新。"}
               </p>
             </section>
           )}
