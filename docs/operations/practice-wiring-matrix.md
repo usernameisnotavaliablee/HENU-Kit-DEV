@@ -122,7 +122,7 @@
   所以这一项在当前组合栈里不起作用。② 再开 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1`：顺序反了或凭据漏配，
   `cmd/server/main.go` 直接 `fail(...)` 退出——**QuizCraft Core 起不来，整个刷题链路一起不可用**，不是「只有学习报告不可用」。
   ③ 网关侧 `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 置 1 还有运行时前置：必须同时 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=1`，
-  否则网关启动失败（`internal/config/config.go` 已强制，测试锚定）。④ 浏览器入口是**构建期**开关，本次切流已把该键加进 `scripts/ops/henukit-release-images.sh` 的 `release_build_args`（只烘焙这一个浏览器键；
+  否则网关启动失败（`internal/config/config.go` 已强制，测试锚定）。④ 浏览器入口是**构建期**开关，本次切流已把该键加进 `scripts/ops/henukit-release-images.sh` 的 `release_build_args`（学习报告这三个开关里只烘焙浏览器键这一个；
   网关与 worker 门禁仍由部署时显式置 1），**发布产物**的入口因此由那次烘焙决定，本地 compose 构建只是本地路径；
   同一次改动让 `scripts/ops/tests/learning-feedback-dark.test.mjs` 的断言按设计先变红（它报的会是网关开关的名字——`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 是浏览器键的子串），
   已同步改成「默认全暗 + 唯一开启点是发布清单、且只烘浏览器键」。
