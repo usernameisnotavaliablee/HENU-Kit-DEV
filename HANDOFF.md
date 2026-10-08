@@ -1200,3 +1200,9 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 本轮新增并被 `da592eca` 修掉的：`test:e2e:*` 实为 11 个（我写过 13，两处）；`portal-gateway.yml` 那句「without this entry the job can never run」假全称（同一个 PR 里漏掉的第三处）；`console-gateway.yml` 英文注释里夹的中文「CI 现状」；第 93 条「go.mod 与 go.sum 各两行」（实际 2+/2− 与 4+/4−）。
 - 本条修掉存活的：第 85 条「加了两行之后是第 84 行」→「加了三行之后是第 85 行」（实测 `git diff --exit-code` 就在 85 行，与正文口径一致）；第 92 条「影响面只有一个模块」是假全称（11 个模块引用 `golang.org/x/text`，6 个仍钉旧版：`library`/`notice`/`portal-api`/`worker`/`console-gateway/integration/notice-owner` v0.39.0、`api` v0.40.0；但 `govulncheck` 门禁覆盖的 6 个 workflow 里只有 3 个依赖它，前两个已是 v0.41.0 → 会红的只有 quizcraft）；第 90 条「两行中文注释改成英文」→ 实际是一行中文改成两行英文；验收规格 §3 的生成器清单补上「示意而非穷尽」。
 - 正文侧（不进仓库）：集成测试勾选与自身文字矛盾、`review-evidence` 被错划成「与本 PR 无关的已知红」、sqlc 本机复现那行给的是修复前差值——都在正文下一次落盘时改掉。`docs/DEVELOPMENT.md` §20 与 `docs/README.md` 的文档清单不收 `AGENTS.md`，是既有问题、本 PR 不引入，记为已知 nit。
+
+### 96 — 窄复核三轴：Copy 0、Standards 1、Spec 1（两个轴独立逮到同一条假指针）
+
+- 第 95 条把「验收规格 §3 的生成器清单补上『示意而非穷尽』」记成已闭合，但同一句里那半段「完整清单见 `docs/DEVELOPMENT.md` §14」是**空指针**：§14（`## 14. CI`）通篇没有生成器清单，只有第 370 行的 Docker 清单免责声明与第 373 行的判据；全仓任何文档都没枚举过那 15 个生成器目录。**写了「见某处」就得打开某处确认那句话在那儿。**
+- 修法（本条提交）：指针换成可自验的枚举命令 `find services products -type d -name '*contractgen*'`（实跑正好 15 个目录，与 `AGENTS.md` 取证条的数一致）——命令比一节文档更难腐烂，读者随时能自己重跑。
+- 其余窄复核结论（三轴在 `71e68618` 上重算）：正文每个数字、每个 run id 与「作业级 / run 级」标注都对（Copy 轴 0 findings）；第 92 条的影响面口径、两个 workflow 注释，以及四类口径（sqlc 的 Docker / npm 与 `HOME` / 11 个 `test:e2e:*` 脚本 / 触发面 5 与 4）均被两轴判定与仓库一致；`AGENTS.md` 99 行 20 条（8+7+5）复核无误。

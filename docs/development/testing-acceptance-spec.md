@@ -34,7 +34,7 @@
 - Mock：Platform OpenAPI Mock、Quiz Legacy Fake、DirectMail Fake、学校页面 Fixtures、Deploy Dry-run。
 - 测试数据必须可创建、隔离和清理；不得使用真实学生敏感数据作为常规 Fixture。
 - **无 Docker 的本机等价复现**（容器不可用时，下面这些失败是环境缺失，不是缺陷信号）：
-  - 契约漂移无需 Docker（下面列的生成器是示意而非穷尽，完整清单见 `docs/DEVELOPMENT.md` §14）：`go run ./cmd/contractgen`（`services/account-portfolio`）或
+  - 契约漂移无需 Docker（下面列的生成器是示意而非穷尽，完整清单可用 `find services products -type d -name '*contractgen*'` 枚举）：`go run ./cmd/contractgen`（`services/account-portfolio`）或
     `go run ./cmd/contractgen && go run ./cmd/quizcraftcontractgen`（`services/portal-gateway`）或
     `bash products/quizcraft/go-service/scripts/generate-contract.sh` 之后 `git diff --exit-code`。
     判据是「生成器确实重写了文件且 diff 为空」，而不是「命令退出 0」——生成器静默失败时 diff 同样为空。
