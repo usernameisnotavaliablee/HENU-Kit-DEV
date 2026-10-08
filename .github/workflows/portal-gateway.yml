@@ -1,8 +1,10 @@
 name: Portal Gateway
 
 on:
-  # pull_request events do produce runs here (observed on PR #4/#5; see the CI status section of
-  # the root AGENTS.md). `gh workflow run` is for verifying this job on a branch without a PR.
+  # pull_request events do produce runs here (observed on PR #4 @ cfef5a27, triggered by the
+  # self-referential `.github/workflows/portal-gateway.yml` entry in this workflow's `paths:`;
+  # see the CI status section of the root AGENTS.md). `gh workflow run` is for verifying this job
+  # on a branch without a PR.
   workflow_dispatch:
   pull_request:
     paths:
