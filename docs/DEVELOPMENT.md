@@ -367,7 +367,7 @@ Issue 必须包含：
 
 ### 本机等价复现（无 Docker）
 
-需要 Docker 的是依赖容器/镜像的门禁，例如 Go 集成测试的 testcontainers 分支、`products/quizcraft/go-service` 的 `sqlc/sqlc` 镜像、trivy 的镜像与密钥扫描（`aquasec/trivy`）、compose 渲染与 Docker build——这份列举是示意而非穷尽，判断标准是「该门禁是否要起容器/镜像」。其余可在无 Docker 的本机直接跑：
+需要 Docker 的是依赖容器/镜像的门禁，例如 Go 集成测试的 testcontainers 分支、`products/quizcraft/go-service` 的 `sqlc/sqlc` 镜像（CI 里是 `docker run sqlc/sqlc:1.31.0`，但本机无 Docker 时可换官方 release 二进制 `sqlc_1.31.0_<os>_<arch>` 跑同一份 `sqlc.yaml`，产物与 CI 逐字一致——别因为缺 Docker 跳过这半）、trivy 的镜像与密钥扫描（`aquasec/trivy`）、compose 渲染与 Docker build——这份列举是示意而非穷尽，判断标准是「该门禁是否要起容器/镜像」。其余可在无 Docker 的本机直接跑：
 
 - 构建门禁：`pnpm run build:portal`（Next.js + 付费资料与 mock 两项产物检查）、`pnpm run build:quizcraft`（`tsc` + vite build + 管理端会话与切流产物检查）、`pnpm --filter @henukit/console run lint` 与 `pnpm run build:console`。
 - **生成代码与生成器是否一致，由「重新生成 + `git diff --exit-code`」判定，不由构建判定**：只改契约而没重新生成时，陈旧的客户端自洽，构建照样通过；构建能抓到的是重新生成之后调用点的不兼容。契约改动请连着生成器与构建一起跑。
@@ -379,14 +379,14 @@ Issue 必须包含：
   **别把 `HOME` 重定向给它们**：`HOME` 指向空目录时 Next dev 起不来，日志第一行是 `Could not find the Next.js package (next/package.json)`，接着 `PageNotFoundError: route not found /page` 加
   `.next/dev/server/pages/_app/build-manifest.json` 的 `ENOENT`，最后是 Playwright 的 `Timed out waiting 120000ms from config.webServer`；
   同一命令同一 head 实测：重定向 `HOME` 时根路径 HTTP 500，真实 `HOME` 时 200，而只重定向 `npm_config_cache` 无害。
-  同一类的第二个坑：npm 要同时给 `npm_config_cache` 与 `npm_config_logs_dir`（只给前者会以 `npm error Log files were not written due to an error writing to the directory` 中止）。
+  同一类的第二个坑：在把 `HOME` 指向 fake home 的那套配方里，npm 还要同时给 `npm_config_logs_dir`（只给 `npm_config_cache` 时本机踩到过 `npm error Log files were not written due to an error writing to the directory` 中止）；不动 `HOME`、只重定向 `npm_config_cache` 时不会有这个问题（上一行实测）。
   Go 侧恰好相反——真实 `HOME` 下 `GOCACHE` 不可写，所以要显式给：浏览器组用真实 `HOME` 加
   `GOCACHE`/`GOMODCACHE`/`GOPATH` 指向仓库 `.cache`（`test:e2e:oauth-continuation` 会 `go run` 起网关 fixture，缺了它就是
   `failed to initialize build cache at …/Library/Caches/go-build`）。两套重定向互相冲突，在这两类命令之间不存在一套环境变量通吃。
   Node 版本也会有同款「只在本机红」的坑：本机 Node v26 默认开着 experimental webstorage（直接 `node -e 'typeof localStorage'` 会打印
   `ExperimentalWarning: localStorage is not available because --localstorage-file was not provided`；`pnpm … run test` 的日志里没有这句，只有那条失败），`pnpm --filter @henukit/console run test`
   会挂在 `src/lib/pending-operations.spec.ts` 的那条 storage 失败用例（`AssertionError: expected true to be false`，18/19）；
-  加 `NODE_OPTIONS=--no-experimental-webstorage` 后 **19/19 全过**；CI 固定 node 22（`console-gateway.yml:66`），该版本默认不启用它，所以 CI 不需要这个开关。
+  加 `NODE_OPTIONS=--no-experimental-webstorage` 后 **19/19 全过**；CI 固定 node 22（`console-gateway.yml` 的 `node-version: 22`），该版本默认不启用它，所以 CI 不需要这个开关。
 
 ### 路径过滤
 
