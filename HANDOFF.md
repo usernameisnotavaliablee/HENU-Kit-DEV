@@ -1179,3 +1179,9 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
   3. `AGENTS.md` 的 `pnpm --filter @henukit/portal test:e2e:*` 不是真实脚本名（实有 13 个 `test:e2e:<名字>`）→ 改成占位写法并指出脚本清单位置。
 - 本条不固化任何提交数：写这条前是 15 个，加上本条与后续修复提交还会变——第 88 条那个 17+4≠20 就是同因错误，别在同一处犯第三次。
 - **QuizCraft Go 在 `89cf9a5e` 加红（run `37735645455`，第 10 步 `Vet, test, and build`）**：`govulncheck` 报新披露的 `GO-2026-6629`（`golang.org/x/text@v0.39.0` 的 `precis.Profile.String` panic，修在 v0.41.0）。取证：同一份代码在 `a802b5c2` 上是「No vulnerabilities found / 0 vulnerabilities」（run `37661750680`），且 `git diff a802b5c2..89cf9a5e -- products/quizcraft/go-service` 为空 → 红来自漏洞库时间更新，不是本 diff。影响面只有 `products/quizcraft/go-service` 一个模块（`services/platform-core` 与 `services/account-portfolio` 的 x/text 已是 v0.41.0）；合入 `main` 后 push 触发的同一个作业也会红，修法是升 `golang.org/x/text` 到 v0.41.0。
+
+### 93 — 升 `golang.org/x/text` v0.39.0 → v0.41.0（GO-2026-6629），QuizCraft Go 复绿
+
+- 用户决定把这条修进本 PR（不另开 #3）：不修的话合入后 `main` 的 push 触发 `quizcraft-go.yml` 必红，本 PR「让 `main` 不红」的目的当场作废。
+- 改动：`products/quizcraft/go-service/go.mod` 与 `go.sum` 各两行——`golang.org/x/text` v0.39.0 → v0.41.0，并连带 `golang.org/x/sync` v0.21.0 → v0.22.0（MVS 带出来的，不是手挑的）；无其它依赖变化。
+- 本机验证（与 CI 同版本）：`go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...` → 「No vulnerabilities found. Your code is affected by 0 vulnerabilities.」，退出 0；`go build ./...` 通过；`go vet ./...` 无输出。
