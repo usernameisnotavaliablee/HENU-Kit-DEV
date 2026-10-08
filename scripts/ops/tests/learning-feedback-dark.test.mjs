@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 // 学习反馈（LF-01..LF-07）的「默认全暗 + fail-closed 回退」在本仓是被测试守住的
-// 合同，不是口头承诺。任何切流（#166）都必须是一次会让本文件变红的显式改动，
-// 而不是某个部署面悄悄把开关写成 1。
+// 合同，不是口头承诺：仓库里每个默认值都必须是 0，开启只能走发布清单里那一次显式
+// 烘焙（PR #6 的切流就是这么做的，当时下面那条断言按设计先变红了）。
 const root = new URL("../../../", import.meta.url);
 const read = (relative) => readFileSync(new URL(relative, root), "utf8");
 
@@ -15,7 +15,7 @@ const LIMIT_FLAG = "QUIZCRAFT_LEARNING_MANUAL_LIMIT";
 const LEARNING_FLAGS = [GATEWAY_FLAG, BROWSER_FLAG, WORKER_FLAG];
 const LEARNING_BANK = "quizcraft_learning";
 
-test("每个部署面都保持学习反馈暗态，且没有一面把它写死成开启", () => {
+test("每个部署面的默认值都保持学习反馈暗态，只有发布清单烘焙浏览器入口", () => {
   const example = read(".env.henukit.example");
   assert.match(example, new RegExp(`^${GATEWAY_FLAG}=0$`, "m"));
   assert.match(example, new RegExp(`^${BROWSER_FLAG}=0$`, "m"));
@@ -40,12 +40,15 @@ test("每个部署面都保持学习反馈暗态，且没有一面把它写死�
   assert.match(dockerfile, new RegExp(`ARG ${BROWSER_FLAG}=0`));
   assert.match(dockerfile, new RegExp(`ENV ${BROWSER_FLAG}=\\$${BROWSER_FLAG}`));
 
-  // 发布镜像脚本写出的 release env 目前只烘焙 catalog/V2 读取；学习反馈必须等 #166，
-  // 这里既锚定「读的是这段 release env」，也锁死「不许顺手烘焙成 1」。
+  // 发布清单是唯一的浏览器入口开启点：它烘焙 catalog、V2 读取与学习报告入口，
+  // 而网关与 worker 门禁仍必须由部署时显式置 1。第一条锚定「读到的确实是那段 release
+  // env」；负向那两条要带 `^`/非大写字母前缀，否则 BROWSER_FLAG（就是 GATEWAY_FLAG
+  // 前面加 NEXT_PUBLIC_ 的名字）会把网关门禁那条断言误判成失败。
   const releaseImages = read("scripts/ops/henukit-release-images.sh");
   assert.match(releaseImages, /NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG=1/);
-  for (const flag of LEARNING_FLAGS) {
-    assert.doesNotMatch(releaseImages, new RegExp(`${flag}=1`), `release images must stay dark for ${flag}`);
+  assert.match(releaseImages, new RegExp(`${BROWSER_FLAG}=1`), "release images bake the learning-report browser entry");
+  for (const flag of [GATEWAY_FLAG, WORKER_FLAG]) {
+    assert.doesNotMatch(releaseImages, new RegExp(`(^|[^A-Z_])${flag}=1`, "m"), `release images must not bake the server-side gate ${flag}`);
   }
 
   // 每面都必须真的提到学习反馈，避免「文件被挪走后测试静默通过」。

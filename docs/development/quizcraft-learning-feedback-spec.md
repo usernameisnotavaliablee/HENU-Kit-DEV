@@ -9,8 +9,8 @@
 | LF-03 契约与持久化 | LF-01 | 偏好/报告/任务/删除、内容版本/审核、隔离、迁移兼容；生成不漂移 | 契约/生成同步、000012/000013 迁移、偏好与原子清除、任务仓储、读/写/结果练习会话 HTTP 边界均已实现并测试 |
 | LF-04 证据与模型 | LF-02, LF-03 | 去重/版本/首答统计、最小化输入、引用校验、不足/冲突、讲解和已有题选择 | 真实证据、模型白名单/引用校验、服务端报告组合已验证；真实供应商调用和人工评测待完成 |
 | LF-05 后台执行 | LF-03, LF-04 | 自动/手动、权限、租约、重试、幂等、删除后不复活、证据复用 | worker 循环、签名权益客户端、模型供应商适配、租约/退避/失败隔离、到期自动扫描（单轮上限 50）、手动入口滥用限流（默认每会员每课程每小时 10 次，可配 0 关闭）已实现并测试；真实供应商调用与人工评测待完成 |
-| LF-06 会员与界面 | LF-03, LF-05 | 真实账号＋lifetime＋主动开启；设置/报告/讲解/练习/关闭/清除，旧刷题不变 | Gateway 读写路由、Portal 读写客户端、`/practice/reports` 设置/报告/讲解/练习/关闭/清除界面、按报告练习会话已实现并测试；浏览器与服务端开关默认 0，真实账号全链路与人工文案/内容门禁待完成 |
-| LF-07 验收与灰度 | LF-02 至 LF-06 | 人工评测、全链路测试、成本/失败监测、关闭回退、发布授权 | 内容审核、到期调度、只读运行健康检查（`cmd/learninghealth`）与关闭回退步骤已落地，学习报告 e2e 组已进 CI（`portal-practice-and-binding`）；人工评测、真实供应商调用、真实账号全链路与发布授权待完成 |
+| LF-06 会员与界面 | LF-03, LF-05 | 真实账号＋lifetime＋主动开启；设置/报告/讲解/练习/关闭/清除，旧刷题不变 | Gateway 读写路由、Portal 读写客户端、`/practice/reports` 设置/报告/讲解/练习/关闭/清除界面、按报告练习会话已实现并测试；浏览器入口已随本次切流烘焙进发布清单（仓库默认仍 0），服务端开关由部署 env 置 1；真实账号全链路与人工内容门禁待完成 |
+| LF-07 验收与灰度 | LF-02 至 LF-06 | 人工评测、全链路测试、成本/失败监测、关闭回退、发布授权 | 内容审核、到期调度、只读运行健康检查（`cmd/learninghealth`）与关闭回退步骤已落地，学习报告 e2e 组已进 CI（`portal-practice-and-binding`）；**发布授权已由本次切流给出**（发布清单烘焙浏览器入口 + 部署 env 置 1，回退顺序见本文件末条）；人工评测、真实供应商调用与真实账号全链路待完成 |
 
 ## 不可破坏的断言
 
@@ -74,7 +74,7 @@
 - `quizcraft.ReadLearningFeedbackHealth(ctx, query, now)` 只读聚合：任务按状态计数、最早到期排队时长（用 `run_after`，不是不可变的 `created_at`）、已过期租约数、近 24 小时失败按 `reason_code` 分桶、报告按状态计数、启用课程数、**当代同意**（`consent_version=当前`，旧代同意不算）的会员课程数、最新报告记录时间（`ready`/`insufficient_evidence`/`stale` 都算一次真实产出，不是「最后一次成功发布」）。它**只读**，可对生产运行。
 - `cmd/learninghealth`：`QUIZCRAFT_V2_DATABASE_URL`（必须是 `quizcraft_v2`，且要过 `RequireQuizcraftV2Target`）＋ `-json` / `-queued-behind`（默认 30m）/ `-failure-budget`（默认 0）/ `-fail-on-alert`。用于 cron/告警：有告警且开启 `-fail-on-alert` 时退出 1。计数是**成本代理**，不是计费：供应商适配层不上报 token 用量，因此不声称 token 或金额核算。
 - 告警只在真出现问题时出现：过期租约、排队超过阈值、24 小时失败超出预算、已同意会员却没有启用课程。全部关闭的暗态功能**不产生告警**（已用测试固定）。
-- 关闭回退（顺序固定，均为 fail-closed）：① `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0`（Gateway 读与除清除外的学习报告写路由即时 503，其它刷题不受影响；清除是唯一豁免，见本条目末）→ ② `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0`（浏览器入口消失，需重新构建 Portal 镜像）→ ③ `QUIZCRAFT_LEARNING_WORKER_ENABLED=0`（停止取任务与调模型）→ ④ `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`（或随 ③ 一起停）。已发布报告、任务、偏好与审核记录都保留，不会被清除；会员已给出的同意仍保留在其偏好里，重新开启不会绕过同意或权益校验。回退后应确认 `learninghealth` 不再新增 queued/running，且**清除接口（`DELETE /api/v1/practice/banks/{bank_id}/learning-reports`）仍可用**：网关的暗态门只豁免这一条写路由，因为清除会一并关闭同意并撤销外发授权，属会员的数据权利，回退期间必须还能执行（Core 侧该路由不校验会员与学习内容审核，只要求该课程有已发布版本）。豁免只有这一条：`PUT .../preferences` 的关闭（`enabled=false`）在暗态下仍是 503，网关不解析请求体，无法在不读 body 的前提下把「关闭」与「开启」区分开；需要撤回同意时用清除即可。
+- 关闭回退（顺序固定，均为 fail-closed）：① `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0`（Gateway 读与除清除外的学习报告写路由即时 503，其它刷题不受影响；清除是唯一豁免，见本条目末）→ ② `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0`（浏览器入口消失；该键已在 `scripts/ops/henukit-release-images.sh` 里烘焙成 1，所以回退要连它一起改回 0 再重建 Portal 镜像——只改服务器 env 不会让已发布的镜像变暗）→ ③ `QUIZCRAFT_LEARNING_WORKER_ENABLED=0`（停止取任务与调模型）→ ④ `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`（或随 ③ 一起停）。已发布报告、任务、偏好与审核记录都保留，不会被清除；会员已给出的同意仍保留在其偏好里，重新开启不会绕过同意或权益校验。回退后应确认 `learninghealth` 不再新增 queued/running，且**清除接口（`DELETE /api/v1/practice/banks/{bank_id}/learning-reports`）仍可用**：网关的暗态门只豁免这一条写路由，因为清除会一并关闭同意并撤销外发授权，属会员的数据权利，回退期间必须还能执行（Core 侧该路由不校验会员与学习内容审核，只要求该课程有已发布版本）。豁免只有这一条：`PUT .../preferences` 的关闭（`enabled=false`）在暗态下仍是 503，网关不解析请求体，无法在不读 body 的前提下把「关闭」与「开启」区分开；需要撤回同意时用清除即可。
 - 未自动化的部分：没有自动回退、没有与外部告警系统接线、没有 token 级成本核算、没有供应商成功率面板。
 
 ## 手动生成限流（已实现的边界）

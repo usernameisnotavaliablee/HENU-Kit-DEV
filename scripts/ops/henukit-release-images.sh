@@ -137,15 +137,16 @@ release_dockerfiles=(
 # ADR-0036). Every default in the repo stays 0 (fail-closed); a release built
 # from this inventory MUST be deployed with the server-side gates
 # (PORTAL_ENABLE_QUIZCRAFT_CATALOG / PORTAL_ENABLE_QUIZCRAFT_V2_READS /
-# PORTAL_PRACTICE_COMMANDS_ENABLED) enabled in the same bundle, or the browser
-# surfaces render honest 404/503s — never a mock/legacy fallback.
+# PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS / PORTAL_PRACTICE_COMMANDS_ENABLED)
+# enabled in the same bundle, or the browser surfaces render honest 404/503s —
+# never a mock/legacy fallback.
 release_build_args=(
   $'VITE_BASE_PATH=/'
   ""
   ""
   ""
   ""
-  $'NEXT_PUBLIC_PORTAL_GATEWAY_URL=\nNEXT_PUBLIC_PORTAL_GATEWAY_BASE_URL=/api\nNEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY=1\nNEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG=1\nNEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS=1'
+  $'NEXT_PUBLIC_PORTAL_GATEWAY_URL=\nNEXT_PUBLIC_PORTAL_GATEWAY_BASE_URL=/api\nNEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY=1\nNEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG=1\nNEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS=1\nNEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=1'
   ""
   ""
   ""

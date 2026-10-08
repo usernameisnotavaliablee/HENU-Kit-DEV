@@ -505,9 +505,9 @@ echo "日志文件: $LOG" | tee -a "$LOG"
 
 ---
 
-## §11 学习报告（暗态默认）：只读取证（约 4 分钟）
+## §11 学习报告（已切流）：只读取证（约 4 分钟）
 
-**目的**：会员侧「学习报告」出厂**全程暗态**（网关、浏览器与 worker 三个开关默认 0；调度间隔默认 `10m`，但 worker 关闭时调度器不构造，见 11.4）。本节只确认生产**仍是暗态**；切流后则确认已按顺序打开、且没有异常积压。开关语义、回退顺序、403/429/503 的分工与会员可见文案口径见 `practice-wiring-matrix.md` §7/§8 与 `quizcraft-learning-feedback-spec.md` LF-07，**本节只讲「在服务器上怎么只看不动」**。
+**目的**：本仓已完成学习报告切流——发布清单烘焙浏览器入口（`scripts/ops/henukit-release-images.sh`），网关与 worker 门禁由部署 env 置 1；仓库里的默认值仍全是 0（fail-closed）。本节确认生产**已按顺序打开、且没有异常积压**；若读出的是暗态，就按同一张取值表如实记录。调度间隔默认 `10m`，但 worker 关闭时调度器不构造（见 11.4）。开关语义、回退顺序、403/429/503 的分工与会员可见文案口径见 `practice-wiring-matrix.md` §7/§8 与 `quizcraft-learning-feedback-spec.md` LF-07，**本节只讲「在服务器上怎么只看不动」**。
 
 **本节附加安全规则**：下面所有请求都**不带会员会话 Cookie**（暗态门与鉴权都在网关进程内，未认证请求不会触达 Core）。**绝不要**在核验会话里用真实会员 Cookie 调 `DELETE`——那会真的清掉该会员已生成的报告。
 
@@ -522,14 +522,14 @@ done | tee -a "$LOG"
 # 上面五个键里，浏览器开关（NEXT_PUBLIC_*）在容器 env 里看不到：它是**构建期**变量，
 #   apps/portal/Dockerfile 的 ARG/ENV 只在 builder 阶段，运行阶段（runner）只声明 NODE_ENV/PORT/HOSTNAME。
 #   所以不要用 `docker inspect ... | grep NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` —— 它一定没有输出。
-#   该开关的产物取值由 release 构建参数决定（仓库 side：scripts/ops/henukit-release-images.sh 的 release_build_args，
-#   当前**不含**该键，因此产物按 Dockerfile 默认 `0`；ops 暗态测试还断言 release 镜像不得为 1）。
+#   该开关的**产物**取值由 release 构建参数决定（仓库 side：scripts/ops/henukit-release-images.sh 的 release_build_args，
+#   切流后**含**该键 `=1`；仓库其余默认值仍是 0，ops 合同测试锁住的正是那些默认值）。
 #   可观察的替代证据（`[MANUAL]`）：
-echo "[MANUAL] 用浏览器（或 Playwright）打开 https://henukit.cn/practice，确认没有「学习报告」入口（P-06）" | tee -a "$LOG"
-echo "[MANUAL] 若要开启：必须把该键加进 release 构建参数并重建 Portal 镜像（只改 $ENV_FILE 不生效，见回退顺序第 ② 步）" | tee -a "$LOG"
+echo "[MANUAL] 用浏览器（或 Playwright）打开 https://henukit.cn/practice，确认**有**「学习报告」入口（P-06）" | tee -a "$LOG"
+echo "[MANUAL] 入口不在时：先确认跑的是本清单构建的镜像，再查 $ENV_FILE 里网关三键是否已置 1；只改 $ENV_FILE 不会让旧镜像长出入口（见回退顺序第 ② 步）" | tee -a "$LOG"
 ```
 
-**暗态期望值**：env 里前两个为 `0`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=0`、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`；`..._SCHEDULER_INTERVAL` 出厂为 `10m`（不是 0，0 是回退值，见 11.4/11.5）。浏览器开关的**产物**取值另需按上面的 `[MANUAL]` 项确认。
+**切流后的期望值**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=1`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=1`、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`、`..._SCHEDULER_INTERVAL=10m`（不是 0，0 是回退值，见 11.4/11.5）；浏览器开关在 env 里看不到，按上面的 `[MANUAL]` 项确认入口存在。若前两个仍是 `0`，说明网关与 worker 门禁没开——按 §7 的顺序补开，别先开 worker（顺序反了会让 Core 起不来）。
 
 ```bash
 echo "== 11.2 路由取证（不带 Cookie；暗态门在鉴权之前，所以暗态下能直接看到 503）==" | tee -a "$LOG"
@@ -540,9 +540,10 @@ probe_lr() { # $1=名称 $2=期望码 $3...=curl 参数
   if [ "$code" = "$want" ]; then echo "[PASS] $name -> $code（期望$want）"; else echo "[FAIL] $name -> $code（期望$want）"; fi
   head -c 200 /tmp/lr.out; echo
 }
-# 读路由（偏好/最新报告/任务）与写路由（生成、保存偏好）：暗态 = 503 practice learning reports are not enabled
-probe_lr "读：偏好" 503 "$B/learning-reports/preferences" | tee -a "$LOG"
-probe_lr "写：生成报告" 503 -X POST "$B/learning-reports" | tee -a "$LOG"
+# 读路由（偏好/最新报告/任务）与写路由（生成、保存偏好）：切流后门是开的，未认证请求会走到鉴权 = 401 not authenticated；
+#   拿到 503 practice learning reports are not enabled 才说明网关门禁没开（或没和 V2 读取一起开）
+probe_lr "读：偏好" 401 "$B/learning-reports/preferences" | tee -a "$LOG"
+probe_lr "写：生成报告" 401 -X POST "$B/learning-reports" | tee -a "$LOG"
 # 唯一豁免：清除路由。未认证 → 401 not authenticated（暗态与切流后都一样；前提见下方「前置条件」）
 #   → 503 practice learning reports are not enabled：豁免被收窄（会员在回退期间无法撤回数据）
 #   → 503 practice_commands_unavailable：练习命令总开关关着（§2 的 PORTAL_PRACTICE_COMMANDS_ENABLED），不是豁免问题
@@ -552,7 +553,7 @@ probe_lr "清除（未认证，不发 Cookie）" 401 -X DELETE "$B/learning-repo
 
 **前置条件**：暗态下**读与写都由学习报告开关直接拦下**（两道判断都在各路由的第一行），写路由只有**切流后**才会继续走到 `practiceCommand`；**清除路由（唯一豁免）没有这道门**，任何状态下都直接进 `practiceCommand`。所以 **`PORTAL_PRACTICE_COMMANDS_ENABLED=1`** 是「清除探针（任何状态）与写探针（切流后）拿到 `401 not authenticated`，而不是 `503 practice_commands_unavailable`（「服务暂时不可用，请稍后再来」）」的前提（该键在 §2 的键矩阵里，示例契约默认 `0`，生产实测见 `CURRENT_PRODUCTION_STATE.md`）。探针会打印响应体前 200 字节，用 code 区分两种 503——**暗态下写探针只可能拿到学习报告的那个 503**。
 
-**判读**：暗态下前两条应为 `503 practice learning reports are not enabled`（读路由还有第二种来源：Core 客户端未接线，见矩阵 §8；不要据此判定服务故障）；第三条未认证应为 `401 not authenticated`。切流后再跑，前两条应变为 `401`（未认证先于业务校验），第三条仍是 `401`。写/清除探针若拿到 `503 practice_commands_unavailable`，先按 §2 查命令总开关，不要当学习报告的问题。
+**判读**：切流后前两条应为 `401 not authenticated`（未认证先于业务校验）——这是本节的期望；拿到 `503 practice learning reports are not enabled` 才说明网关门禁没开（读路由还有第二种来源：Core 客户端未接线，见矩阵 §8；不要据此判定服务故障）。第三条未认证同样是 `401 not authenticated`。写/清除探针若拿到 `503 practice_commands_unavailable`，先按 §2 查命令总开关，不要当学习报告的问题。
 
 ```bash
 echo "== 11.3 积压与失败（判据是「不增长」，不是绝对为 0）==" | tee -a "$LOG"
@@ -567,7 +568,7 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 ```
 
 **通过判据**：
-- 11.1 env 里五个键存在且为上述期望值；浏览器开关另按 `[MANUAL]` 项确认产物侧入口不存在（切流后应与既定切流计划一致）；
+- 11.1 env 里五个键存在且为上述期望值；浏览器开关另按 `[MANUAL]` 项确认产物侧入口**存在**；
 - 11.2 三条状态码符合上述判读；
 - 11.3 `queued`/`running` **不增长**（从未切流过时应为 0；曾切流或回退过时残留队列与 queued-behind 告警属预期，以「不增长」为准）；
 - 任一不符 → `[FAIL]`，按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
@@ -606,7 +607,7 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 | 9 | platform 库实际应用到的迁移版本 | §5 | platform-core 无 `schema_migrations` 表，迁移由 deploy helper 显式应用，仓库无法推断服务器状态 |
 | 10 | 旧 FastAPI（:10086）/systemd quizcraft-go.service（:10089）/旧容器是否还在跑、`/study-api/healthz` 是否 404 | §9 | 仓库只知「应退役、Go core 已容器化（方案 2）」，现场状态未知 |
 | 11 | 验收 smoke 主域口径（superhuazai.me vs henukit.cn）以哪个为准 | §4 | M4 §6 已标注需统一，两口径都要现场记录 |
-| 12 | 生产 env 里四个学习报告开关与 `QUIZCRAFT_LEARNING_MANUAL_LIMIT` 的实际值；宿主机 `quizcraft_v2` 的只读连接方式 | §11 | 仓库只知示例契约（`0/0/0/10m/10`）与 `cmd/learninghealth` 的用法，服务器实际值不可知 |
+| 12 | 生产 env 里四个学习报告开关与 `QUIZCRAFT_LEARNING_MANUAL_LIMIT` 的实际值；宿主机 `quizcraft_v2` 的只读连接方式 | §11 | 仓库只知切流后的目标值（`1/1/10m/10`）、示例文件里的默认值（全 0）与 `cmd/learninghealth` 的用法；**切流决定在仓库里，置值与重启在服务器上**，实际值仍不可知 |
 
 ---
 

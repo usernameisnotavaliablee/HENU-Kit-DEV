@@ -39,19 +39,21 @@
 | `PORTAL_PRACTICE_COMMANDS_ENABLED` | `0` | `1` | **命令（写）门禁**：session/answer/feedback/favorites 写。与读门禁**必须独立**——命令凭据 `PRACTICE_COMMAND_*` 与读凭据强制不同，读并入命令门禁会把读写可用性错误耦合 |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG` | `0` | `1`（构建时烘焙） | 浏览器目录页是否请求/渲染 V2 catalog（`apps/portal/src/lib/api/env.ts`） |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS` | `0` | `1`（构建时烘焙） | 浏览器排行榜 tab / stats 请求（`personal-stats.ts`、`practice-nav.tsx`） |
-| `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（构建时烘焙，暂不随 #166 烘焙） | 浏览器学习报告入口与请求（`lib/practice/learning-reports.ts`、`practice-nav.tsx`、`/practice/reports`）。界面已落地，但仍**保持 0**：烘焙 1 会让入口出现，而生产尚无已审核内容可用；是否随切流烘焙属未决的发布决定 |
+| `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（构建时烘焙，**已随本次切流烘焙**） | 浏览器学习报告入口与请求（`lib/practice/learning-reports.ts`、`practice-nav.tsx`、`/practice/reports`）。界面早已落地；本次切流把该键加进 `scripts/ops/henukit-release-images.sh` 的 release env，仓库默认值仍是 `0`。**入口出现 ≠ 有报告可看**：只要课程没有 `status='approved'` 的当前内容版本，会员看到的就是诚实的不可用状态（内容门禁见 §7） |
 | `NEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY` | `0`（dev）/ `1`（prod） | `1` | 强制真实 Gateway、禁 mock（生产必须 `1`） |
 
 ## 3. 默认值与烘焙的关系（消除歧义）
 
 - **仓库默认全部为 0/空（fail-closed）**：compose（`docker-compose.henukit.yml`）、
   `.env.henukit.example`、网关 `config.go`、浏览器 `env.ts` 的默认一致。
-- **`scripts/ops/henukit-release-images.sh` 把两个浏览器开关烘焙为 1**：该清单描述的
-  是 **#166 切流发布构建**。烘焙 1 与网关默认 0 的表面不一致是**有意的**：
-  用该脚本产出的发布镜像**必须**在同一个发布 bundle 里把三个服务端开关
+- **`scripts/ops/henukit-release-images.sh` 把三个浏览器开关烘焙为 1**：该清单描述的是
+  **切流发布构建**（`#166` 是它一直沿用的窗口代号）。烘焙 1 与网关默认 0 的表面不一致是
+  **有意的**：用该脚本产出的发布镜像**必须**在同一个发布 bundle 里把四个服务端开关
   （`PORTAL_ENABLE_QUIZCRAFT_CATALOG`、`PORTAL_ENABLE_QUIZCRAFT_V2_READS`、
-  `PORTAL_PRACTICE_COMMANDS_ENABLED`）与 `PRACTICE_SERVICE_URL`/`QUIZCRAFT_CORE_URL`
-  同设，否则浏览器渲染读面而 Gateway 返回诚实 404/503（绝不 mock/legacy 兜底）。
+  `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS`、`PORTAL_PRACTICE_COMMANDS_ENABLED`）与
+  `PRACTICE_SERVICE_URL`/`QUIZCRAFT_CORE_URL` 同设，否则浏览器渲染读面而 Gateway 返回
+  诚实 404/503（绝不 mock/legacy 兜底）。**烘焙浏览器入口不等于有内容可看**——内容侧是
+  另一道门（§7）。
 - 本地/预发布 compose 构建参数默认 0，属正常关闭状态；**不允许**「浏览器开、
   网关关」之外的任何部分启用组合作为生产长期状态。
 
@@ -120,10 +122,10 @@
   所以这一项在当前组合栈里不起作用。② 再开 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1`：顺序反了或凭据漏配，
   `cmd/server/main.go` 直接 `fail(...)` 退出——**QuizCraft Core 起不来，整个刷题链路一起不可用**，不是「只有学习报告不可用」。
   ③ 网关侧 `PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 置 1 还有运行时前置：必须同时 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=1`，
-  否则网关启动失败（`internal/config/config.go` 已强制，测试锚定）。④ 浏览器入口是**构建期**开关：`scripts/ops/henukit-release-images.sh`
-  的 `release_build_args` 目前**不含**该键，**发布产物**因此恒为 Dockerfile 默认 0（本地用 compose 构建可以传这个 build arg，但那不是发布路径）——开启必须把键加进那段 release env 并重建 Portal 镜像；
-  同一次改动会让 `scripts/ops/tests/learning-feedback-dark.test.mjs` 变红，那是设计意图（切流必须是一次显式、会让绊线响的改动，
-  不是某个部署面顺手写 1），要同步把该断言改成期望已开启。
+  否则网关启动失败（`internal/config/config.go` 已强制，测试锚定）。④ 浏览器入口是**构建期**开关，本次切流已把该键加进 `scripts/ops/henukit-release-images.sh` 的 `release_build_args`（只烘焙这一个浏览器键；
+  网关与 worker 门禁仍由部署时显式置 1），**发布产物**的入口因此由那次烘焙决定，本地 compose 构建只是本地路径；
+  同一次改动让 `scripts/ops/tests/learning-feedback-dark.test.mjs` 的断言按设计先变红（它报的会是网关开关的名字——`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` 是浏览器键的子串），
+  已同步改成「默认全暗 + 唯一开启点是发布清单、且只烘浏览器键」。
 - **关闭回退**：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=0` → 浏览器开关烘焙 0 并重建 Portal →
   `QUIZCRAFT_LEARNING_WORKER_ENABLED=0` → `QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0`。已发布报告、
   偏好、任务与审核记录都保留；会员同意不被清除，重新开启仍需权益与同意校验。
