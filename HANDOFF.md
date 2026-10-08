@@ -1169,4 +1169,13 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
   3. 我新加进 §14 的 npm 那句与上一行的实测（「只重定向 `npm_config_cache` 无害」）字面打架：真正的前提是「同时把 `HOME` 指向 fake home」，缺了这个从句就成了相邻两行互相矛盾。
   4. §14 引的 `console-gateway.yml:66` 被本 PR 自己加的两行推到 68 → 改成不钉行号。
 - **Standards 三条**：SHA 那条同上；第 90 条「此后只有文档提交」在 `fb29d889` 不成立（那次还改了 `portal-gateway.yml` 的注释与 `docs/DEVELOPMENT.md`、`docs/development/testing-acceptance-spec.md` 两个文件，行为无变化但说法不实）；`AGENTS.md` 流程末条与第 90 条标题把「三个作业」写成了整个触发面（实际 5 个 workflow，其中两个没有 `paths:` 过滤，根本跑不了）。
-- 用户自己在该分支提交了 `c4d2b76e`（把日志标题「只追加」改成「只追加不删减」）→ 本 PR 从 13 个提交变 14 个，所有计数按新 head 重算。
+- 用户自己在该分支提交了 `c4d2b76e`（把日志标题「只追加」改成「只追加不删减」）→ 本 PR 的提交数继续变（写这条前是 15 个），所以本条不固化任何计数——这正是第 88 条 17+4≠20 的同因错误。
+
+### 92 — Copy 轴收口（8 条里 5 条已被 91 修掉）与 QuizCraft Go 的时间触发红
+
+- Copy 在 `fb29d889` 报 8 条，其中 5 条已被第 91 条的提交独立修掉（SHA 分类、`docs/DEVELOPMENT.md` 三处、第 90 条口径）。剩下 3 条在本条修：
+  1. `AGENTS.md`「CI 现状」与 `console-gateway.yml` 的注释都写成「没有 `workflow_dispatch` 就**根本**跑不起来」——假全称：13 个 workflow 配了 `push: branches: [main]`，合入后就会被 push 触发。改成「合入 `main` 之前没有任何触发入口」。
+  2. `console-gateway.yml` 那句新注释是中文（该文件唯一一条注释），而 `portal-gateway.yml`（13 条）与 `quizcraft-go.yml`（8 条）的注释全是英文 → 改成英文，PR 正文里「英文注释」的说法才成立。
+  3. `AGENTS.md` 的 `pnpm --filter @henukit/portal test:e2e:*` 不是真实脚本名（实有 13 个 `test:e2e:<名字>`）→ 改成占位写法并指出脚本清单位置。
+- 本条不固化任何提交数：写这条前是 15 个，加上本条与后续修复提交还会变——第 88 条那个 17+4≠20 就是同因错误，别在同一处犯第三次。
+- **QuizCraft Go 在 `89cf9a5e` 加红（run `37735645455`，第 10 步 `Vet, test, and build`）**：`govulncheck` 报新披露的 `GO-2026-6629`（`golang.org/x/text@v0.39.0` 的 `precis.Profile.String` panic，修在 v0.41.0）。取证：同一份代码在 `a802b5c2` 上是「No vulnerabilities found / 0 vulnerabilities」（run `37661750680`），且 `git diff a802b5c2..89cf9a5e -- products/quizcraft/go-service` 为空 → 红来自漏洞库时间更新，不是本 diff。影响面只有 `products/quizcraft/go-service` 一个模块（`services/platform-core` 与 `services/account-portfolio` 的 x/text 已是 v0.41.0）；合入 `main` 后 push 触发的同一个作业也会红，修法是升 `golang.org/x/text` 到 v0.41.0。

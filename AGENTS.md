@@ -59,12 +59,12 @@
 
 - 版本 16.3.2，与训练数据不同：写任何 Next 代码前先读 `apps/portal/node_modules/next/dist/docs/`（monorepo 根看不到 `next` 包）；注意 deprecation。
 - 该 Next 块由 `next dev` 重写，生成器 `apps/portal/node_modules/next/dist/server/lib/generate-agent-files.js`，同时写 `AGENTS.md` 与 `CLAUDE.md`。两文件已删并进 `.gitignore` → 重新出现属正常，别提交。
-- 浏览器门禁 = `pnpm --filter @henukit/portal test:e2e:*`（Playwright，不需 Docker）；环境变量陷阱见下方「本机环境」。
+- 浏览器门禁 = `pnpm --filter @henukit/portal test:e2e:<名字>`（Playwright，不需 Docker；现有 13 个脚本，见 `apps/portal/package.json`）；环境变量陷阱见下方「本机环境」。
 
 ## CI 现状（实测，代价以天计）
 
 - `.github/workflows/` 共 14 个 workflow：14 个配 `pull_request:`，13 个配 `push: branches: [main]`，原先只有 2 个配 `workflow_dispatch`（`deploy-henukit.yml`、`quizcraft-go.yml`），本 PR 又给 `console-gateway.yml` 与 `portal-gateway.yml` 加上 → 共 4 个。
-- 本 fork 的 PR 事件不产生 run：PR #2 的 opened / reopened / synchronize 三次都是 0 run（`gh api …/actions/runs` 的 `total_count` 不增，`gh pr checks 2` 只报 `no checks reported`），而同一时段 `gh workflow run` 立刻出 run。→ 别等 PR 红绿；要真 CI 用 `gh workflow run <workflow> --ref <branch>`，而**没有 `workflow_dispatch` 的作业在本 fork 根本跑不起来**：要验哪个作业，先给它加一行 `workflow_dispatch`（本 PR 给 `console-gateway.yml`、`portal-gateway.yml` 加上了，另 10 个还没有）。
+- 本 fork 的 PR 事件不产生 run：PR #2 的 opened / reopened / synchronize 三次都是 0 run（`gh api …/actions/runs` 的 `total_count` 不增，`gh pr checks 2` 只报 `no checks reported`），而同一时段 `gh workflow run` 立刻出 run。→ 别等 PR 红绿；要真 CI 用 `gh workflow run <workflow> --ref <branch>`，而**没有 `workflow_dispatch` 的作业在合入 `main` 之前没有任何触发入口**（13 个配了 `push: branches: [main]`，只能是合入之后被 push 触发）：要在合入前验哪个作业，先给它加一行 `workflow_dispatch`（本 PR 给 `console-gateway.yml`、`portal-gateway.yml` 加上了，另 10 个还没有）。
 - `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本仓 issues 关闭（`hasIssuesEnabled: false`）→ 无 `hc-<n>` 可引用，`codex/learning-feedback` 必红；`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
 
 ## 经验教训
