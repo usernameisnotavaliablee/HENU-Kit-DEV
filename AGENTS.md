@@ -64,7 +64,7 @@
 ## CI 现状（实测，代价以天计）
 
 - `.github/workflows/` 共 14 个 workflow：14 个配 `pull_request:`，13 个配 `push: branches: [main]`，原先只有 2 个配 `workflow_dispatch`（`deploy-henukit.yml`、`quizcraft-go.yml`），本 PR 又给 `console-gateway.yml` 与 `portal-gateway.yml` 加上 → 共 4 个。
-- 本 fork 的 PR 事件不产生 run：PR #2 的 opened / reopened / synchronize 三次都是 0 run（`gh api …/actions/runs` 的 `total_count` 不增，`gh pr checks 2` 只报 `no checks reported`），而同一时段 `gh workflow run` 立刻出 run。→ 别等 PR 红绿；要真 CI 用 `gh workflow run <workflow> --ref <branch>`，而**没有 `workflow_dispatch` 的作业在合入 `main` 之前没有任何触发入口**（13 个配了 `push: branches: [main]`，只能是合入之后被 push 触发）：要在合入前验哪个作业，先给它加一行 `workflow_dispatch`（本 PR 给 `console-gateway.yml`、`portal-gateway.yml` 加上了，另 10 个还没有）。
+- **本 fork 只有 `workflow_dispatch` 会产生 run**（按事件累计：`push` 0、`pull_request` 0、`schedule` 0、`workflow_dispatch` 19）。实测：PR #2 的 opened / reopened / synchronize 三次都是 0 run，同一时段 `gh workflow run` 立刻出 run；PR #2 以 rebase 合入后 `main` 在 2026-10-08T07:19:31Z 收到 push、`gh workflow list --all` 显示 14 个 workflow 全 `active`、`actions/permissions` 是 `enabled: true, allowed_actions: all`，之后 `push` run 仍是 0。→ 别等 PR 或 push 的红绿：要真 CI 一律 `gh workflow run <workflow> --ref <branch>`；**没有 `workflow_dispatch` 的 10 个作业在本 fork 没有任何触发入口**——不是「合入 `main` 之后就会被 push 触发」，而是永远不会跑。共 4 个可 dispatch：原有的 `deploy-henukit.yml`、`quizcraft-go.yml`，加上 PR #2 给 `console-gateway.yml`、`portal-gateway.yml` 补的。
 - `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本仓 issues 关闭（`hasIssuesEnabled: false`）→ 无 `hc-<n>` 可引用，`codex/learning-feedback` 必红；`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
 
 ## 经验教训

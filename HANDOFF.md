@@ -1206,3 +1206,11 @@ fork 上没有 Actions，所以我一直是挑着跑测试。这轮按 `.github/
 - 第 95 条把「验收规格 §3 的生成器清单补上『示意而非穷尽』」记成已闭合，但同一句里那半段「完整清单见 `docs/DEVELOPMENT.md` §14」是**空指针**：§14（`## 14. CI`）通篇没有生成器清单，只有第 370 行的 Docker 清单免责声明与第 373 行的判据；全仓任何文档都没枚举过那 15 个生成器目录。**写了「见某处」就得打开某处确认那句话在那儿。**
 - 修法（本条提交）：指针换成可自验的枚举命令 `find services products -type d -name '*contractgen*'`（实跑正好 15 个目录，与 `AGENTS.md` 取证条的数一致）——命令比一节文档更难腐烂，读者随时能自己重跑。
 - 其余窄复核结论（三轴在 `71e68618` 上重算）：正文每个数字、每个 run id 与「作业级 / run 级」标注都对（Copy 轴 0 findings）；第 92 条的影响面口径、两个 workflow 注释，以及四类口径（sqlc 的 Docker / npm 与 `HOME` / 11 个 `test:e2e:*` 脚本 / 触发面 5 与 4）均被两轴判定与仓库一致；`AGENTS.md` 99 行 20 条（8+7+5）复核无误。
+
+### 97 — PR #2 以 Rebase and merge 合入 main；并逮到比「PR 不触发」更硬的事实：本 fork 的 **push 也不触发**
+
+- 合并：`gh pr merge 2 --rebase` 后 `state=MERGED`（2026-10-08T07:19:32Z），`main` 顶端即 rebase 后的 20 笔（原 SHA 全部重写，用户那笔 `whoa` 变成 `161d2c9d`，内容原样保留）；`codex/learning-feedback` 分支未删。
+- 定稿与钉住：三轴在 `719cda3a` 上复核定稿，正文钉 `Review-Head: 719cda3a…` + `Standards-Review: 0 findings` + `Spec-Review: 0 findings` 并勾上两个框；此前窄复核为 Copy 0 / Standards 1 / Spec 1（同一条空指针，已在同一批修掉），最后一条提交另有微复核 0。
+- **新增实测（本条的重点）**：合并后 `main` 于 07:19:31Z 收到 push，3 分钟后 `gh api …/actions/runs?event=push` 的 `total_count` 仍为 0；按事件累计 `push` 0 / `pull_request` 0 / `schedule` 0 / `workflow_dispatch` 19；`gh workflow list --all` 显示 14 个 workflow 全为 `active`，`actions/permissions` 为 `enabled: true, allowed_actions: all`。→ 本 fork 不是「PR 事件不产生 run」，而是**只有手动 `workflow_dispatch` 会产生 run**。
+- 因此原 AGENTS.md 那句「13 个配了 `push: branches: [main]`，只能是合入之后被 push 触发」是错的（已在本条修正）：「合入 `main` 之后 CI 会自证」这个假设在本 fork 不成立，那 10 个没有 `workflow_dispatch` 的作业在这里永远不跑。
+- 顺带更正：PR #2 正文「发布」一节写的「合入后 `main` 的 push 会触发 4 个 workflow」同样是错的；正文随合并定格，留本条更正。
