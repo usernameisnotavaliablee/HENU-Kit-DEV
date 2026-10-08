@@ -65,7 +65,7 @@
 
 - `.github/workflows/` 共 14 个 workflow：14 个配 `pull_request:`，13 个配 `push: branches: [main]`，4 个配 `workflow_dispatch`（原 2 个，PR #2 又补了 2 个——清单见下一条）。
 - **本 fork 只有 `workflow_dispatch` 会产生 run**（按事件累计：`push` 0、`pull_request` 0、`schedule` 0（14 个 workflow 无一配 `schedule:`，此行为空数据点）、`workflow_dispatch` 19）。实测：PR #2 的 opened / reopened / synchronize 三次都是 0 run，同一时段 `gh workflow run` 立刻出 run；PR #2 以 rebase 合入后 `main` 在 2026-10-08T07:19:31Z 收到 push、`gh workflow list --all` 显示 14 个 workflow 全 `active`、`actions/permissions` 是 `enabled: true, allowed_actions: all`，之后 `push` run 仍是 0。→ 别等 PR 或 push 的红绿：要真 CI 一律 `gh workflow run <workflow> --ref <branch>`；**没有 `workflow_dispatch` 的 10 个 workflow 在本 fork 没有任何触发入口**——不是「合入 `main` 之后就会被 push 触发」，而是永远不会跑。共 4 个可 dispatch：原有的 `deploy-henukit.yml`、`quizcraft-go.yml`，加上 PR #2 给 `console-gateway.yml`、`portal-gateway.yml` 补的。**要验哪个没有入口的作业，就先给它加一行 `workflow_dispatch`**（截至 PR #3 仍未加那 10 个）。
-- `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^(feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+$`，而本仓 issues 关闭（`hasIssuesEnabled: false`）→ 无 `hc-<n>` 可引用，`codex/*` 一旦跑起来就会失败（实测它在本 fork 从未运行：`gh api repos/:owner/:repo/actions/workflows/pull-request-governance.yml/runs -q .total_count` 是 0，`gh pr checks 2` / `gh pr checks 3` 都是 `no checks reported`）；`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
+- `pull-request-governance.yml` 两个 job：`branch-name` 要求 head 分支名匹配 `^((feature|fix)/[a-z0-9][a-z0-9-]*/hc-[0-9]+|(feature|fix|codex)/[a-z0-9][a-z0-9-]*)$`——原规则只认 `feature|fix/<area>/hc-<n>`，而本仓 issues 关闭（`hasIssuesEnabled: false`）无 `hc-<n>` 可引用，等于必失败；PR #4 放宽成「有 issues 时仍要 issue 号，没有时 `<type>/<area>` 即可」（实测它在本 fork 从未运行：`gh api repos/:owner/:repo/actions/workflows/pull-request-governance.yml/runs -q .total_count` 是 0，`gh pr checks 2` / `gh pr checks 3` 都是 `no checks reported`）；`review-evidence` 要求 PR 正文逐字含 `Review-Head: <当前 head SHA>`、`Standards-Review: 0 findings`、`Spec-Review: 0 findings`。
 
 ## 经验教训
 
@@ -95,5 +95,6 @@
 - 先算触发面再决定验什么：把每个 workflow 的 `paths:`（`pull_request` 与 `push` 两处）对本次改动做 glob，列出**配置层**会匹配哪些作业（本 fork 只有 `workflow_dispatch` 会真跑，见上「CI 现状」）。从日志条目出发会漏整条作业——`services/console-gateway` 的 account-portfolio 生成物陈旧就是这样才逮到的。
 - 改了契约/生成物就重跑所有消费方生成器并 `git diff --exit-code`；漏一个 `cmd/*contractgen*`，CI 的 `git diff --exit-code` 就红（只改文件头 SHA 也算）。
 - 一个回合只做一个大操作，push 后再写日志；日志条目要能被仓库证据复核（数字、条目号、文件路径）。
+- **校验与动作必须放在同一条 `&&` 链里**：`python3 - <<'PY' … PY` 换行另起的命令不吃前一条的 `&&`，断言 exit 1 之后 `gh pr merge` 照样执行（PR #3 就是在正文还写着 `Standards-Review: pending` 时被合并的）。
 - 三轴评审的返工几乎都出在计数与口径，不出在代码：写完自查「计数 / 全称 / 条件句 / 引用出处」四项。
-- 分清「文档还能再打磨」与「目标是否达成」：PR #2 的触发面是 5 个 workflow（其中两个没有 `paths:` 过滤），能跑通的三个作业在 `a802b5c2` 上真 CI 全绿（QuizCraft Go `37661750680`、Console Gateway `37661761404`、Portal Gateway `37661770849`，均 `gh workflow run <wf>.yml --ref <branch>`），剩下的 `branch-name` 会失败（该 workflow 在本 fork 从未运行，见「CI 现状」）与学习报告切流窗口都要人工决定 → 继续润色文档不是进展。
+- 分清「文档还能再打磨」与「目标是否达成」：PR #2 的触发面是 5 个 workflow（其中两个没有 `paths:` 过滤），能跑通的三个作业在 `a802b5c2` 上真 CI 全绿（QuizCraft Go `37661750680`、Console Gateway `37661761404`、Portal Gateway `37661770849`，均 `gh workflow run <wf>.yml --ref <branch>`），剩下的学习报告切流窗口要人工决定（`branch-name` 已在 PR #4 放宽成可满足，见「CI 现状」） → 继续润色文档不是进展。
