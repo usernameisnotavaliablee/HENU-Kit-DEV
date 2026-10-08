@@ -74,6 +74,7 @@
 - 计数、全称断言前先回查原物并逐个打开候选——先写结论后看证据是本分支返工主因。
 - 别从被截断的输出里取数：`| tail -5` 曾把 deploy-webhook 的 6 个 `ok` 包写成 5 个。
 - 别在管道里取退出码：`staticcheck ./... | tail -4` 的 `$?` 是 `tail` 的；门禁直接跑、直接看 `$?`。
+- 工具的参数陷阱也会伪造证据：`git rev-parse --short A B` 给两个 rev 直接 exit 128（`Needed a single revision`），要分开调；引用一条命令就得把它真跑一遍。
 - 先枚举清单再报数量：`*/cmd/*contractgen*` 命中 15 个目录，其中 1 个由 `products/quizcraft/go-service/scripts/generate-contract.sh` 驱动（直接 `go run` 的是 14 个）。
 - 按用例分块统计，别数字符串出现次数：一次失败会重复打印同句 → 17 条红里 16 条同因，按块是 seal 14 / prepare 1 / activate 1，按字符串是 19/1/1。
 - 条件句别写成 CI 事实：CI 有 Docker，三批都跑 → 写「本机因 X 在第一处中止；CI 里会…」。
