@@ -83,7 +83,7 @@ feature/<area>/<issue-id>
 fix/<area>/<issue-id>
 ```
 
-本 fork `hasIssuesEnabled: false`，没有 issue 编号可引用，因此也接受不带编号的 `<type>/<area>`（`feature|fix|codex`）；门禁 `pull-request-governance.yml` 的 `branch-name` 按这条判（PR #4 放宽）。
+`branch-name`（`pull-request-governance.yml`）接受两种形状：带编号的 `(feature|fix)/<area>/hc-<编号>`，和不带编号的 `<type>/<area>`（`type` ∈ `feature|fix|codex`，PR #4 放宽）。**后一种对所有仓库都可用、没有条件判断**——门禁不读 issues 设置，也不会因为某个仓库开了 issues 就重新要求编号；本 fork issues 关闭，实际只会用到它。
 
 ## 5. Commit
 

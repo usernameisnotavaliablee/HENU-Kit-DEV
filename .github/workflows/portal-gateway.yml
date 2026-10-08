@@ -1,8 +1,8 @@
 name: Portal Gateway
 
 on:
-  # This fork runs CI only for workflow_dispatch — neither push nor pull_request produces runs
-  # (see the CI status section of the root AGENTS.md); verify this job with `gh workflow run`.
+  # pull_request events do produce runs here (observed on PR #4/#5; see the CI status section of
+  # the root AGENTS.md). `gh workflow run` is for verifying this job on a branch without a PR.
   workflow_dispatch:
   pull_request:
     paths:
