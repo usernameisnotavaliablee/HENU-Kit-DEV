@@ -83,7 +83,7 @@ feature/<area>/<issue-id>
 fix/<area>/<issue-id>
 ```
 
-`branch-name`（`pull-request-governance.yml`）接受两种形状：带编号的 `(feature|fix)/<area>/hc-<编号>`，和不带编号的 `<type>/<area>`（`type` ∈ `feature|fix|codex`，PR #4 放宽）。**后一种对所有仓库都可用、没有条件判断**——门禁不读 issues 设置，也不会因为某个仓库开了 issues 就重新要求编号；本 fork issues 关闭，实际只会用到它。
+`branch-name`（`pull-request-governance.yml`）接受两种形状：带编号的 `(feature|fix)/<area>/hc-<编号>`（门禁的字面量是 `hc-[0-9]+`），和不带编号的 `<type>/<area>`（`type` ∈ `feature|fix|codex`，PR #4 放宽）。**后一种对所有仓库都可用、没有条件判断**——门禁不读 issues 设置，也不会因为某个仓库开了 issues 就重新要求编号；本 fork issues 关闭，实际只会用到它。
 
 ## 5. Commit
 
