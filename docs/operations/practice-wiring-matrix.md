@@ -39,7 +39,7 @@
 | `PORTAL_PRACTICE_COMMANDS_ENABLED` | `0` | `1` | **命令（写）门禁**：session/answer/feedback/favorites 写。与读门禁**必须独立**——命令凭据 `PRACTICE_COMMAND_*` 与读凭据强制不同，读并入命令门禁会把读写可用性错误耦合 |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_CATALOG` | `0` | `1`（构建时烘焙） | 浏览器目录页是否请求/渲染 V2 catalog（`apps/portal/src/lib/api/env.ts`） |
 | `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_V2_READS` | `0` | `1`（构建时烘焙） | 浏览器排行榜 tab / stats 请求（`personal-stats.ts`、`practice-nav.tsx`） |
-| `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（构建时烘焙，**已随本次切流烘焙**） | 浏览器学习报告入口与请求（`lib/practice/learning-reports.ts`、`practice-nav.tsx`、`/practice/reports`）。界面早已落地；本次切流把该键加进 `scripts/ops/henukit-release-images.sh` 的 release env，仓库默认值仍是 `0`。**入口出现 ≠ 有报告可看**：只要课程没有 `status='approved'` 的当前内容版本，会员看到的就是诚实的不可用状态（内容门禁见 §7） |
+| `NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` | `0` | `1`（构建时烘焙，**已随本次切流烘焙**） | 浏览器学习报告入口与请求（`lib/practice/learning-reports.ts`、`practice-nav.tsx`、`/practice/reports`）。界面早已落地；本次切流把该键加进 `scripts/ops/henukit-release-images.sh` 的 `release_build_args`，仓库默认值仍是 `0`。**入口出现 ≠ 有报告可看**：只要课程没有 `status='approved'` 的当前内容版本，会员看到的就是诚实的不可用状态（内容门禁见 §7） |
 | `NEXT_PUBLIC_PORTAL_REQUIRE_GATEWAY` | `0`（dev）/ `1`（prod） | `1` | 强制真实 Gateway、禁 mock（生产必须 `1`） |
 
 ## 3. 默认值与烘焙的关系（消除歧义）

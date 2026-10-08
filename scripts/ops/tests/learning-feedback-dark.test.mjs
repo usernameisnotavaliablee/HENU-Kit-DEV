@@ -4,7 +4,7 @@ import test from "node:test";
 
 // 学习反馈（LF-01..LF-07）的「默认全暗 + fail-closed 回退」在本仓是被测试守住的
 // 合同，不是口头承诺：仓库里每个默认值都必须是 0，开启只能走发布清单里那一次显式
-// 烘焙（PR #6 的切流就是这么做的，当时下面那条断言按设计先变红了）。
+// 烘焙（学习报告切流就是这么做的：改那一行会让下面这条断言按设计先变红）。
 const root = new URL("../../../", import.meta.url);
 const read = (relative) => readFileSync(new URL(relative, root), "utf8");
 

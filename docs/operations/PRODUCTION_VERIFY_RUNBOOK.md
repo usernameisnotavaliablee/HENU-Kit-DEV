@@ -523,14 +523,14 @@ done | tee -a "$LOG"
 #   apps/portal/Dockerfile 的 ARG/ENV 只在 builder 阶段，运行阶段（runner）只声明 NODE_ENV/PORT/HOSTNAME。
 #   所以不要用 `docker inspect ... | grep NEXT_PUBLIC_PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS` —— 它一定没有输出。
 #   该开关的**产物**取值由 release 构建参数决定（仓库 side：scripts/ops/henukit-release-images.sh 的 release_build_args，
-#   切流后**含**该键 `=1`；仓库其余开关的默认值仍是 0——调度间隔与限流的出厂值不是 0（见下面的期望值），
-#   ops 合同测试锁住的是「不许任何部署面把门禁写死成 1」）。
+#   切流后**含**该键 `=1`；仓库其余默认值见下面的期望值——网关/浏览器/worker 三个开关仍是 0，调度间隔与限流不是
+#   0（出厂就是 `10m` / `10`）；ops 合同测试锁住的是「不许任何部署面把门禁写死成 1」）。
 #   可观察的替代证据（`[MANUAL]`）：
 echo "[MANUAL] 用浏览器（或 Playwright）打开 https://henukit.cn/practice，确认**有**「学习报告」入口（P-06）" | tee -a "$LOG"
-echo "[MANUAL] 入口不在时：先确认跑的是本清单构建的镜像——浏览器开关是**构建期**值，$ENV_FILE 里那行的值对入口没有影响，查它没用；只改 $ENV_FILE 不会让旧镜像长出入口（见回退顺序第 ② 步）" | tee -a "$LOG"
+echo "[MANUAL] 入口不在时：先确认跑的是本清单构建的镜像——浏览器开关是**构建期**值，$ENV_FILE 里那行的值对入口没有影响，查它没用；只改 $ENV_FILE 不会让旧镜像长出入口（见 11.5 第 ② 步）" | tee -a "$LOG"
 ```
 
-**切流后的期望值**（按 11.1 的键序）：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=1`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=1`、`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=10m`、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`（调度间隔不是 0，0 是它的回退值，见 11.4/11.5；限流 `0` 是关掉这项保护，不是回退值）。浏览器键那一行的值**不参与判读**：它是**构建期**变量，入口是否存在按上面的 `[MANUAL]` 项确认。若网关与 worker 仍是 `0`，说明两条门禁没开——按矩阵 §7 的顺序补开，别先开 worker（顺序反了会让 Core 起不来）。
+**切流后的期望值**（按 11.1 的键序）：`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=1`、`QUIZCRAFT_LEARNING_WORKER_ENABLED=1`、`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=10m`（出厂值；`0` 是它的回退值，见 11.4/11.5）、`QUIZCRAFT_LEARNING_MANUAL_LIMIT=10`（出厂值；限流是成本守卫，1–1000 内任何值、或显式 `0` 关掉，都合法）。浏览器键那一行的值**不参与判读**：它是**构建期**变量，入口是否存在按上面的 `[MANUAL]` 项确认。若网关与 worker 仍是 `0`，说明门禁还没开——按矩阵 §7 的顺序补开：先把 provider 三元组与权益四键配齐，**再**开 worker（缺凭据就开 worker 会让 Core 起不来），`PORTAL_ENABLE_QUIZCRAFT_LEARNING_REPORTS=1` 必须同时 `PORTAL_ENABLE_QUIZCRAFT_V2_READS=1`，否则网关起不来。
 
 ```bash
 echo "== 11.2 路由取证（不带 Cookie；门禁在鉴权之前，门开着就该是 401）==" | tee -a "$LOG"
@@ -542,7 +542,7 @@ probe_lr() { # $1=名称 $2=期望码 $3...=curl 参数
   head -c 200 /tmp/lr.out; echo
 }
 # 读路由（偏好/最新报告/任务）与写路由（生成、保存偏好）：切流后门是开的，未认证请求会走到鉴权 = 401 not authenticated；
-#   拿到 503 practice learning reports are not enabled 才说明网关门禁没开（V2 读取没开不是这种表现：那个组合会让网关起不来，见矩阵 §7④）
+#   拿到 503 practice learning reports are not enabled 才说明网关门禁没开（门禁读到 `1` 而 V2 读取没开不是这种表现：那个组合会让网关起不来，见矩阵 §7③）
 probe_lr "读：偏好" 401 "$B/learning-reports/preferences" | tee -a "$LOG"
 probe_lr "写：生成报告" 401 -X POST "$B/learning-reports" | tee -a "$LOG"
 # 唯一豁免：清除路由。未认证 → 401 not authenticated（暗态与切流后都一样；前提见下方「前置条件」）
@@ -569,10 +569,10 @@ echo "[MANUAL] 在能访问 quizcraft_v2 的运维机上执行上面的 learning
 ```
 
 **通过判据**：
-- 11.1 五个键都存在，且除浏览器键外都等于上述期望值（浏览器键按 `[MANUAL]` 项确认产物侧入口**存在**）；
+- 11.1 五个键都存在；网关门禁与 worker 都是 `1`，调度间隔不是 `0`（`0` 是回退值；间隔本身可调）；浏览器键按 `[MANUAL]` 项确认产物侧入口**存在**；限流落在 1–1000 内、或被人显式置 `0` 关闭，都算通过——它不是 `10` 才算对；
 - 11.2 三条状态码符合上述判读；
 - 11.3 `queued`/`running` **不增长**（从未切流过时应为 0；曾切流或回退过时残留队列与 queued-behind 告警属预期，以「不增长」为准）；
-- 读出**暗态**（网关/worker 两个开关仍是 `0`，或读路由仍是 `503 practice learning reports are not enabled`）= 服务器还没按矩阵 §7 顺序开，按矩阵 §7 补开并记录，**不要**走回退（本 Runbook 也不改生产对象）；「门禁读到 `1`、但入口仍不在」属于题中的中间态——按 11.5 第 ② 步用带该键的清单**重建并重新发布 Portal 镜像**，同样不走回退；只有「读到 `1` 且判读不符」才按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
+- 读出**暗态**（网关/worker 两个开关仍是 `0`，或读路由仍是 `503 practice learning reports are not enabled`）= 服务器还没按矩阵 §7 顺序开，按矩阵 §7 补开并记录，**不要**走回退（本 Runbook 也不改生产对象）；「门禁读到 `1`、但入口仍不在」属于切流未完成的中间态——按 11.5 第 ② 步用带该键的清单**重建并重新发布 Portal 镜像**，同样不走回退；只有「读到 `1` 且判读不符」才按矩阵 §7 的四步顺序回退（① 网关 → ② 重建 Portal → ③ worker → ④ 调度），并记录证据。
 
 **11.4 worker=0 的含义（避免误判「任务积压」）**：`cmd/server/learning_provider.go` 只在 `QUIZCRAFT_LEARNING_WORKER_ENABLED=1` 时才构造 worker 设置（其中包含自动排期间隔），因此 **worker 关闭时调度器根本不存在**，不会有任何自动任务入队——**从未切流过**的暗态下 `queued` 必然为 0，出现任务行就说明有人开过 worker；切流或回退过之后残留的任务行会一直留着（见 11.3）。`QUIZCRAFT_LEARNING_SCHEDULER_INTERVAL=0` 是给「worker 开着但不自动扫」用的（回退顺序第 ④ 步）。
 
