@@ -27,7 +27,7 @@ function StatisticRow({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-medium">{label}</p>
         <p className="font-mono text-xs text-ink/60 tabular-nums">
-          作答 {attempts} 次 · 独立题 {unique} 道 · 首次答对 {firstCorrect} 次
+          作答 {attempts} 次 · 独立题 {unique} 道 · 首答正确 {firstCorrect} 道
         </p>
       </div>
     </div>
@@ -92,7 +92,7 @@ export default function LearningReportView({
               <p className="mt-3 text-sm leading-7">{finding.observation}</p>
               {finding.possible_reason && (
                 <p className="mt-2 text-sm leading-7 text-ink/65">
-                  可能的原因：{finding.possible_reason}
+                  原因：{finding.possible_reason}
                 </p>
               )}
               <ul className="mt-4 space-y-2">
