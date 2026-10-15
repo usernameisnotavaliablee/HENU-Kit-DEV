@@ -144,6 +144,7 @@ jobs:
             .cache/screenshots/learning-reports-mobile.png
             .cache/screenshots/learning-reports-answer-desktop.png
             .cache/screenshots/learning-reports-answer-mobile.png
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 
