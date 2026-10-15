@@ -221,8 +221,29 @@ async function mockLearningReportGateway(page: Page, mocks: Mocks = {}) {
   );
 }
 
-test("会员可以查看设置与报告，并按建议开始练习", async ({ page }) => {
+test("会员从报告练习查看错答反馈，并返回当前课程报告", async ({ page }) => {
+  let ordinarySessionCreates = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/practice/sessions") {
+      ordinarySessionCreates += 1;
+    }
+  });
   await mockLearningReportGateway(page);
+  await page.route(`**/api/v1/practice/sessions/${SESSION_ID}/answers`, (route) =>
+    route.fulfill({
+      json: {
+        request_id: "req_report_answer",
+        data: {
+          question_id: "33333333-3333-4333-8333-333333333333",
+          question_version_id: "44444444-4444-4444-8444-444444444444",
+          correct: false,
+          replayed: false,
+          expected_answer: 1,
+          analysis: "sin x 与 x 在零点附近等价，极限为 1。",
+        },
+      },
+    })
+  );
   await page.goto("/practice/reports");
 
   // 入口只在开关打开时出现，且当前页高亮。
@@ -257,6 +278,27 @@ test("会员可以查看设置与报告，并按建议开始练习", async ({ pa
   await expect(page).toHaveURL(
     new RegExp(`/practice/quiz\\?session_id=${SESSION_ID}&from=report`)
   );
+
+  await expect(page.getByRole("heading", { name: "求 lim(x→0) sin x / x" })).toBeVisible();
+  await page.getByRole("button", { name: /^A\s+0/ }).click();
+  await page.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(page.getByTestId("practice-verdict")).toHaveText(/回答错误/);
+  await expect(page.getByRole("button", { name: /^A\s+0/ })).toContainText("✗");
+  await expect(page.getByRole("button", { name: /^A\s+0/ })).toContainText("你的选择，错误");
+  await expect(page.getByRole("button", { name: /^B\s+1/ })).toContainText("正确答案");
+
+  if (screenshotDir) {
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    await page.screenshot({ path: `${screenshotDir}/learning-reports-answer-desktop.png`, fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${screenshotDir}/learning-reports-answer-mobile.png`, fullPage: true });
+  }
+
+  await page.getByRole("button", { name: "查看结算 →" }).click();
+  await page.getByRole("button", { name: "再来一组" }).click();
+  await expect(page).toHaveURL(new RegExp(`/practice/reports\\?bank_id=${BANK_ID}$`));
+  await expect(page.getByTestId("practice-reports-report")).toBeVisible();
+  expect(ordinarySessionCreates).toBe(0);
 });
 
 test("设置卡的授权说明与模型实际做的事一致", async ({ page }) => {

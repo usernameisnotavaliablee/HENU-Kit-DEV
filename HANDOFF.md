@@ -47,35 +47,34 @@ git rev-list --left-right --count d187164593521e4795ce4e9bcea347879ed86e0d...11b
 | P5 受控开放 | 健康检查、发布配置、关闭回退步骤 | 灰度观测、回退演练、发布授权 |
 
 - 内容证据：[候选盘点](products/quizcraft/generated/learning_feedback_inventory.json)、[审核规则](docs/development/quizcraft-learning-content.md)。候选题不是可上线题量。
-- 规格仍有“供应商/任务/HTTP/界面尚未接线”等旧段落，须据源码纠正；保留真实调用和人工验收待完成结论。
+- 规格已据源码纠正供应商适配、任务执行、HTTP、界面及权益接线的旧描述；真实调用与人工验收仍未完成。
 - 发布镜像脚本烘焙浏览器报告入口为 `1`；Dockerfile、env 示例及 Compose 默认仍为 `0`。服务端开关需部署配置。
 - 未检查生产服务器；仓库配置不证明线上开放。本轮仅同步和记录，不执行生产开放、食评数据维护或人工审批。
 
-## 105：当前批准的整合任务
+## 105：同步 Jerry 的整合与合入门禁
 
 用户已授权：同步分支 commit/push → PR 检查 → **merge commit** 合入自己的 fork main。
 保留学习报告并接入 Jerry 全部改动；接受校园互助入口暂缓与 Food MCP 新身份接口。
-以下为待执行项；本摘要压缩不代表整合、测试、提交或合入已经完成。
 
-- [ ] 刷新 fork/Jerry refs，固定本次 SHA；建 `codex/sync-jerry-main-20261016`，保存并带入 HANDOFF 修改。
-- [ ] Merge Jerry。虚拟合并预计唯一文本冲突为 `apps/portal/package.json` 的 `test`：取双方测试并集。
-- [ ] 保留报告练习路由、失效返回和完成回报告，同时保留上游选对/选错/漏选反馈；文本自动合并不等于行为正确。
-- [ ] Jerry Food ADR 保留 `0047`；本地学习报告 ADR `0047` → `0048`，更新索引、规格、QuizCraft Context。
-- [ ] 旧历史中的学习报告 ADR-0047 指改号前的报告决策，不是 Food 决策；改号后更新本页完成状态。
-- [ ] Food MCP 客户端刷新工具 schema；共享 QQ/LangBot 部署另需插件、签名密钥与 actor-context 配置。SQL 留作独立维护。
-- [ ] 修正规格过期表述，补交叉回归；同步不改变报告开放门禁，不加入 helper 分支独有补丁。
+### 本次固定范围
 
-### 整合验收（待执行）
+- 2026-10-16 01:55 +08:00 刷新后固定：fork 基线 `d187164593521e4795ce4e9bcea347879ed86e0d`；Jerry 目标 `11bf9e656b1253caddbd60afc9e77f5a07a812e4`。
+- 承接 `codex/sync-jerry-main-20261016` 与 HANDOFF 摘要提交 `b97a1f3e`；helper 分支独有补丁不进入本次同步。
+- Portal 测试列表取双方并集；报告练习路由/返回语义与上游选对、选错、漏选反馈一并保留。
+- Food ADR 保留 `0047`；学习报告 ADR 改为 `0048`、仍为 Proposed。历史学习报告 ADR-0047 指改号前的报告决策，不是 Food 决策。
+- Food MCP 的 create/mine 工具不再接收用户提供的身份参数，客户端须刷新 schema。共享 QQ/LangBot 部署还须插件工具、匹配的专用签名密钥与 `FOOD_MCP_REQUIRE_ACTOR_CONTEXT=true`；真实插件接入仍待验收。食评 SQL 保留为独立维护脚本，本次不执行。
+- 学习报告 API、授权、数据结构、开放开关及既有发布构建行为不变。
 
-- 报告创建练习 → 错答显示错选/正确项 → 完成 → “再来一组”回当前课程报告；不得误建普通练习会话。
-- 保留失效/空会话回归；提供报告与答题页面桌面、移动截图。
-- Portal：lint、unit、build；practice / learning-reports / responsive E2E，脚本见 `apps/portal/package.json`。
-- Go：使用兼容 1.26.9 的工具链；Food MCP、Console Gateway、Deploy webhook 各跑 vet 与 race 测试。
-- 最终 diff 重算 CI 触发面；Food workflow 不跑 Food MCP 单测，必须另验，镜像构建不能代替。
-- 按实际改动重验生成物及消费方；Docker/数据库/Linux 门禁在对应环境跑。缺环境、跳过不算通过。
-- Standards / Spec / Public-ready Copy 三轴审查；PR 正文 `Review-Head` 绑定最终 SHA，结果如实填写。
-- 必需检查全部通过再 merge；禁止直推 main、force push、squash/rebase 合并。失败留同步分支修复。
-- 合入后快进本地 main，验证目标 Jerry SHA 是其祖先、对固定目标 behind 0；记录合并 SHA、真实验证与新计数。
+### 本轮验收与证据
+
+- 交叉回归扩展现有学习报告 E2E：报告创建练习 → 错答显示错误与正确项 → 结算 → “再来一组”回当前课程报告；普通练习创建 POST 必须为零，保留失效/空会话回归。
+- 本机 Playwright 缺少匹配的 headless shell，已安装到仓库 `.cache/playwright`；随后合并前回归因缺少 `practice-verdict` 失败，整合后同一交叉用例通过。全套检查结果、桌面/移动截图、最终 head 与审查证据以 PR 为准；本机日志在 `.cache/sync-jerry-main-20261016/`。
+- Go 1.26.9 已准备；Food MCP 独立 vet/race 必须通过。Console Gateway 与 Deploy webhook 同样执行 vet/race，数据库、Docker、Linux 门禁由 CI 完成。
+- 按当前范围，必需 workflow 为 Governance、发布制品、Console Gateway、Deploy webhook、Food、Library、QuizCraft Go；最后提交仍须按实际 diff 重算。发布制品包含浏览器门禁、完整镜像矩阵与 runtime-config。仅 main 执行的发布证明在 PR 阶段为不适用。
+- fork main 当前无保护/必需检查/ruleset。必须逐项核对本次 head/base 的预期作业；缺失、失败、取消或因前置失败跳过均阻止合入，不以“已出现的检查全绿”替代完整门禁。
+- Standards / Spec / Public-ready Copy 三轴审查；最后编辑正文后重新确认治理检查，`Review-Head` 绑定最终 SHA。
+- 当前摘要不宣称 PR 已合入。只有必需门禁全部成功，才按已授权路径 merge commit 合入；失败留同步分支修复。禁止直推 main、force push、squash/rebase 合并。
+- 合入后快进本地 main，核对目标 Jerry SHA 为其祖先、相对固定目标 behind 0；合并 SHA、真实检查结果与新计数记录在 PR 和交付回复，不为自记 SHA 追加提交。
 
 ## 最少环境与安全提醒
 
