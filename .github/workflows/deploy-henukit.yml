@@ -134,6 +134,19 @@ jobs:
       - name: Verify QQ binding authorization
         run: pnpm --filter @henukit/portal test:e2e:qq-binding
 
+      - name: Upload learning report browser screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: portal-learning-report-screenshots-${{ github.sha }}
+          path: |
+            .cache/screenshots/learning-reports-desktop.png
+            .cache/screenshots/learning-reports-mobile.png
+            .cache/screenshots/learning-reports-answer-desktop.png
+            .cache/screenshots/learning-reports-answer-mobile.png
+          if-no-files-found: error
+          retention-days: 14
+
   oauth-continuation:
     name: oauth-continuation
     needs: validate-release-contract

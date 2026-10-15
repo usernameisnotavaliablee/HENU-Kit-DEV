@@ -229,6 +229,9 @@ test("会员从报告练习查看错答反馈，并返回当前课程报告", as
     }
   });
   await mockLearningReportGateway(page);
+  await page.route(`**/api/v1/practice/banks/${BANK_ID}/favorites`, (route) =>
+    route.fulfill({ json: { request_id: "req_report_favorites", data: [] } })
+  );
   await page.route(`**/api/v1/practice/sessions/${SESSION_ID}/answers`, (route) =>
     route.fulfill({
       json: {

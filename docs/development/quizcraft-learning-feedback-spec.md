@@ -115,4 +115,4 @@
 ## 权益权威的最小只读接口（Account Portfolio 阶段）
 
 - Account Portfolio 扩展独立可选的 QuizCraft 服务凭据，仅允许签名的 `GET /api/v1/internal/quizcraft/entitlements/{user_id}`；URL 用户必须与签名 actor 相同，回包只含当前 lifetime 布尔值和 revision。未初始化用户按无权益返回且不写数据；数据库故障显式 503。签名含时间戳/随机 nonce 并防重放，Portal/Console/QuizCraft 三套凭据互斥、不复用积分加密密钥。
-- 当前仅提供权益权威接口，不等于 QuizCraft worker/HTTP 已经完成实时查询。可选密钥未配置时默认关闭；生产启用前必须完成密钥分发、私网路由、会员撤销/依赖异常测试和发布前二次检查。不可将测试专用检查回调当生产权限来源。
+- 签名权益客户端已接入 QuizCraft worker/HTTP 的实时查询与发布复核；真实账号联合验收仍待完成。可选密钥未配置时默认关闭；生产启用前必须完成密钥分发、私网路由、会员撤销/依赖异常测试和发布前二次检查。不可将测试专用检查回调当生产权限来源。
