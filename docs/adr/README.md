@@ -49,7 +49,8 @@
 43. [`0044-actions-degraded-baseline-recovery.md`](./0044-actions-degraded-baseline-recovery.md) — 允许经显式双 SHA 授权的最新成功 current-main Actions 制品复用 ADR-0030 降级基线恢复契约。
 44. [`0045-stateless-getwork-crawl-transport.md`](./0045-stateless-getwork-crawl-transport.md) — 启动时保留官方 MCP SDK 校验，远程 `crawl_jobs` 改用受限 stateless Streamable HTTP，避免并发 SDK session 打断 WSL SSH 隧道。
 
-45. [`0047-quizcraft-evidence-based-learning-reports.md`](./0047-quizcraft-evidence-based-learning-reports.md) — Proposed：QuizCraft 自有会员学习报告、真实证据＋LLM、审核讲解与异步任务；默认关闭。
+45. [`0047-food-mcp-optional-kit-account.md`](./0047-food-mcp-optional-kit-account.md) — Accepted：Food MCP 从可信请求读取可选 Kit 身份，共享机器人使用签名上下文隔离投稿身份。
+46. [`0048-quizcraft-evidence-based-learning-reports.md`](./0048-quizcraft-evidence-based-learning-reports.md) — Proposed：QuizCraft 自有会员学习报告、真实证据＋LLM、审核讲解与异步任务；默认关闭。
 
 ## 使用规则
 
